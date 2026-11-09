@@ -2,8 +2,14 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -56,6 +62,176 @@ func benchmarkWebhookAdmissionFixture(b *testing.B, mode string) (*Store, contex
 	}
 	b.Fatal("webhook missing")
 	return nil, nil, Project{}, WebhookRow{}
+}
+
+func benchmarkPercentile(samples []time.Duration, percentile float64) time.Duration {
+	if len(samples) == 0 {
+		return 0
+	}
+	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	index := int(float64(len(samples)-1) * percentile)
+	return samples[index]
+}
+
+func BenchmarkWebhookConcurrentAdmission(b *testing.B) {
+	for _, mode := range []string{WebhookDeliveryBestEffort, WebhookDeliveryDurable} {
+		for _, subscriptions := range []int{1, 5, 20} {
+			for _, concurrency := range []int{1, 4, 16, 64} {
+				name := fmt.Sprintf("%s/subscriptions_%d/concurrency_%d", mode, subscriptions, concurrency)
+				b.Run(name, func(b *testing.B) {
+					if mode == WebhookDeliveryDurable && b.N*subscriptions >= DurableWebhookMaxActiveRows {
+						b.Skip("run with -benchtime=20x so retained rows stay below the production quota")
+					}
+					path := filepath.Join(b.TempDir(), "concurrent-admission.db")
+					database, err := db.Open(path, db.Options{BusyTimeout: 5000, JournalMode: "WAL", Synchronous: "FULL"})
+					if err != nil {
+						b.Fatal(err)
+					}
+					b.Cleanup(func() { _ = database.Close() })
+					ctx := context.Background()
+					if err := migrate.Apply(ctx, database); err != nil {
+						b.Fatal(err)
+					}
+					st := New(database, nil)
+					owner, err := st.BootstrapUser(ctx, fmt.Sprintf("concurrent-%s-%d-%d@example.com", mode, subscriptions, concurrency), "password123", "Benchmark")
+					if err != nil {
+						b.Fatal(err)
+					}
+					ctx = WithUserID(ctx, owner.ID)
+					project, err := st.CreateProject(ctx, "Concurrent webhook benchmark")
+					if err != nil {
+						b.Fatal(err)
+					}
+					for i := 0; i < subscriptions; i++ {
+						if _, err := st.CreateWebhook(ctx, owner.ID, CreateWebhookInput{
+							ProjectID: project.ID,
+							URL:       fmt.Sprintf("https://benchmark-%d.example.com/hook", i),
+							Events:    []string{TodoEventCreated}, DeliveryMode: mode,
+						}); err != nil {
+							b.Fatal(err)
+						}
+					}
+					rows, err := st.ListWebhooksByProject(ctx, project.ID)
+					if err != nil || len(rows) != subscriptions {
+						b.Fatalf("rows=%d err=%v", len(rows), err)
+					}
+					jobs := make(chan int)
+					start := make(chan struct{})
+					admissionLatencies := make([]time.Duration, b.N)
+					todoLatencies := make([]time.Duration, b.N)
+					var admissionErrors, admissionTimeouts atomic.Int64
+					var nextTodo atomic.Int64
+					var peakGoroutines atomic.Int64
+					var workers sync.WaitGroup
+					workerCount := concurrency
+					if workerCount > b.N {
+						workerCount = b.N
+					}
+					for i := 0; i < workerCount; i++ {
+						workers.Add(1)
+						go func() {
+							defer workers.Done()
+							<-start
+							for job := range jobs {
+								currentGoroutines := int64(runtime.NumGoroutine())
+								for {
+									previous := peakGoroutines.Load()
+									if currentGoroutines <= previous || peakGoroutines.CompareAndSwap(previous, currentGoroutines) {
+										break
+									}
+								}
+								started := time.Now()
+								operationCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+								eventID := fmt.Sprintf("concurrent-%d", job)
+								if mode == WebhookDeliveryBestEffort {
+									_, operationErr := st.ListWebhooksByProject(operationCtx, project.ID)
+									if operationErr != nil {
+										admissionErrors.Add(1)
+										if errors.Is(operationErr, context.DeadlineExceeded) {
+											admissionTimeouts.Add(1)
+										}
+									}
+								} else {
+									body := []byte(fmt.Sprintf(`{"id":%q,"type":"todo.created"}`, eventID))
+									for _, row := range rows {
+										_, operationErr := st.AdmitDurableWebhookDelivery(operationCtx, AdmitDurableWebhookDeliveryInput{
+											WebhookID: row.ID, ProjectID: project.ID, AuthorizationGeneration: row.AuthorizationGeneration,
+											EventID: eventID, EventType: TodoEventCreated, EventTimestamp: started,
+											Body: body, AdmittedAt: started,
+										})
+										if operationErr != nil {
+											admissionErrors.Add(1)
+											if errors.Is(operationErr, context.DeadlineExceeded) {
+												admissionTimeouts.Add(1)
+											}
+											break
+										}
+									}
+								}
+								cancel()
+								admissionLatencies[job] = time.Since(started)
+							}
+						}()
+					}
+					var todoWorker sync.WaitGroup
+					todoWorker.Add(1)
+					go func() {
+						defer todoWorker.Done()
+						<-start
+						for {
+							index := int(nextTodo.Add(1) - 1)
+							if index >= b.N {
+								return
+							}
+							started := time.Now()
+							if _, createErr := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: fmt.Sprintf("Unrelated write %d", index)}, ModeFull); createErr != nil {
+								b.Errorf("unrelated todo write: %v", createErr)
+							}
+							todoLatencies[index] = time.Since(started)
+						}
+					}()
+					b.ResetTimer()
+					started := time.Now()
+					close(start)
+					for i := 0; i < b.N; i++ {
+						jobs <- i
+					}
+					close(jobs)
+					workers.Wait()
+					todoWorker.Wait()
+					elapsed := time.Since(started)
+					b.StopTimer()
+					usage := DurableWebhookUsage{}
+					if mode == WebhookDeliveryDurable {
+						usage, err = st.DurableWebhookDeliveryUsage(ctx)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+					var walBytes int64
+					if info, statErr := os.Stat(path + "-wal"); statErr == nil {
+						walBytes = info.Size()
+					}
+					var databaseBytes int64
+					if info, statErr := os.Stat(path); statErr == nil {
+						databaseBytes = info.Size()
+					}
+					b.ReportMetric(float64(b.N)/elapsed.Seconds(), "admissions/s")
+					b.ReportMetric(float64(benchmarkPercentile(admissionLatencies, 0.50).Microseconds()), "admission_p50_us")
+					b.ReportMetric(float64(benchmarkPercentile(admissionLatencies, 0.95).Microseconds()), "admission_p95_us")
+					b.ReportMetric(float64(benchmarkPercentile(admissionLatencies, 0.99).Microseconds()), "admission_p99_us")
+					b.ReportMetric(float64(admissionErrors.Load()), "admission_errors")
+					b.ReportMetric(float64(admissionTimeouts.Load()), "admission_timeouts")
+					b.ReportMetric(float64(peakGoroutines.Load()), "peak_goroutines")
+					b.ReportMetric(float64(usage.ActivePayloadBytes), "active_payload_bytes")
+					b.ReportMetric(float64(usage.TotalPayloadBytes), "retained_payload_bytes")
+					b.ReportMetric(float64(databaseBytes), "database_bytes")
+					b.ReportMetric(float64(walBytes), "wal_bytes")
+					b.ReportMetric(float64(benchmarkPercentile(todoLatencies, 0.95).Microseconds()), "unrelated_todo_p95_us")
+				})
+			}
+		}
+	}
 }
 
 func BenchmarkWebhookEventAdmission(b *testing.B) {

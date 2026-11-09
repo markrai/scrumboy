@@ -4,19 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"sync"
 	"time"
 
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/store"
 )
 
-// webhookDispatcher is an eventbus.Consumer that matches events against
-// webhook subscriptions and enqueues deliveries asynchronously.
+const (
+	defaultWebhookSnapshotTimeout  = 5 * time.Second
+	defaultWebhookAdmissionTimeout = 5 * time.Second
+	defaultWebhookAdmissionSlots   = 16
+)
+
 type webhookDispatcher struct {
 	store           webhookDispatchStore
 	queue           *webhookQueue
 	durableNotifier durableWebhookNotifier
 	logger          *log.Logger
+	admissionSlots  chan struct{}
+	mu              sync.Mutex
+	closed          bool
+	wg              sync.WaitGroup
 }
 
 type webhookDispatchStore interface {
@@ -24,83 +33,135 @@ type webhookDispatchStore interface {
 	AdmitDurableWebhookDelivery(context.Context, store.AdmitDurableWebhookDeliveryInput) (string, error)
 }
 
-func newWebhookDispatcher(store webhookDispatchStore, queue *webhookQueue, logger *log.Logger) *webhookDispatcher {
-	return newWebhookDispatcherWithDurableNotifier(store, queue, nil, logger)
+type durableWebhookAdmissionSnapshot struct {
+	webhookID               int64
+	authorizationGeneration int64
 }
 
-func newWebhookDispatcherWithDurableNotifier(store webhookDispatchStore, queue *webhookQueue, notifier durableWebhookNotifier, logger *log.Logger) *webhookDispatcher {
-	return &webhookDispatcher{store: store, queue: queue, durableNotifier: notifier, logger: logger}
+func newWebhookDispatcher(st webhookDispatchStore, queue *webhookQueue, logger *log.Logger) *webhookDispatcher {
+	return newWebhookDispatcherWithDurableNotifier(st, queue, nil, logger)
+}
+
+func newWebhookDispatcherWithDurableNotifier(st webhookDispatchStore, queue *webhookQueue, notifier durableWebhookNotifier, logger *log.Logger) *webhookDispatcher {
+	return &webhookDispatcher{
+		store:           st,
+		queue:           queue,
+		durableNotifier: notifier,
+		logger:          logger,
+		admissionSlots:  make(chan struct{}, defaultWebhookAdmissionSlots),
+	}
 }
 
 func (d *webhookDispatcher) OnEvent(_ context.Context, e eventbus.Event) {
-	// Internal routing events are not delivered as webhooks.
 	if e.Type == "board.refresh_needed" ||
 		e.Type == "board.members_updated" ||
 		e.Type == eventbus.TodoCreatorNotificationRequestedEventType ||
 		e.Type == eventbus.TodoCreatorNotificationRecipientAuthorizedEventType {
 		return
 	}
-	// Fanout calls consumers synchronously in order (SSE bridge first). Do not block this path on
-	// DB or other slow work — enqueue in a goroutine so webhook ListWebhooksByProject cannot delay SSE.
-	go d.enqueueWork(e)
-}
-
-func (d *webhookDispatcher) enqueueWork(e eventbus.Event) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	hooks, err := d.store.ListWebhooksByProject(ctx, e.ProjectID)
+	snapshotCtx, cancel := context.WithTimeout(context.Background(), defaultWebhookSnapshotTimeout)
+	hooks, err := d.store.ListWebhooksByProject(snapshotCtx, e.ProjectID)
+	cancel()
 	if err != nil {
-		d.logger.Printf("webhook dispatcher: list hooks for project %d: %v", e.ProjectID, err)
+		d.logger.Printf("webhook dispatcher: snapshot hooks for project %d: %v", e.ProjectID, err)
 		return
 	}
-
 	body, err := canonicalWebhookBody(e)
 	if err != nil {
 		d.logger.Printf("webhook dispatcher: marshal event %s: %v", e.ID, err)
 		return
 	}
-
-	for _, h := range hooks {
-		if !matchesEventType(h.Events, e.Type) {
+	durable := make([]durableWebhookAdmissionSnapshot, 0, len(hooks))
+	for _, hook := range hooks {
+		if !matchesEventType(hook.Events, e.Type) {
 			continue
 		}
-		if h.DeliveryMode == store.WebhookDeliveryDurable {
-			// The first durable slice is deliberately limited to todo.created.
-			// Corrupt or future subscription rows must not widen that boundary.
-			if e.Type != eventbus.TodoCreatedEventType {
-				continue
-			}
-			admission, err := d.store.AdmitDurableWebhookDelivery(ctx, store.AdmitDurableWebhookDeliveryInput{
-				WebhookID:               h.ID,
-				ProjectID:               e.ProjectID,
-				AuthorizationGeneration: h.AuthorizationGeneration,
-				EventID:                 e.ID,
-				EventType:               e.Type,
-				EventTimestamp:          e.Time,
-				Body:                    body,
-			})
-			if err != nil {
-				d.logger.Printf("durable webhook admission failed webhook_id=%d event=%s: %v", h.ID, e.ID, err)
-				continue // Never fall back to the in-memory queue.
-			}
-			if admission == store.DurableWebhookAdmissionDuplicate {
-				d.logger.Printf("durable webhook admission duplicate webhook_id=%d event=%s", h.ID, e.ID)
-			}
-			if admission == store.DurableWebhookAdmissionInserted && d.durableNotifier != nil {
-				d.durableNotifier.Notify()
+		if hook.DeliveryMode == store.WebhookDeliveryDurable {
+			if e.Type == eventbus.TodoCreatedEventType {
+				durable = append(durable, durableWebhookAdmissionSnapshot{
+					webhookID:               hook.ID,
+					authorizationGeneration: hook.AuthorizationGeneration,
+				})
 			}
 			continue
 		}
 		d.queue.Enqueue(webhookDelivery{
-			WebhookID: h.ID,
-			URL:       h.URL,
-			Secret:    h.Secret,
+			WebhookID: hook.ID,
+			URL:       hook.URL,
+			Secret:    hook.Secret,
 			EventID:   e.ID,
 			EventType: e.Type,
 			Timestamp: e.Time,
 			Body:      body,
 		})
+	}
+	if len(durable) == 0 {
+		return
+	}
+	d.mu.Lock()
+	if d.closed {
+		d.mu.Unlock()
+		d.logger.Printf("durable webhook admission rejected during shutdown event=%s subscriptions=%d", e.ID, len(durable))
+		return
+	}
+	select {
+	case d.admissionSlots <- struct{}{}:
+		d.wg.Add(1)
+		d.mu.Unlock()
+		go d.admitSnapshot(e, body, durable)
+	default:
+		d.mu.Unlock()
+		d.logger.Printf("durable webhook admission saturated event=%s subscriptions=%d", e.ID, len(durable))
+	}
+}
+
+func (d *webhookDispatcher) enqueueWork(e eventbus.Event) {
+	d.OnEvent(context.Background(), e)
+	d.wg.Wait()
+}
+
+func (d *webhookDispatcher) admitSnapshot(e eventbus.Event, body []byte, hooks []durableWebhookAdmissionSnapshot) {
+	defer d.wg.Done()
+	defer func() { <-d.admissionSlots }()
+	ctx, cancel := context.WithTimeout(context.Background(), defaultWebhookAdmissionTimeout)
+	defer cancel()
+	for _, hook := range hooks {
+		admission, err := d.store.AdmitDurableWebhookDelivery(ctx, store.AdmitDurableWebhookDeliveryInput{
+			WebhookID:               hook.webhookID,
+			ProjectID:               e.ProjectID,
+			AuthorizationGeneration: hook.authorizationGeneration,
+			EventID:                 e.ID,
+			EventType:               e.Type,
+			EventTimestamp:          e.Time,
+			Body:                    body,
+		})
+		if err != nil {
+			d.logger.Printf("durable webhook admission failed webhook_id=%d event=%s: %v", hook.webhookID, e.ID, err)
+			continue
+		}
+		if admission == store.DurableWebhookAdmissionDuplicate {
+			d.logger.Printf("durable webhook admission duplicate webhook_id=%d event=%s", hook.webhookID, e.ID)
+		}
+		if admission == store.DurableWebhookAdmissionInserted && d.durableNotifier != nil {
+			d.durableNotifier.Notify()
+		}
+	}
+}
+
+func (d *webhookDispatcher) Close(ctx context.Context) bool {
+	d.mu.Lock()
+	d.closed = true
+	d.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		d.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
@@ -121,8 +182,8 @@ func canonicalWebhookBody(e eventbus.Event) ([]byte, error) {
 }
 
 func matchesEventType(subscribed []string, eventType string) bool {
-	for _, s := range subscribed {
-		if s == eventType || s == "*" {
+	for _, event := range subscribed {
+		if event == eventType || event == "*" {
 			return true
 		}
 	}

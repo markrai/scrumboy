@@ -79,7 +79,11 @@ func isPermanentWebhookError(err error) bool {
 }
 
 func sendWebhook(client *http.Client, d webhookDelivery) error {
-	req, err := http.NewRequest(http.MethodPost, d.URL, bytes.NewReader(d.Body))
+	return sendWebhookContext(context.Background(), client, d)
+}
+
+func sendWebhookContext(ctx context.Context, client *http.Client, d webhookDelivery) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.URL, bytes.NewReader(d.Body))
 	if err != nil {
 		return &safeWebhookDeliveryError{cause: err}
 	}

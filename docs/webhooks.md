@@ -202,7 +202,7 @@ Delivery is **asynchronous** and **best-effort**:
 4. **Success** is any HTTP status in **2xx**.
 5. **Retries:** up to **three** attempts with fixed backoff (immediate, then ~100ms, then ~400ms) for transient failures (network errors, non-2xx responses that are not classified permanent, and temporary authorization-lookup errors). Authorization is rechecked before every retry.
 6. **Permanent failures** (revoked/deleted subscriptions, forbidden destination / SSRF refusal, or redirect) are **not** retried beyond the failing attempt.
-7. The queue is **in-memory** (bounded capacity). On process shutdown the queue is sealed and drained against a deadline; some queued items may still be lost if the process exits. Scrumboy is **not** a durable external queue — design your receiver accordingly and use event `id` for idempotency.
+7. The best-effort queue is **in-memory** (bounded capacity). On process shutdown the queue is sealed and drained against a deadline; some queued items may still be lost if the process exits. Use event `id` for receiver-side idempotency.
 
 Because authorization is revalidated at send time, an event queued while a subscription was eligible is dropped if membership, account, or subscription state is revoked before the HTTP request begins. Scrumboy does not attempt to cancel a request that was already in flight when revocation occurred.
 
@@ -210,18 +210,42 @@ For a delegated service subscription, removing the service owner makes the row i
 
 ### Opt-in durable `todo.created` mode
 
-For `deliveryMode: "durable"`, the dispatcher uses the same event matching and enqueue-time authorization predicate, serializes the same canonical body, and inserts one `webhook_deliveries` row for each webhook/event pair. The event ID is the unique retry identity. A persistence error is logged with safe identifiers and is never routed through the in-memory queue.
+For `deliveryMode: "durable"`, the dispatcher uses the same event matching and authorization predicate, serializes the same canonical body, and inserts one `webhook_deliveries` row for each webhook/event pair. The event ID is the retry and deduplication identity while that row is retained. A persistence or capacity error is logged with safe identifiers and is never routed through the in-memory queue. There is no global durable-delivery environment flag.
+
+At the webhook consumer boundary, subscription IDs and authorization generations are read synchronously after the earlier SSE consumers have run. Body persistence remains asynchronous and bounded to 16 concurrent admission tasks; saturation is an explicit logged durability failure and does not block on an unbounded queue. Delayed admission uses only the captured generation and cannot refresh its authority after an owner is removed and re-added. This snapshot adds one bounded SQLite read to lifecycle publication for every webhook-deliverable event, including installations that have only best-effort subscriptions. Best-effort matching and its existing in-memory queue otherwise remain unchanged.
 
 The durable worker:
 
-1. Claims a bounded due batch in a short SQLite transaction using a lease token and expiry, then commits before any network request.
+1. Claims at most four due rows in a short SQLite transaction using a lease token and a two-minute expiry, then commits before any network request. At most four claims are processed concurrently, so claimed work does not wait behind a larger batch.
 2. Re-reads the current destination and signing secret and rechecks current owner membership. It uses the same SSRF-safe client, redirect refusal, request headers, and HMAC over the exact stored body bytes as best-effort delivery.
-3. Marks 2xx complete. Transient network/non-2xx failures return to pending with a future retry time; SSRF/redirect failures and exhausted attempts are terminal. Status rows retain only a bounded error class and optional HTTP status, never an error string, URL, secret, or payload diagnostic.
-4. Reclaims an abandoned lease after expiry. A state update must match the current lease token, so a stale worker cannot acknowledge or retry a newer claim. This is intentionally at-least-once: a receiver may process an event before Scrumboy records the 2xx, so receivers must deduplicate on the unchanged event ID.
+3. Reserves an HTTP-attempt slot transactionally immediately before the request. Claiming, authorization failures, shutdown before reservation, and database failures before reservation consume no HTTP-attempt slot. At most eight slots can be reserved across all workers and restarts. A crash after reservation but before a request may conservatively consume a slot.
+4. Marks 2xx complete. HTTP 408, 429, 5xx, and network/DNS timeouts are retryable. Other 4xx, every 3xx, redirect attempts, and SSRF-forbidden destinations are terminal. Current owner ineligibility is skipped without HTTP; temporary authorization lookup errors retry internally without HTTP. Stored diagnostics are only a bounded category and optional status code, never an error string, URL, secret, or payload body.
+5. Reclaims an abandoned lease after expiry. Every state update must match the lease token, so a stale worker cannot acknowledge or retry a newer claim. Acknowledgement uses its own bounded context, so cancellation of the worker run context alone does not discard the database update. A receiver may process an event before Scrumboy records the 2xx; repeated requests retain the exact event ID and body bytes, and receivers must deduplicate on the event ID.
 
-Membership revocation advances an authorization generation on the subscription. Pending work captures the prior generation and is skipped permanently, including after the owner is re-added; only events admitted under the new generation can be sent. Service Viewer/Contributor/Maintainer and human Maintainer/legacy Owner eligibility otherwise remains unchanged. Owner, webhook, and project deletion cascade pending work away. Registrar role changes and service-token revocation do not revoke an eligible delegated subscription.
+Durable storage is bounded at the authoritative store boundary:
 
-Durability begins only at the `webhook_deliveries` commit. Todo creation first commits its own mutation, then calls the lifecycle publisher; the event bus assigns the event ID/time and synchronously invokes the dispatcher, which starts asynchronous admission. A crash after the todo commit but before publication, or after publication but before the delivery-row commit, can still lose the webhook. This is a post-commit durable queue, not a mutation-atomic transactional outbox.
+| Limit | Value |
+| --- | ---: |
+| Canonical body | 64 KiB |
+| Active rows per webhook | 500 |
+| Active rows globally | 10,000 |
+| Active payload bytes globally | 128 MiB |
+| Total retained rows | 50,000 |
+| Total retained payload bytes | 256 MiB |
+| Pending/leased lifetime | 24 hours |
+| Delivered history | 7 days after completion |
+| Failed/skipped history | 30 days after completion |
+| Cleanup batch | 200 terminalizations and 200 deletions per pass |
+
+`pending` and `leased` rows count as active. All states count toward retained totals. Admission checks counters and the webhook-scoped active index in the insertion transaction; concurrent admissions cannot pass the same final slot. When capacity is reached, expired active work is terminalized and expired terminal history is deleted in a bounded pass before the insert is retried. Scrumboy never evicts unexpired pending work to admit a newer event. If the limits still do not permit the row, the committed todo remains committed but durable admission fails explicitly.
+
+Cleanup is restart-safe and idempotent. It terminalizes work beyond its 24-hour deadline, but never touches a lease that has not expired, then deletes terminal rows past their retention deadline. Deletion ends Scrumboy's database deduplication horizon for that webhook/event pair. Logical payload and row counts are bounded; SQLite database and WAL files do not necessarily shrink when rows are deleted. Scrumboy does not run `VACUUM` in this path, and the existing database journal-size/checkpoint policy still governs physical WAL growth.
+
+Membership revocation advances an authorization generation on the subscription. Pending work captures the prior generation and is skipped permanently, including after the owner is re-added; only events captured under the new generation can be admitted and sent. Service Viewer/Contributor/Maintainer and human Maintainer/legacy Owner eligibility otherwise remains unchanged. Owner, webhook, and project deletion cascade pending work away. Registrar role changes and service-token revocation do not revoke an eligible delegated subscription. A request already dialing may still complete.
+
+Durability begins only when the `webhook_deliveries` insert commits. Todo creation commits its mutation before lifecycle publication. Board-activity work, and in some paths `todo.assigned` publication, can occur before `todo.created` publication. The event bus assigns the `todo.created` ID and timestamp, earlier SSE consumers run, and the webhook consumer synchronously captures its subscription/generation snapshot before bounded asynchronous insertion. A crash anywhere between the todo commit and the delivery-row commit can lose the webhook. This is a post-commit durable queue, not a mutation-atomic transactional outbox.
+
+An accepted row is processed at least once only in the qualified sense that it remains recoverable across process restart for no more than its active deadline and is subject to authorization, eight reserved attempts, and later cleanup. Successful external delivery is not guaranteed. Uncertain HTTP outcomes consume a reservation. Bodies can contain sensitive historical project data and remain in the main SQLite database and file-level backups until deletion under the retention policy.
 
 ---
 

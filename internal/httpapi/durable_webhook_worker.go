@@ -13,11 +13,13 @@ import (
 )
 
 const (
-	defaultDurableWebhookPollInterval = time.Second
-	defaultDurableWebhookLease        = 30 * time.Second
-	defaultDurableWebhookClaimLimit   = 16
-	defaultDurableWebhookConcurrency  = 4
-	defaultDurableWebhookMaxAttempts  = 8
+	defaultDurableWebhookPollInterval         = 30 * time.Second
+	defaultDurableWebhookLease                = 2 * time.Minute
+	defaultDurableWebhookClaimLimit           = 4
+	defaultDurableWebhookConcurrency          = 4
+	defaultDurableWebhookAuthorizationTimeout = 5 * time.Second
+	defaultDurableWebhookAcknowledgeTimeout   = 5 * time.Second
+	defaultDurableWebhookMaintenanceInterval  = 5 * time.Minute
 )
 
 type durableWebhookNotifier interface {
@@ -68,23 +70,27 @@ func (s *pollingDurableWebhookSchedule) Close() { s.ticker.Stop() }
 type durableWebhookStore interface {
 	ClaimDueDurableWebhookDeliveries(context.Context, time.Time, int, time.Duration) ([]store.DurableWebhookDelivery, error)
 	GetDurableWebhookDeliveryTarget(context.Context, int64, int64) (store.WebhookDeliveryTarget, bool, error)
+	ReserveDurableWebhookAttempt(context.Context, int64, string, time.Time) (store.DurableWebhookAttemptReservation, error)
 	CompleteDurableWebhookDelivery(context.Context, int64, string, time.Time) (bool, error)
-	RetryDurableWebhookDelivery(context.Context, int64, string, string, *int, time.Time) (bool, error)
+	RetryDurableWebhookDelivery(context.Context, int64, string, string, *int, time.Time, time.Time) (bool, error)
+	ReleaseDurableWebhookDelivery(context.Context, int64, string, time.Time) (bool, error)
 	FailDurableWebhookDelivery(context.Context, int64, string, string, *int, time.Time) (bool, error)
 	SkipDurableWebhookDelivery(context.Context, int64, string, string, time.Time) (bool, error)
+	MaintainDurableWebhookDeliveries(context.Context, time.Time, int) (store.DurableWebhookMaintenance, error)
 }
 
 type durableWebhookWorker struct {
-	store         durableWebhookStore
-	client        *http.Client
-	logger        *log.Logger
-	now           func() time.Time
-	schedule      durableWebhookSchedule
-	leaseDuration time.Duration
-	claimLimit    int
-	concurrency   int
-	maxAttempts   int
-	done          chan struct{}
+	store               durableWebhookStore
+	client              *http.Client
+	logger              *log.Logger
+	now                 func() time.Time
+	schedule            durableWebhookSchedule
+	leaseDuration       time.Duration
+	claimLimit          int
+	concurrency         int
+	maintenanceInterval time.Duration
+	nextMaintenance     time.Time
+	done                chan struct{}
 }
 
 func newDurableWebhookWorker(st durableWebhookStore, logger *log.Logger, schedule durableWebhookSchedule) *durableWebhookWorker {
@@ -93,16 +99,16 @@ func newDurableWebhookWorker(st durableWebhookStore, logger *log.Logger, schedul
 
 func newDurableWebhookWorkerWithClient(st durableWebhookStore, logger *log.Logger, schedule durableWebhookSchedule, client *http.Client) *durableWebhookWorker {
 	return &durableWebhookWorker{
-		store:         st,
-		client:        client,
-		logger:        logger,
-		now:           time.Now,
-		schedule:      schedule,
-		leaseDuration: defaultDurableWebhookLease,
-		claimLimit:    defaultDurableWebhookClaimLimit,
-		concurrency:   defaultDurableWebhookConcurrency,
-		maxAttempts:   defaultDurableWebhookMaxAttempts,
-		done:          make(chan struct{}),
+		store:               st,
+		client:              client,
+		logger:              logger,
+		now:                 time.Now,
+		schedule:            schedule,
+		leaseDuration:       defaultDurableWebhookLease,
+		claimLimit:          defaultDurableWebhookClaimLimit,
+		concurrency:         defaultDurableWebhookConcurrency,
+		maintenanceInterval: defaultDurableWebhookMaintenanceInterval,
+		done:                make(chan struct{}),
 	}
 }
 
@@ -111,7 +117,7 @@ func (w *durableWebhookWorker) Done() <-chan struct{} { return w.done }
 func (w *durableWebhookWorker) Run(ctx context.Context) {
 	defer close(w.done)
 	defer w.schedule.Close()
-	w.drain(ctx) // Resume committed pending work immediately after startup.
+	w.drain(ctx)
 	for w.schedule.Wait(ctx) {
 		w.drain(ctx)
 	}
@@ -119,7 +125,24 @@ func (w *durableWebhookWorker) Run(ctx context.Context) {
 
 func (w *durableWebhookWorker) drain(ctx context.Context) {
 	for ctx.Err() == nil {
-		claims, err := w.store.ClaimDueDurableWebhookDeliveries(ctx, w.now(), w.claimLimit, w.leaseDuration)
+		now := w.now().UTC()
+		if w.nextMaintenance.IsZero() || !now.Before(w.nextMaintenance) {
+			if _, err := w.store.MaintainDurableWebhookDeliveries(ctx, now, store.DurableWebhookJanitorBatch); err != nil {
+				if ctx.Err() == nil {
+					w.logger.Printf("durable webhook maintenance failed: %v", err)
+				}
+				return
+			}
+			w.nextMaintenance = now.Add(w.maintenanceInterval)
+		}
+		claimLimit := w.claimLimit
+		if claimLimit > w.concurrency {
+			claimLimit = w.concurrency
+		}
+		if claimLimit < 1 {
+			claimLimit = 1
+		}
+		claims, err := w.store.ClaimDueDurableWebhookDeliveries(ctx, now, claimLimit, w.leaseDuration)
 		if err != nil {
 			if ctx.Err() == nil {
 				w.logger.Printf("durable webhook claim failed: %v", err)
@@ -130,7 +153,7 @@ func (w *durableWebhookWorker) drain(ctx context.Context) {
 			return
 		}
 		w.deliverClaims(ctx, claims)
-		if len(claims) < w.claimLimit {
+		if len(claims) < claimLimit {
 			return
 		}
 	}
@@ -143,11 +166,16 @@ func (w *durableWebhookWorker) deliverClaims(ctx context.Context, claims []store
 	}
 	sem := make(chan struct{}, limit)
 	var wg sync.WaitGroup
-	for _, claim := range claims {
-		if ctx.Err() != nil {
-			break
+	for i, claim := range claims {
+		select {
+		case <-ctx.Done():
+			for _, unstarted := range claims[i:] {
+				w.release(unstarted)
+			}
+			wg.Wait()
+			return
+		case sem <- struct{}{}:
 		}
-		sem <- struct{}{}
 		wg.Add(1)
 		go func(delivery store.DurableWebhookDelivery) {
 			defer wg.Done()
@@ -159,19 +187,54 @@ func (w *durableWebhookWorker) deliverClaims(ctx context.Context, claims []store
 }
 
 func (w *durableWebhookWorker) deliverOne(runCtx context.Context, claim store.DurableWebhookDelivery) {
-	ctx, cancel := context.WithTimeout(runCtx, 5*time.Second)
-	defer cancel()
-	target, eligible, err := w.store.GetDurableWebhookDeliveryTarget(ctx, claim.WebhookID, claim.AuthorizationGeneration)
+	if runCtx.Err() != nil {
+		w.release(claim)
+		return
+	}
+	authCtx, cancel := context.WithTimeout(runCtx, defaultDurableWebhookAuthorizationTimeout)
+	target, eligible, err := w.store.GetDurableWebhookDeliveryTarget(authCtx, claim.WebhookID, claim.AuthorizationGeneration)
+	cancel()
 	if err != nil {
-		w.retryOrFail(runCtx, claim, store.WebhookErrorInternal, nil)
+		if runCtx.Err() != nil {
+			w.release(claim)
+			return
+		}
+		w.retry(claim, store.WebhookErrorInternal, nil, claim.AttemptCount)
 		return
 	}
 	if !eligible {
-		updated, updateErr := w.store.SkipDurableWebhookDelivery(runCtx, claim.ID, claim.LeaseToken, store.WebhookErrorUnauthorized, w.now())
+		ctx, ackCancel := w.acknowledgementContext()
+		updated, updateErr := w.store.SkipDurableWebhookDelivery(ctx, claim.ID, claim.LeaseToken, store.WebhookErrorUnauthorized, w.now())
+		ackCancel()
 		w.transitionLog(updated, updateErr, claim, "skip")
 		return
 	}
-	err = sendWebhook(w.client, webhookDelivery{
+	if runCtx.Err() != nil {
+		w.release(claim)
+		return
+	}
+	reserveCtx, reserveCancel := context.WithTimeout(runCtx, defaultDurableWebhookAcknowledgeTimeout)
+	reservation, err := w.store.ReserveDurableWebhookAttempt(reserveCtx, claim.ID, claim.LeaseToken, w.now())
+	reserveCancel()
+	if err != nil {
+		if runCtx.Err() != nil {
+			w.release(claim)
+			return
+		}
+		w.retry(claim, store.WebhookErrorInternal, nil, claim.AttemptCount)
+		return
+	}
+	if reservation.Status != store.DurableWebhookAttemptReserved {
+		if reservation.Status == store.DurableWebhookAttemptStale {
+			w.transitionLog(false, nil, claim, "reserve")
+		}
+		return
+	}
+	if runCtx.Err() != nil {
+		w.retry(claim, store.WebhookErrorInternal, nil, reservation.HTTPAttemptCount)
+		return
+	}
+	err = sendWebhookContext(runCtx, w.client, webhookDelivery{
 		WebhookID: claim.WebhookID,
 		URL:       target.URL,
 		Secret:    target.Secret,
@@ -181,28 +244,41 @@ func (w *durableWebhookWorker) deliverOne(runCtx context.Context, claim store.Du
 		Body:      claim.Body,
 	})
 	if err == nil {
-		updated, updateErr := w.store.CompleteDurableWebhookDelivery(runCtx, claim.ID, claim.LeaseToken, w.now())
+		ctx, ackCancel := w.acknowledgementContext()
+		updated, updateErr := w.store.CompleteDurableWebhookDelivery(ctx, claim.ID, claim.LeaseToken, w.now())
+		ackCancel()
 		w.transitionLog(updated, updateErr, claim, "complete")
 		return
 	}
 	class, httpStatus, permanent := classifyDurableWebhookError(err)
 	if permanent {
-		updated, updateErr := w.store.FailDurableWebhookDelivery(runCtx, claim.ID, claim.LeaseToken, class, httpStatus, w.now())
+		ctx, ackCancel := w.acknowledgementContext()
+		updated, updateErr := w.store.FailDurableWebhookDelivery(ctx, claim.ID, claim.LeaseToken, class, httpStatus, w.now())
+		ackCancel()
 		w.transitionLog(updated, updateErr, claim, "fail")
 		return
 	}
-	w.retryOrFail(runCtx, claim, class, httpStatus)
+	w.retry(claim, class, httpStatus, reservation.HTTPAttemptCount)
 }
 
-func (w *durableWebhookWorker) retryOrFail(ctx context.Context, claim store.DurableWebhookDelivery, class string, httpStatus *int) {
-	if claim.AttemptCount >= w.maxAttempts {
-		updated, err := w.store.FailDurableWebhookDelivery(ctx, claim.ID, claim.LeaseToken, store.WebhookErrorAttemptsExhausted, httpStatus, w.now())
-		w.transitionLog(updated, err, claim, "exhaust")
-		return
-	}
-	next := w.now().Add(durableWebhookBackoff(claim.AttemptCount))
-	updated, err := w.store.RetryDurableWebhookDelivery(ctx, claim.ID, claim.LeaseToken, class, httpStatus, next)
+func (w *durableWebhookWorker) acknowledgementContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), defaultDurableWebhookAcknowledgeTimeout)
+}
+
+func (w *durableWebhookWorker) retry(claim store.DurableWebhookDelivery, class string, httpStatus *int, backoffAttempt int) {
+	now := w.now().UTC()
+	next := now.Add(durableWebhookBackoff(backoffAttempt))
+	ctx, cancel := w.acknowledgementContext()
+	updated, err := w.store.RetryDurableWebhookDelivery(ctx, claim.ID, claim.LeaseToken, class, httpStatus, next, now)
+	cancel()
 	w.transitionLog(updated, err, claim, "retry")
+}
+
+func (w *durableWebhookWorker) release(claim store.DurableWebhookDelivery) {
+	ctx, cancel := w.acknowledgementContext()
+	updated, err := w.store.ReleaseDurableWebhookDelivery(ctx, claim.ID, claim.LeaseToken, w.now())
+	cancel()
+	w.transitionLog(updated, err, claim, "release")
 }
 
 func (w *durableWebhookWorker) transitionLog(updated bool, err error, claim store.DurableWebhookDelivery, action string) {
@@ -243,12 +319,16 @@ func classifyDurableWebhookError(err error) (string, *int, bool) {
 	if errors.As(err, &httpErr) {
 		status := httpErr.StatusCode
 		switch {
-		case status >= 400 && status < 500:
+		case status >= 300 && status < 400:
+			return store.WebhookErrorHTTP3xx, &status, true
+		case status == http.StatusRequestTimeout || status == http.StatusTooManyRequests:
 			return store.WebhookErrorHTTP4xx, &status, false
-		case status >= 500:
+		case status >= 400 && status < 500:
+			return store.WebhookErrorHTTP4xx, &status, true
+		case status >= 500 && status < 600:
 			return store.WebhookErrorHTTP5xx, &status, false
 		default:
-			return store.WebhookErrorHTTPOther, &status, false
+			return store.WebhookErrorHTTPOther, &status, true
 		}
 	}
 	return store.WebhookErrorNetwork, nil, false

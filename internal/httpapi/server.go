@@ -228,6 +228,7 @@ type Server struct {
 	fanout                  *eventbus.Fanout
 	webhookQueue            *webhookQueue
 	webhookWorker           *webhookWorker
+	webhookDispatcher       *webhookDispatcher
 	webhookCancel           context.CancelFunc
 	webhookDone             <-chan struct{} // closed once the webhook worker's shutdown flush completes
 	durableWebhookWorker    *durableWebhookWorker
@@ -514,10 +515,13 @@ type storeAPI interface {
 	AdmitDurableWebhookDelivery(ctx context.Context, in store.AdmitDurableWebhookDeliveryInput) (string, error)
 	ClaimDueDurableWebhookDeliveries(ctx context.Context, now time.Time, limit int, leaseDuration time.Duration) ([]store.DurableWebhookDelivery, error)
 	GetDurableWebhookDeliveryTarget(ctx context.Context, webhookID, authorizationGeneration int64) (store.WebhookDeliveryTarget, bool, error)
+	ReserveDurableWebhookAttempt(ctx context.Context, id int64, leaseToken string, now time.Time) (store.DurableWebhookAttemptReservation, error)
 	CompleteDurableWebhookDelivery(ctx context.Context, id int64, leaseToken string, completedAt time.Time) (bool, error)
-	RetryDurableWebhookDelivery(ctx context.Context, id int64, leaseToken, class string, httpStatus *int, nextAttemptAt time.Time) (bool, error)
+	RetryDurableWebhookDelivery(ctx context.Context, id int64, leaseToken, class string, httpStatus *int, nextAttemptAt, updatedAt time.Time) (bool, error)
+	ReleaseDurableWebhookDelivery(ctx context.Context, id int64, leaseToken string, now time.Time) (bool, error)
 	FailDurableWebhookDelivery(ctx context.Context, id int64, leaseToken, class string, httpStatus *int, completedAt time.Time) (bool, error)
 	SkipDurableWebhookDelivery(ctx context.Context, id int64, leaseToken, class string, completedAt time.Time) (bool, error)
+	MaintainDurableWebhookDeliveries(ctx context.Context, now time.Time, batch int) (store.DurableWebhookMaintenance, error)
 
 	UpsertPushSubscription(ctx context.Context, userID int64, endpoint, p256dh, auth string, userAgent *string) error
 	DeletePushSubscription(ctx context.Context, userID int64, endpoint string) error
@@ -759,6 +763,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		fanout:                         fanout,
 		webhookQueue:                   whQueue,
 		webhookWorker:                  whWorker,
+		webhookDispatcher:              whDispatcher,
 		webhookCancel:                  workerCancel,
 		webhookDone:                    webhookDone,
 		durableWebhookWorker:           durableWorker,
@@ -1223,6 +1228,9 @@ func (s *Server) Close(ctx context.Context) {
 		case <-ctx.Done():
 			s.logger.Printf("shutdown: due reminder scheduler did not finish before deadline")
 		}
+	}
+	if s.webhookDispatcher != nil && !s.webhookDispatcher.Close(ctx) {
+		s.logger.Printf("shutdown: durable webhook admissions did not finish before deadline")
 	}
 	if s.webhookQueue != nil {
 		s.webhookQueue.Seal()
