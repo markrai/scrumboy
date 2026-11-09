@@ -8,7 +8,7 @@ Webhooks are **not**:
 - Background **Web Push** (VAPID / PWA)
 - Live board updates — those continue over **SSE** as usual
 
-When an event fires, Scrumboy delivers a JSON body asynchronously. Delivery is best-effort inside the Scrumboy process; it is not a durable external message queue.
+When an event fires, Scrumboy delivers a JSON body asynchronously. Subscriptions remain best-effort by default. A subscription explicitly created with `deliveryMode: "durable"` can durably retry `todo.created` through the main SQLite database; no other event type is durable in this first slice.
 
 ---
 
@@ -44,12 +44,13 @@ Delivery authorization is continuous, not a one-time grant at creation. A human-
 | `url` | Yes | Absolute `http` or `https` URL with a host |
 | `events` | Yes | 1–50 non-empty event type strings (each ≤ 100 characters) |
 | `secret` | No | Shared secret for HMAC signing (omitted from list/create **response** JSON) |
+| `deliveryMode` | No | `best_effort` (default) or `durable`. Durable currently requires every subscribed event to be exactly `todo.created`; `*` and all other types are rejected. |
 
 Limits enforced by the server include a maximum of **20** webhooks per project.
 
 Authorization, the project limit, insertion, and registration provenance are checked on the same transaction. The registrar is stored separately from the owner; deleting a distinct registrar clears that provenance reference without deleting the subscription.
 
-Create responses return `id`, `projectId`, `url`, `events`, and `createdAt` — never the secret.
+Create responses return `id`, `projectId`, `url`, `events`, `deliveryMode`, and `createdAt` — never the secret. Existing subscriptions and requests that omit `deliveryMode` are `best_effort`.
 
 ### MCP management
 
@@ -57,7 +58,7 @@ The exact MCP tool names are `webhooks_create`, `webhooks_list`, and `webhooks_d
 
 | Tool | Inputs | Authorization and output |
 | --- | --- | --- |
-| `webhooks_create` | `projectSlug`, `url`, `events`, optional write-only `secret`, optional `serviceAccountUserId` | Current project Maintainer. Omitting the owner makes the authenticated actor the owner. An explicit owner must be a genuine service account with an explicit Viewer-or-higher membership on the same project. Returns `webhook` metadata without the secret. |
+| `webhooks_create` | `projectSlug`, `url`, `events`, optional write-only `secret`, optional `serviceAccountUserId`, optional `deliveryMode` | Current project Maintainer. Omitting the owner makes the authenticated actor the owner. An explicit owner must be a genuine service account with an explicit Viewer-or-higher membership on the same project. Omitting the mode preserves best-effort behavior. Returns `webhook` metadata without the secret. |
 | `webhooks_list` | `projectSlug`, optional `limit` (default 20, max 100), optional `cursor` | Project Maintainers receive the project management view; other subscription owners receive only their own subscriptions, including after membership removal. Owners receive their complete URL. Cross-owner rows omit `url` and instead contain a host-level `destinationPreview` plus `destinationRedacted: true`; arbitrary userinfo, path, query, and fragment values are not disclosed. Returns owner classification, nullable registrar provenance, events, and creation time without the signing secret. |
 | `webhooks_delete` | `projectSlug`, `webhookId` | The owner, or a current project Maintainer when the owner is a service account. This delegated permission is MCP-only; REST deletion remains owner-only. Repeated deletion returns `NOT_FOUND`. Returns only deletion status and identifiers. |
 
@@ -84,7 +85,7 @@ curl -b cookies.txt -X POST http://localhost:8080/api/webhooks \
 
 ## Event subscriptions
 
-Subscribe to **specific** event type strings (for example `todo.assigned`), or use `*` to match **all** event types that Scrumboy delivers as webhooks.
+Best-effort subscriptions may subscribe to **specific** event type strings (for example `todo.assigned`), or use `*` to match **all** event types that Scrumboy delivers as webhooks. Durable subscriptions are currently restricted to `todo.created` and reject `*` or any other type at registration.
 
 Matching is exact string equality, or `*`:
 
@@ -113,7 +114,7 @@ Common payload fields: `projectId`, `projectSlug`, `todoId`, `localId`, `title`,
 
 - **Stable ids:** integer user ids are kept for compatibility, but SQLite can reuse them after a user is deleted. Key any external account link on `actorStableUserId` / `assigneeStableUserId` (the same value as `stableUserId` from the MCP `me_get` tool).
 - **No duplicates:** a no-op update or same-column reorder emits nothing, and an assignee-only change is delivered as `todo.assigned` only (not also as `todo.updated`). Creating a todo that already has an assignee emits both `todo.created` and `todo.assigned`.
-- **Not guaranteed:** delivery stays best-effort (in-memory queue); see [Delivery and retry behavior](#delivery-and-retry-behavior).
+- **Default:** delivery stays best-effort (in-memory queue). Only an explicitly durable `todo.created` subscription uses SQLite recovery; see [Delivery and retry behavior](#delivery-and-retry-behavior).
 - Internal events such as `board.refresh_needed` are still never delivered.
 - **`todo.due_soon`** is emitted by a background scheduler, not by a mutation: once per due date, when a todo's `dueAt` falls within the configured lead time (default 24 hours; `GET/PUT/DELETE /api/admin/settings/due-reminder`, `0` disables). Changing `dueAt` starts a new cycle. Todos in a done column, archived todos, temporary boards, and todos whose due date had already passed when first seen never emit it. Delivery is at most once per due date; a reminder missed during downtime is not replayed. Changing only `dueAt` also reports `due` in `todo.updated`'s `changedFields`.
 
@@ -191,6 +192,8 @@ These controls reduce SSRF risk from webhook URLs. They also mean **LAN-only or 
 
 ## Delivery and retry behavior
 
+### Default best-effort mode
+
 Delivery is **asynchronous** and **best-effort**:
 
 1. After an event is published, a dispatcher matches project subscriptions and enqueues work (without blocking SSE).
@@ -199,11 +202,52 @@ Delivery is **asynchronous** and **best-effort**:
 4. **Success** is any HTTP status in **2xx**.
 5. **Retries:** up to **three** attempts with fixed backoff (immediate, then ~100ms, then ~400ms) for transient failures (network errors, non-2xx responses that are not classified permanent, and temporary authorization-lookup errors). Authorization is rechecked before every retry.
 6. **Permanent failures** (revoked/deleted subscriptions, forbidden destination / SSRF refusal, or redirect) are **not** retried beyond the failing attempt.
-7. The queue is **in-memory** (bounded capacity). On process shutdown the queue is sealed and drained against a deadline; some queued items may still be lost if the process exits. Scrumboy is **not** a durable external queue — design your receiver accordingly and use event `id` for idempotency.
+7. The best-effort queue is **in-memory** (bounded capacity). On process shutdown the queue is sealed and drained against a deadline; some queued items may still be lost if the process exits. Use event `id` for receiver-side idempotency.
 
 Because authorization is revalidated at send time, an event queued while a subscription was eligible is dropped if membership, account, or subscription state is revoked before the HTTP request begins. Scrumboy does not attempt to cancel a request that was already in flight when revocation occurred.
 
 For a delegated service subscription, removing the service owner makes the row inert; re-adding it resumes only future events. Deleting the service owner or project cascades the subscription away. Removing or deleting a distinct registrar leaves it in place, and revoking the service owner's API token does not affect signing-secret delivery. Missed events are not replayed.
+
+### Opt-in durable `todo.created` mode
+
+For `deliveryMode: "durable"`, the dispatcher uses the same event matching and authorization predicate, serializes the same canonical body, and inserts one `webhook_deliveries` row for each webhook/event pair. The event ID is the retry and deduplication identity while that row is retained. A persistence or capacity error is logged with safe identifiers and is never routed through the in-memory queue. There is no global durable-delivery environment flag.
+
+At the webhook consumer boundary, `todo.created` subscription IDs and authorization generations are read synchronously after the earlier SSE consumers have run. Body persistence remains asynchronous and bounded to 16 concurrent admission tasks; saturation is an explicit logged durability failure and does not block on an unbounded queue. Delayed admission uses only the captured generation and cannot refresh its authority after an owner is removed and re-added. Other event types, including `wall.transient`, retain asynchronous subscription matching and add no synchronous database dependency before later push or email consumers. A `todo.created` event still pays one bounded SQLite read even when the installation currently has only best-effort subscriptions: without a lifecycle-safe subscription registry, the dispatcher cannot know whether it must capture a durable generation until it reads the authoritative rows. Best-effort wildcard matching and its existing in-memory queue otherwise remain unchanged.
+
+`BenchmarkWebhookEventAdmission/best_effort` isolates that authoritative subscription read. On the Windows SQLite `WAL`/`FULL` verification host it measured 238,725 ns per event batch over 20 iterations, with zero database changes. This is a characterization of the remaining `todo.created` publication cost, not a performance guarantee.
+
+The durable worker:
+
+1. Claims at most four due rows in a short SQLite transaction using a lease token and a two-minute expiry, then commits before any network request. At most four claims are processed concurrently, so claimed work does not wait behind a larger batch.
+2. Re-reads the current destination and signing secret and rechecks current owner membership. It uses the same SSRF-safe client, redirect refusal, request headers, and HMAC over the exact stored body bytes as best-effort delivery.
+3. Reserves an HTTP-attempt slot transactionally immediately before the request. Claiming, authorization failures, shutdown before reservation, and database failures before reservation consume no HTTP-attempt slot. At most eight slots can be reserved across all workers and restarts. A crash after reservation but before a request may conservatively consume a slot.
+4. Marks 2xx complete. HTTP 408, 429, 5xx, and network/DNS timeouts are retryable. Other 4xx, every 3xx, redirect attempts, and SSRF-forbidden destinations are terminal. Current owner ineligibility is skipped without HTTP; temporary authorization lookup errors retry internally without HTTP. Stored diagnostics are only a bounded category and optional status code, never an error string, URL, secret, or payload body.
+5. Reclaims an abandoned lease after expiry. Every state update must match the lease token, so a stale worker cannot acknowledge or retry a newer claim. Acknowledgement uses its own bounded context, so cancellation of the worker run context alone does not discard the database update. A receiver may process an event before Scrumboy records the 2xx; repeated requests retain the exact event ID and body bytes, and receivers must deduplicate on the event ID.
+
+Durable storage is bounded at the authoritative store boundary:
+
+| Limit | Value |
+| --- | ---: |
+| Canonical body | 64 KiB |
+| Active rows per webhook | 500 |
+| Active rows globally | 10,000 |
+| Active payload bytes globally | 128 MiB |
+| Total retained rows | 50,000 |
+| Total retained payload bytes | 256 MiB |
+| Pending/leased lifetime | 24 hours |
+| Delivered history | 7 days after completion |
+| Failed/skipped history | 30 days after completion |
+| Cleanup batch | 200 terminalizations and 200 deletions per pass |
+
+`pending` and `leased` rows count as active. All states count toward retained totals. Admission checks counters and the webhook-scoped active index in the insertion transaction; concurrent admissions cannot pass the same final slot. When capacity is reached, expired active work is terminalized and expired terminal history is deleted in a bounded pass before the insert is retried. Scrumboy never evicts unexpired pending work to admit a newer event. If the limits still do not permit the row, the committed todo remains committed but durable admission fails explicitly.
+
+Cleanup is restart-safe and idempotent. It terminalizes work beyond its 24-hour deadline, but never touches a lease that has not expired, then deletes terminal rows past their retention deadline. Deletion ends Scrumboy's database deduplication horizon for that webhook/event pair. Logical payload and row counts are bounded; SQLite database and WAL files do not necessarily shrink when rows are deleted. Scrumboy does not run `VACUUM` in this path, and the existing database journal-size/checkpoint policy still governs physical WAL growth.
+
+Membership revocation advances an authorization generation on the subscription. Pending work captures the prior generation and is skipped permanently, including after the owner is re-added; only events captured under the new generation can be admitted and sent. Service Viewer/Contributor/Maintainer and human Maintainer/legacy Owner eligibility otherwise remains unchanged. Owner, webhook, and project deletion cascade pending work away. Registrar role changes and service-token revocation do not revoke an eligible delegated subscription. A request already dialing may still complete.
+
+Durability begins only when the `webhook_deliveries` insert commits. Todo creation commits its mutation before lifecycle publication. Board-activity work, and in some paths `todo.assigned` publication, can occur before `todo.created` publication. The event bus assigns the `todo.created` ID and timestamp, earlier SSE consumers run, and the webhook consumer synchronously captures its subscription/generation snapshot before bounded asynchronous insertion. A crash anywhere between the todo commit and the delivery-row commit can lose the webhook. This is a post-commit durable queue, not a mutation-atomic transactional outbox.
+
+An accepted row is processed at least once only in the qualified sense that it remains recoverable across process restart for no more than its active deadline and is subject to authorization, eight reserved attempts, and later cleanup. Successful external delivery is not guaranteed. Uncertain HTTP outcomes consume a reservation. Bodies can contain sensitive historical project data and remain in the main SQLite database and file-level backups until deletion under the retention policy.
 
 ---
 

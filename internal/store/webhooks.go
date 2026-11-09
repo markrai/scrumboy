@@ -17,6 +17,8 @@ import (
 const (
 	maxWebhooksPerProject        = 20
 	MaxWebhookManagementPageSize = 100
+	WebhookDeliveryBestEffort    = "best_effort"
+	WebhookDeliveryDurable       = "durable"
 )
 
 type Webhook struct {
@@ -34,6 +36,7 @@ type Webhook struct {
 	DestinationPreview       string    `json:"destinationPreview,omitempty"`
 	DestinationRedacted      bool      `json:"destinationRedacted,omitempty"`
 	Events                   []string  `json:"events"`
+	DeliveryMode             string    `json:"deliveryMode"`
 	CreatedAt                time.Time `json:"createdAt"`
 	// Secret is never returned in list/get responses.
 }
@@ -44,6 +47,7 @@ type CreateWebhookInput struct {
 	Events             []string
 	Secret             *string
 	ServiceOwnerUserID *int64
+	DeliveryMode       string
 }
 
 func (s *Store) CreateWebhook(ctx context.Context, actorUserID int64, in CreateWebhookInput) (Webhook, error) {
@@ -63,6 +67,20 @@ func (s *Store) CreateWebhook(ctx context.Context, actorUserID int64, in CreateW
 	for _, e := range in.Events {
 		if e == "" || len(e) > 100 {
 			return Webhook{}, fmt.Errorf("%w: invalid event type", ErrValidation)
+		}
+	}
+	deliveryMode := in.DeliveryMode
+	if deliveryMode == "" {
+		deliveryMode = WebhookDeliveryBestEffort
+	}
+	if deliveryMode != WebhookDeliveryBestEffort && deliveryMode != WebhookDeliveryDurable {
+		return Webhook{}, fmt.Errorf("%w: deliveryMode must be best_effort or durable", ErrValidation)
+	}
+	if deliveryMode == WebhookDeliveryDurable {
+		for _, eventType := range in.Events {
+			if eventType != TodoEventCreated {
+				return Webhook{}, fmt.Errorf("%w: durable delivery currently supports only todo.created", ErrValidation)
+			}
 		}
 	}
 
@@ -126,9 +144,9 @@ func (s *Store) CreateWebhook(ctx context.Context, actorUserID int64, in CreateW
 
 	nowMs := time.Now().UTC().UnixMilli()
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO webhooks(user_id, project_id, url, events_json, secret, created_at, registered_by_user_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, owner.ID, in.ProjectID, u.String(), string(eventsJSON), in.Secret, nowMs, actorUserID)
+		INSERT INTO webhooks(user_id, project_id, url, events_json, secret, created_at, registered_by_user_id, delivery_mode)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, owner.ID, in.ProjectID, u.String(), string(eventsJSON), in.Secret, nowMs, actorUserID, deliveryMode)
 	if err != nil {
 		return Webhook{}, fmt.Errorf("insert webhook: %w", err)
 	}
@@ -152,6 +170,7 @@ func (s *Store) CreateWebhook(ctx context.Context, actorUserID int64, in CreateW
 		RegisteredByUserName:     &registeredByName,
 		URL:                      u.String(),
 		Events:                   in.Events,
+		DeliveryMode:             deliveryMode,
 		CreatedAt:                time.UnixMilli(nowMs).UTC(),
 	}, nil
 }
@@ -200,7 +219,7 @@ func webhookProjectActorTx(ctx context.Context, tx *sql.Tx, projectID, actorUser
 
 func (s *Store) ListWebhooks(ctx context.Context, userID int64) ([]Webhook, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_id, project_id, url, events_json, created_at
+		SELECT id, user_id, project_id, url, events_json, delivery_mode, created_at
 		FROM webhooks
 		WHERE user_id = ?
 		ORDER BY created_at DESC
@@ -215,7 +234,7 @@ func (s *Store) ListWebhooks(ctx context.Context, userID int64) ([]Webhook, erro
 		var w Webhook
 		var eventsJSON string
 		var createdMs int64
-		if err := rows.Scan(&w.ID, &w.UserID, &w.ProjectID, &w.URL, &eventsJSON, &createdMs); err != nil {
+		if err := rows.Scan(&w.ID, &w.UserID, &w.ProjectID, &w.URL, &eventsJSON, &w.DeliveryMode, &createdMs); err != nil {
 			return nil, fmt.Errorf("scan webhook: %w", err)
 		}
 		_ = json.Unmarshal([]byte(eventsJSON), &w.Events)
@@ -269,7 +288,7 @@ func (s *Store) ListProjectWebhooks(ctx context.Context, actorUserID, projectID 
 	query := `
 		SELECT w.id, w.user_id, owner.public_id, owner.name, owner.is_service <> 0,
 		       w.project_id, p.slug, w.registered_by_user_id,
-		       registrar.public_id, registrar.name, w.url, w.events_json, w.created_at
+		       registrar.public_id, registrar.name, w.url, w.events_json, w.delivery_mode, w.created_at
 		FROM webhooks w
 		JOIN users owner ON owner.id = w.user_id
 		JOIN projects p ON p.id = w.project_id
@@ -297,7 +316,7 @@ func (s *Store) ListProjectWebhooks(ctx context.Context, actorUserID, projectID 
 		if err := rows.Scan(
 			&item.ID, &item.UserID, &item.OwnerPublicID, &item.OwnerName, &item.OwnerIsService,
 			&item.ProjectID, &item.ProjectSlug, &registeredByID,
-			&registeredByPublicID, &registeredByName, &item.URL, &eventsJSON, &createdAtMs,
+			&registeredByPublicID, &registeredByName, &item.URL, &eventsJSON, &item.DeliveryMode, &createdAtMs,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan project webhook: %w", err)
 		}
@@ -346,7 +365,7 @@ func (s *Store) ListProjectWebhooks(ctx context.Context, actorUserID, projectID 
 // Maintainer or whose service owner is a current explicit project member.
 func (s *Store) ListWebhooksByProject(ctx context.Context, projectID int64) ([]WebhookRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT w.id, w.url, w.events_json, w.secret
+		SELECT w.id, w.url, w.events_json, w.secret, w.delivery_mode, w.authorization_generation
 		FROM webhooks w
 		JOIN users u ON u.id = w.user_id
 		JOIN projects p ON p.id = w.project_id
@@ -365,7 +384,7 @@ func (s *Store) ListWebhooksByProject(ctx context.Context, projectID int64) ([]W
 	for rows.Next() {
 		var w WebhookRow
 		var eventsJSON string
-		if err := rows.Scan(&w.ID, &w.URL, &eventsJSON, &w.Secret); err != nil {
+		if err := rows.Scan(&w.ID, &w.URL, &eventsJSON, &w.Secret, &w.DeliveryMode, &w.AuthorizationGeneration); err != nil {
 			return nil, fmt.Errorf("scan webhook row: %w", err)
 		}
 		_ = json.Unmarshal([]byte(eventsJSON), &w.Events)
@@ -375,10 +394,12 @@ func (s *Store) ListWebhooksByProject(ctx context.Context, projectID int64) ([]W
 }
 
 type WebhookRow struct {
-	ID     int64
-	URL    string
-	Events []string
-	Secret *string
+	ID                      int64
+	URL                     string
+	Events                  []string
+	Secret                  *string
+	DeliveryMode            string
+	AuthorizationGeneration int64
 }
 
 // WebhookDeliveryTarget is the authoritative destination and signing material

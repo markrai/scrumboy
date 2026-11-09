@@ -16,5 +16,5 @@ type webhookDelivery struct {
 }
 
 func (d webhookDelivery) logRef() string {
-	return fmt.Sprintf("webhook_id=%d event=%s url=%s", d.WebhookID, d.EventID, d.URL)
+	return fmt.Sprintf("webhook_id=%d event=%s", d.WebhookID, d.EventID)
 }

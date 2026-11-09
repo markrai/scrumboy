@@ -2,6 +2,57 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.40.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.40.7] - 2026-11-09
+
+### Added
+
+- **Opt-in durable webhook delivery for `todo.created`** -
+  Subscriptions created with `deliveryMode: "durable"` (REST
+  `POST /api/webhooks` or MCP `webhooks_create`) now persist one
+  `webhook_deliveries` row per webhook/event pair in the main SQLite
+  database (migrations 085-086) and retry through a durable worker
+  instead of the in-memory best-effort queue; no global flag is
+  required. Durable subscriptions must subscribe to exactly
+  `todo.created` (`*` and all other event types are rejected at
+  registration); omitted mode and existing subscriptions remain
+  `best_effort`, and all other event types remain best-effort only.
+  The worker claims at most four due rows under a two-minute lease,
+  re-reads the destination/secret and rechecks eligibility before
+  every send, reserves at most eight HTTP-attempt slots per row, and
+  classifies 408/429/5xx and network/DNS timeouts as retryable and
+  other 4xx, every 3xx/redirect, and SSRF-forbidden destinations as
+  terminal; receivers must deduplicate on the retained event `id`.
+  Storage is bounded (64 KiB canonical body, 500 active rows per
+  webhook, 10,000 active / 50,000 retained rows globally, 128 MiB
+  active / 256 MiB retained payload, 24-hour pending/leased lifetime,
+  7-day delivered and 30-day failed/skipped retention with bounded,
+  restart-safe cleanup and no `VACUUM`). Durability begins only when
+  the delivery-row insert commits after the todo mutation commits, so
+  this is a post-commit durable queue, not a mutation-atomic outbox.
+  See `docs/webhooks.md`.
+
+### Security
+
+- **Authorization fencing for durable deliveries** - Each subscription
+  carries an `authorization_generation` (migration 085) advanced when
+  the owner's delivery-eligible project membership is removed or
+  downgraded. Pending rows capture the generation at admission and are
+  skipped permanently under a stale generation, including after the
+  owner is re-added; only events captured under the new generation
+  can be sent. Owner, webhook, and project deletion cascade pending
+  work away, and stored diagnostics are limited to a bounded error
+  category and optional HTTP status, never the URL, secret, or body.
+
+### Fixed
+
+- **Asynchronous durable fanout** - `todo.created` subscription IDs
+  and authorization generations are captured synchronously after the
+  SSE consumers run, while body persistence stays asynchronous and
+  bounded to 16 concurrent admission tasks; saturation is an explicit
+  logged durability failure rather than an unbounded queue or a
+  fallback to the in-memory queue, and other event types retain
+  asynchronous matching with no synchronous database dependency.
+
 ## [3.40.6] - 2026-11-08
 
 ### Added

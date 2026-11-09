@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"scrumboy/internal/abusepolicy"
 	assetapp "scrumboy/internal/application/asset"
 	backupimportapp "scrumboy/internal/application/backupimport"
-	"scrumboy/internal/abusepolicy"
 	boardapp "scrumboy/internal/application/board"
 	calendarapp "scrumboy/internal/application/calendar"
 	customfieldapp "scrumboy/internal/application/customfield"
@@ -228,8 +228,12 @@ type Server struct {
 	fanout                  *eventbus.Fanout
 	webhookQueue            *webhookQueue
 	webhookWorker           *webhookWorker
+	webhookDispatcher       *webhookDispatcher
 	webhookCancel           context.CancelFunc
 	webhookDone             <-chan struct{} // closed once the webhook worker's shutdown flush completes
+	durableWebhookWorker    *durableWebhookWorker
+	durableWebhookCancel    context.CancelFunc
+	durableWebhookDone      <-chan struct{}
 	transactionalMailQueue  *mailQueue
 	transactionalMailWorker *mailWorker
 	transactionalMailCancel context.CancelFunc
@@ -508,6 +512,16 @@ type storeAPI interface {
 	DeleteWebhook(ctx context.Context, userID, webhookID int64) error
 	ListWebhooksByProject(ctx context.Context, projectID int64) ([]store.WebhookRow, error)
 	GetWebhookDeliveryTarget(ctx context.Context, webhookID int64) (store.WebhookDeliveryTarget, bool, error)
+	AdmitDurableWebhookDelivery(ctx context.Context, in store.AdmitDurableWebhookDeliveryInput) (string, error)
+	ClaimDueDurableWebhookDeliveries(ctx context.Context, now time.Time, limit int, leaseDuration time.Duration) ([]store.DurableWebhookDelivery, error)
+	GetDurableWebhookDeliveryTarget(ctx context.Context, webhookID, authorizationGeneration int64) (store.WebhookDeliveryTarget, bool, error)
+	ReserveDurableWebhookAttempt(ctx context.Context, id int64, leaseToken string, now time.Time) (store.DurableWebhookAttemptReservation, error)
+	CompleteDurableWebhookDelivery(ctx context.Context, id int64, leaseToken string, completedAt time.Time) (bool, error)
+	RetryDurableWebhookDelivery(ctx context.Context, id int64, leaseToken, class string, httpStatus *int, nextAttemptAt, updatedAt time.Time) (bool, error)
+	ReleaseDurableWebhookDelivery(ctx context.Context, id int64, leaseToken string, now time.Time) (bool, error)
+	FailDurableWebhookDelivery(ctx context.Context, id int64, leaseToken, class string, httpStatus *int, completedAt time.Time) (bool, error)
+	SkipDurableWebhookDelivery(ctx context.Context, id int64, leaseToken, class string, completedAt time.Time) (bool, error)
+	MaintainDurableWebhookDeliveries(ctx context.Context, now time.Time, batch int) (store.DurableWebhookMaintenance, error)
 
 	UpsertPushSubscription(ctx context.Context, userID int64, endpoint, p256dh, auth string, userAgent *string) error
 	DeletePushSubscription(ctx context.Context, userID int64, endpoint string) error
@@ -635,7 +649,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 	sseBridgeConsumer := newSSEBridge(hub, creatorNotificationAuthorizer)
 	publicSSEBridgeConsumer := newPublicSSEBridge(publicHub)
 	whQueue := newWebhookQueue(logger)
-	whDispatcher := newWebhookDispatcher(st, whQueue, logger)
+	durableSchedule := newPollingDurableWebhookSchedule(defaultDurableWebhookPollInterval)
+	whDispatcher := newWebhookDispatcherWithDurableNotifier(st, whQueue, durableSchedule, logger)
 	pushDebug := opts.PushDebug
 	preparedPush := prepareWebPushConfiguration(mode, opts.VAPIDPublicKey, opts.VAPIDPrivateKey, opts.VAPIDSubscriber)
 	pushVapidConfigured := preparedPush.status.State == pushStateEnabled
@@ -655,6 +670,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	webhookDone := whWorker.Done()
 	go whWorker.Run(workerCtx)
+	durableWorker := newDurableWebhookWorker(st, logger, durableSchedule)
+	durableWorkerCtx, durableWorkerCancel := context.WithCancel(context.Background())
+	durableWebhookDone := durableWorker.Done()
+	go durableWorker.Run(durableWorkerCtx)
 	passwordResetAdminLimiter := ratelimit.New(10, time.Minute)
 	passwordResetRequestLimiter := ratelimit.New(5, time.Minute)
 	firstPasswordStartLimiter := ratelimit.New(5, time.Minute)
@@ -744,8 +763,12 @@ func NewServer(st storeAPI, opts Options) *Server {
 		fanout:                         fanout,
 		webhookQueue:                   whQueue,
 		webhookWorker:                  whWorker,
+		webhookDispatcher:              whDispatcher,
 		webhookCancel:                  workerCancel,
 		webhookDone:                    webhookDone,
+		durableWebhookWorker:           durableWorker,
+		durableWebhookCancel:           durableWorkerCancel,
+		durableWebhookDone:             durableWebhookDone,
 		transactionalMailQueue:         transactionalMailQueue,
 		transactionalMailWorker:        transactionalMailWorker,
 		transactionalMailCancel:        transactionalMailCancel,
@@ -1206,6 +1229,9 @@ func (s *Server) Close(ctx context.Context) {
 			s.logger.Printf("shutdown: due reminder scheduler did not finish before deadline")
 		}
 	}
+	if s.webhookDispatcher != nil && !s.webhookDispatcher.Close(ctx) {
+		s.logger.Printf("shutdown: durable webhook admissions did not finish before deadline")
+	}
 	if s.webhookQueue != nil {
 		s.webhookQueue.Seal()
 	}
@@ -1227,6 +1253,9 @@ func (s *Server) Close(ctx context.Context) {
 	if s.webhookCancel != nil {
 		s.webhookCancel()
 	}
+	if s.durableWebhookCancel != nil {
+		s.durableWebhookCancel()
+	}
 	if s.transactionalMailCancel != nil {
 		s.transactionalMailCancel()
 	}
@@ -1239,6 +1268,7 @@ func (s *Server) Close(ctx context.Context) {
 		done <-chan struct{}
 	}{
 		{"webhook", s.webhookDone},
+		{"durable webhook", s.durableWebhookDone},
 		{"transactional mail", s.transactionalMailDone},
 		{"notification mail", s.notificationMailDone},
 	} {

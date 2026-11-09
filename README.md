@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.40.6-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.40.7-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -109,7 +109,7 @@ Scrumboy includes a native Android client, implemented with Capacitor, under `mo
 - **Custom Workflows:** Shape each project's workflow with customizable columns, colors, and a dedicated Done lane.
 - Custom Priority Tiers: each project has ordered, color-coded priority definitions with stable keys; maintainers configure tiers and assign them to todos.
 - **Realtime Collaboration:** Keep project boards synchronized as teammates create, update, and move stories.
-- **Outbound Webhooks & Integrations:** In Full Mode, project webhook URLs registered through the API receive JSON events for story lifecycle changes, assignment, and due-soon reminders, for use in external automation. Delivery is asynchronous and best-effort. See [Integrations](#integrations--api-access).
+- **Outbound Webhooks & Integrations:** In Full Mode, project webhook URLs registered through the API receive JSON events for story lifecycle changes, assignment, and due-soon reminders. Delivery defaults to asynchronous best-effort; `todo.created` subscriptions can opt into bounded SQLite-backed recovery. See [Integrations](#integrations--api-access).
 - **AI Agent Integration:** Connect Claude, Cursor, and other MCP-compatible clients to manage projects and stories through Scrumboy's tools.
 - Customizable Tags: Users can inherit and customize tag colors.
 - **Advanced Filtering:** Find stories with instant search, tag suggestions, and searchable sprint filters. Combine filters and keep selections visible as removable pills.
@@ -206,7 +206,7 @@ Scrumboy supports native MCP clients such as Cursor and Claude Code over **HTTP*
 
 ### Webhooks (outbound HTTP)
 
-Scrumboy can POST JSON event payloads to URLs you register for **server-side integrations** (your script, gateway, queue worker, and similar). Webhooks are available in **Full mode**; project **maintainers** configure them through the HTTP API. They are separate from in-app notifications, browser/Web Push notifications, and realtime board updates via SSE. Full operator and integration details are in [docs/webhooks.md](docs/webhooks.md).
+Scrumboy can POST JSON event payloads to URLs you register for **server-side integrations** (your script, gateway, queue worker, and similar). Webhooks are available in **Full mode**; project **maintainers** configure them through the HTTP API or MCP. Best-effort remains the default, while `todo.created` can opt into bounded SQLite-backed durable delivery. Webhooks are separate from in-app notifications, browser/Web Push notifications, and realtime board updates via SSE. Full operator and integration details are in [docs/webhooks.md](docs/webhooks.md).
 
 # Export scope
 
