@@ -24,12 +24,25 @@ export function setWallCanvasMode(mode) {
     saveWallCanvasMode(wallCanvasMode);
 }
 export function toggleWallCanvasMode() {
-    wallCanvasMode = wallCanvasMode === "select" ? "pan" : "select";
+    wallCanvasMode = wallCanvasMode === "pan" ? "select" : wallCanvasMode === "select" ? "pan" : "select";
     saveWallCanvasMode(wallCanvasMode);
     return wallCanvasMode;
 }
 export function isWallPanMode() {
     return wallCanvasMode === "pan";
+}
+let modeBeforeDraw = "select";
+export function enterWallDrawMode() {
+    if (wallCanvasMode !== "draw")
+        modeBeforeDraw = wallCanvasMode;
+    wallCanvasMode = "draw";
+}
+export function exitWallDrawMode() {
+    if (wallCanvasMode === "draw")
+        wallCanvasMode = modeBeforeDraw;
+}
+export function isWallDrawMode() {
+    return wallCanvasMode === "draw";
 }
 /** Load the persisted global preference into memory and return it. */
 export function loadWallCanvasMode() {

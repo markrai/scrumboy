@@ -58,6 +58,7 @@ type Wall struct {
 	Notes     []WallNote           `json:"notes"`
 	Edges     []WallEdge           `json:"edges"`
 	Stories   []WallStoryPlacement `json:"stories"`
+	Drawings  []WallDrawingStroke  `json:"drawings"`
 	Version   int64                `json:"version"`
 	UpdatedAt int64                `json:"updatedAt"`
 }
@@ -152,17 +153,17 @@ func (s *Store) GetWall(ctx context.Context, projectID int64) (Wall, error) {
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx,
-		`SELECT notes, edges, version, updated_at FROM project_walls WHERE project_id = ?`,
+		`SELECT notes, edges, drawings, version, updated_at FROM project_walls WHERE project_id = ?`,
 		projectID)
-	var notesJSON, edgesJSON string
+	var notesJSON, edgesJSON, drawingsJSON string
 	var version, updatedAt int64
-	if err := row.Scan(&notesJSON, &edgesJSON, &version, &updatedAt); err != nil {
+	if err := row.Scan(&notesJSON, &edgesJSON, &drawingsJSON, &version, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// Preserve historical behavior: a missing project_walls row yields the
 			// synthetic empty Wall immediately, without consulting placements.
 			// Placements FK projects, not project_walls, so orphans are possible,
 			// but GetWall has never surfaced them when the JSON row is absent.
-			return Wall{Notes: []WallNote{}, Edges: []WallEdge{}, Stories: []WallStoryPlacement{}, Version: 0, UpdatedAt: 0}, nil
+			return Wall{Notes: []WallNote{}, Edges: []WallEdge{}, Stories: []WallStoryPlacement{}, Drawings: []WallDrawingStroke{}, Version: 0, UpdatedAt: 0}, nil
 		}
 		return Wall{}, fmt.Errorf("get wall: %w", err)
 	}
@@ -188,7 +189,11 @@ func (s *Store) GetWall(ctx context.Context, projectID int64) (Wall, error) {
 	if err != nil {
 		return Wall{}, err
 	}
-	return Wall{Notes: notes, Edges: edges, Stories: stories, Version: version, UpdatedAt: updatedAt}, nil
+	drawings, err := decodeWallDrawings(drawingsJSON)
+	if err != nil {
+		return Wall{}, err
+	}
+	return Wall{Notes: notes, Edges: edges, Stories: stories, Drawings: drawings, Version: version, UpdatedAt: updatedAt}, nil
 }
 
 func listWallStoryPlacementsTx(ctx context.Context, tx *sql.Tx, projectID int64) ([]WallStoryPlacement, error) {
@@ -948,6 +953,24 @@ WHERE p.project_id = ?`, projectID)
 		version = 1
 	}
 	nowMs := time.Now().UTC().UnixMilli()
+	if payload.DrawingsPresent || len(payload.Drawings) > 0 {
+		strokes, err := ValidateWallDrawingsForImport(payload.Drawings)
+		if err != nil {
+			return err
+		}
+		drawingsJSON, err := json.Marshal(strokes)
+		if err != nil {
+			return fmt.Errorf("encode wall drawings for import: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO project_walls (project_id, notes, edges, drawings, version, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (project_id) DO UPDATE SET notes = excluded.notes, edges = excluded.edges, drawings = excluded.drawings, version = excluded.version, updated_at = excluded.updated_at
+`, projectID, string(notesJSON), string(edgesJSON), string(drawingsJSON), version, nowMs); err != nil {
+			return fmt.Errorf("upsert wall for import: %w", err)
+		}
+		return nil
+	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO project_walls (project_id, notes, edges, version, updated_at)
 VALUES (?, ?, ?, ?, ?)

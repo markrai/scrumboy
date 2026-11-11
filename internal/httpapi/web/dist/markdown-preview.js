@@ -1,7 +1,9 @@
 import { buildMermaidSemanticLabelColors, loadMermaidSemanticEdgeConfig, paintMermaidSemanticLabelBackgrounds, } from "./mermaid-semantic-edges.js";
 import { hasI18nKey, t } from "./i18n/index.js";
 import { getAppRuntime } from "./platform/runtime.js";
-import { CANONICAL_ASSET_PATH_RE, MAX_NOTE_IMAGES, parseImageAlt } from "./note-images.js";
+import { CANONICAL_ASSET_PATH_RE, MAX_NOTE_IMAGES, parseDrawingPath, parseImageAlt } from "./note-images.js";
+import { attachImageOverlay, createStandaloneSvg, detachImageOverlay, renderDocumentIntoSvg } from "./drawing/drawing-overlay.js";
+import { STANDALONE_DEFAULT_HEIGHT, STANDALONE_DEFAULT_WIDTH } from "./drawing/drawing-types.js";
 import { escapeHTML } from "./utils.js";
 const SAFE_TAGS = [
     "a",
@@ -125,7 +127,7 @@ function getMermaidWarningMessage(blockIndex, displaySource, renderSource, total
     }
     return undefined;
 }
-function renderMarkdownHtml(markdown, mermaidEnabled, inlineImagesEnabled = false) {
+function renderMarkdownHtml(markdown, mermaidEnabled, inlineImagesEnabled = false, drawingsEnabled = false) {
     const renderer = getMarkdownRenderer();
     const images = [];
     if (!mermaidEnabled && !inlineImagesEnabled) {
@@ -143,17 +145,23 @@ function renderMarkdownHtml(markdown, mermaidEnabled, inlineImagesEnabled = fals
         renderer.renderer.rules.image = (tokens, idx) => {
             const token = tokens[idx];
             const src = token?.attrGet?.("src") ?? "";
-            if (!CANONICAL_ASSET_SRC_RE.test(src) || images.length >= MAX_IMAGES_PER_PREVIEW) {
+            const standalone = drawingsEnabled ? parseDrawingPath(src) : null;
+            if ((!CANONICAL_ASSET_SRC_RE.test(src) && !standalone) || images.length >= MAX_IMAGES_PER_PREVIEW) {
+                return renderImageTokenAsText(token);
+            }
+            const { alt, width, drawingId } = parseImageAlt(String(token?.content ?? ""));
+            if (standalone && drawingId && drawingId !== standalone.drawingId) {
                 return renderImageTokenAsText(token);
             }
             const placeholder = `${IMAGE_PLACEHOLDER_PREFIX}${placeholderNonce}_${images.length}__`;
-            const { alt, width } = parseImageAlt(String(token?.content ?? ""));
             images.push({
                 placeholder,
                 path: src,
                 alt,
                 title: String(token?.attrGet?.("title") ?? ""),
                 width,
+                drawingId: standalone ? standalone.drawingId : drawingsEnabled ? drawingId : null,
+                kind: standalone ? "drawing" : "asset",
             });
             return `<code>${escapeHTML(placeholder)}</code>`;
         };
@@ -431,9 +439,15 @@ function releaseOwnedResources(container) {
  * container and cancels in-flight work for it. Call when the preview is hidden, replaced or its
  * dialog closes. Idempotent; safe on containers that never rendered.
  */
+function detachPreviewDrawings(container) {
+    for (const wrapper of Array.from(container.querySelectorAll("[data-drawing-id]"))) {
+        detachImageOverlay(wrapper);
+    }
+}
 export function releaseMarkdownPreviewResources(container) {
     beginRenderEpoch(container);
     releaseOwnedResources(container);
+    detachPreviewDrawings(container);
     for (const img of Array.from(container.querySelectorAll("img.todo-notes-image__img"))) {
         img.removeAttribute("src");
     }
@@ -463,8 +477,26 @@ function materializeImagePlaceholders(container, images) {
             continue;
         }
         byPlaceholder.delete(image.placeholder);
+        if (image.kind === "drawing" && image.drawingId) {
+            const host = document.createElement("span");
+            host.className = "todo-notes-image todo-notes-drawing";
+            host.dataset.drawingId = image.drawingId;
+            host.dataset.standalone = "1";
+            const svg = createStandaloneSvg(undefined, STANDALONE_DEFAULT_WIDTH, STANDALONE_DEFAULT_HEIGHT);
+            svg.setAttribute("role", "img");
+            svg.setAttribute("aria-label", image.alt || previewText("drawing.standaloneLabel", "Drawing"));
+            if (image.width != null) {
+                host.classList.add("todo-notes-image--sized");
+                svg.style.width = `${image.width}px`;
+            }
+            host.append(svg);
+            code.replaceWith(host);
+            continue;
+        }
         const wrapper = document.createElement("span");
         wrapper.className = "todo-notes-image todo-notes-image--loading";
+        if (image.drawingId)
+            wrapper.dataset.drawingId = image.drawingId;
         const img = document.createElement("img");
         img.className = "todo-notes-image__img";
         img.alt = image.alt;
@@ -487,6 +519,34 @@ function materializeImagePlaceholders(container, images) {
         byPath.set(image.path, list);
     }
     return byPath;
+}
+async function applyPreviewDrawings(container, renderEpoch, resolve) {
+    const wrappers = Array.from(container.querySelectorAll("[data-drawing-id]"));
+    for (const wrapper of wrappers) {
+        const id = wrapper.dataset.drawingId ?? "";
+        let doc;
+        try {
+            doc = await resolve(id);
+        }
+        catch {
+            doc = null;
+        }
+        if (!isActiveRender(container, renderEpoch) || !container.contains(wrapper))
+            return;
+        if (wrapper.dataset.standalone === "1") {
+            const svg = wrapper.querySelector("svg");
+            if (!svg)
+                continue;
+            renderDocumentIntoSvg(svg, doc ?? undefined, { width: STANDALONE_DEFAULT_WIDTH, height: STANDALONE_DEFAULT_HEIGHT });
+            svg.style.aspectRatio = `${doc?.width ?? STANDALONE_DEFAULT_WIDTH} / ${doc?.height ?? STANDALONE_DEFAULT_HEIGHT}`;
+            if (!doc)
+                wrapper.classList.add("todo-notes-drawing--missing");
+            continue;
+        }
+        const img = wrapper.querySelector("img");
+        if (img && doc)
+            attachImageOverlay(wrapper, img, doc);
+    }
 }
 // loadPreviewImages acquires each distinct image path once (bounded concurrency) through the
 // platform transport, so browsers and Capacitor share one code path. Stale results are released.
@@ -545,6 +605,7 @@ async function loadPreviewImages(container, renderEpoch, imagesByPath) {
 }
 export async function renderMarkdownPreviewInto(container, markdown, options = {}) {
     releaseOwnedResources(container);
+    detachPreviewDrawings(container);
     const renderEpoch = beginRenderEpoch(container);
     const isEmpty = markdown.trim() === "";
     container.classList.toggle("todo-markdown-preview--empty", isEmpty);
@@ -554,7 +615,8 @@ export async function renderMarkdownPreviewInto(container, markdown, options = {
     }
     const mermaidEnabled = !!options.mermaidEnabled;
     const inlineImagesEnabled = !!options.inlineImagesEnabled;
-    const { html, mermaidBlocks, images } = renderMarkdownHtml(markdown, mermaidEnabled, inlineImagesEnabled);
+    const resolveDrawing = inlineImagesEnabled ? options.resolveDrawing : undefined;
+    const { html, mermaidBlocks, images } = renderMarkdownHtml(markdown, mermaidEnabled, inlineImagesEnabled, !!resolveDrawing);
     if (!isActiveRender(container, renderEpoch)) {
         return;
     }
@@ -562,11 +624,15 @@ export async function renderMarkdownPreviewInto(container, markdown, options = {
     const imageLoad = images.length > 0
         ? loadPreviewImages(container, renderEpoch, materializeImagePlaceholders(container, images))
         : Promise.resolve();
+    const drawingLoad = resolveDrawing && images.some((image) => image.drawingId)
+        ? applyPreviewDrawings(container, renderEpoch, resolveDrawing)
+        : Promise.resolve();
     try {
         await renderMermaidHosts(container, renderEpoch, mermaidEnabled, mermaidBlocks);
     }
     finally {
         await imageLoad;
+        await drawingLoad;
     }
 }
 async function renderMermaidHosts(container, renderEpoch, mermaidEnabled, mermaidBlocks) {

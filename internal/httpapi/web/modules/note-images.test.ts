@@ -29,13 +29,13 @@ describe("image display width in alt text", () => {
     [`shot|${NOTE_IMAGE_MIN_WIDTH}`, "shot", NOTE_IMAGE_MIN_WIDTH],
     [`shot|${NOTE_IMAGE_MAX_WIDTH}`, "shot", NOTE_IMAGE_MAX_WIDTH],
   ])("parses %s", (alt, want, width) => {
-    expect(parseImageAlt(alt)).toEqual({ alt: want, width });
+    expect(parseImageAlt(alt)).toEqual({ alt: want, width, drawingId: null });
   });
 
   it.each(["shot", "shot|47", "shot|1601", "shot|0480", "shot|480 ", "shot|4800", "Q3|2024", "shot|12a", "shot| 480"])(
     "treats %s as plain alt text",
     (alt) => {
-      expect(parseImageAlt(alt)).toEqual({ alt, width: null });
+      expect(parseImageAlt(alt)).toEqual({ alt, width: null, drawingId: null });
     },
   );
 
@@ -43,7 +43,7 @@ describe("image display width in alt text", () => {
     expect(formatImageAlt("shot", 480)).toBe("shot|480");
     expect(formatImageAlt("shot", null)).toBe("shot");
     for (const width of [NOTE_IMAGE_MIN_WIDTH, 320, NOTE_IMAGE_MAX_WIDTH]) {
-      expect(parseImageAlt(formatImageAlt("a|b", width))).toEqual({ alt: "a|b", width });
+      expect(parseImageAlt(formatImageAlt("a|b", width))).toEqual({ alt: "a|b", width, drawingId: null });
     }
   });
 

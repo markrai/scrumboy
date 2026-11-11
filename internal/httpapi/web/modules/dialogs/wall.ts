@@ -39,9 +39,10 @@ import {
   pinStoryRemote,
   unpinStoryRemote,
 } from "./wall-api.js";
-import { confirmDelete, showToast } from "../utils.js";
-import { hydrateI18n, I18N_LOCALE_CHANGED, t } from "../i18n/index.js";
+import { confirmDelete, showConfirmDialog, showToast } from "../utils.js";
+import { hasI18nKey, hydrateI18n, I18N_LOCALE_CHANGED, t } from "../i18n/index.js";
 import { getBoard, getBoardMembers, getTagColors, getUser } from "../state/selectors.js";
+import { isWallDrawingEnabled as getWallDrawingEnabled } from "../drawing/drawing-flags.js";
 import { canEditWall, type WallRole } from "./wall-permissions.js";
 import {
   buildNoteElement,
@@ -69,9 +70,16 @@ import {
   getMounted,
   setMounted,
   resetEditGuards,
+  resetDrawingGuards,
   setDragActive,
   type Mounted,
 } from "./wall-state.js";
+import {
+  mountWallDrawing,
+  sanitizeWallDrawings,
+  wallDrawingsDiffer,
+  type WallDrawingController,
+} from "./wall-drawing.js";
 import {
   clearSelection,
   pruneSelection,
@@ -108,6 +116,8 @@ import {
 import {
   clampCanvasCoord,
   ensureWallContent,
+  ensureWallInkLayer,
+  getWallInkLayer,
   fitToNotes,
   getWallContent,
   getViewportState,
@@ -122,6 +132,8 @@ import {
   isSpacePanArmed,
 } from "./wall-viewport-nav.js";
 import {
+  enterWallDrawMode,
+  exitWallDrawMode,
   getWallCanvasMode,
   isWallPanMode,
   loadWallCanvasMode,
@@ -139,6 +151,7 @@ export interface OpenWallDialogOptions {
 }
 
 const TEARDOWN_MARKER = Symbol("wallMounted");
+let wallDrawing: WallDrawingController | null = null;
 const SELECT_MODE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-dashed-icon lucide-square-dashed"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/></svg>`;
 const PAN_MODE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-hand-icon lucide-hand"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>`;
 
@@ -182,6 +195,11 @@ function syncWallCanvasModeUi(): void {
 
 function toggleWallCanvasModeFromUi(): void {
   cancelWallNavigationGestures();
+  if (wallDrawing?.isDrawing()) {
+    wallDrawing.setDrawMode(false);
+    syncWallCanvasModeUi();
+    return;
+  }
   toggleWallCanvasMode();
   syncWallCanvasModeUi();
   const modeBtn = document.getElementById("wallModeToggleBtn");
@@ -266,7 +284,7 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
     slug: opts.slug,
     role: opts.role,
     canEdit,
-    doc: { notes: [], edges: [], stories: [], version: 0 },
+    doc: { notes: [], edges: [], stories: [], drawings: [], version: 0 },
     userId: user?.id ?? null,
     onRefreshNeeded: () => { void refetchDoc(); },
     onTransient: (payload) => applyTransient(payload),
@@ -284,12 +302,15 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
   wallSurface.classList.toggle("wall-surface--readonly", !canEdit);
   const content = ensureWallContent(wallSurface);
   initWallViewport(wallSurface, content, opts.slug);
+  ensureWallInkLayer(wallSurface);
   bindWallNavigation(wallSurface, state.abort.signal, () => dialog.open);
   syncWallCanvasModeUi();
   renderSurface();
 
   if (closeWallBtn) {
-    closeWallBtn.addEventListener("click", () => dialog.close(), { signal: state.abort.signal });
+    closeWallBtn.addEventListener("click", () => {
+      void requestWallClose(dialog);
+    }, { signal: state.abort.signal });
   }
   const fitBtn = document.getElementById("wallFitViewBtn");
   if (fitBtn) {
@@ -322,6 +343,11 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
       toggleWallCanvasModeFromUi();
       return;
     }
+    if ((ev.key === "d" || ev.key === "D") && wallDrawing && m.canEdit) {
+      ev.preventDefault();
+      wallDrawing.setDrawMode(!wallDrawing.isDrawing());
+      return;
+    }
     if (ev.key === "Delete") {
       if (ev.repeat) return;
       if (m.selected.size === 0) return;
@@ -330,7 +356,10 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
     }
   }, { signal: state.abort.signal });
   dialog.addEventListener("close", teardown, { signal: state.abort.signal, once: true });
-  dialog.addEventListener("cancel", () => dialog.close(), { signal: state.abort.signal });
+  dialog.addEventListener("cancel", (ev) => {
+    ev.preventDefault();
+    void requestWallClose(dialog);
+  }, { signal: state.abort.signal });
 
   const stopRealtime = startRealtime({
     onRefreshNeeded: state.onRefreshNeeded,
@@ -345,6 +374,38 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
   document.addEventListener(I18N_LOCALE_CHANGED, onWallLocaleChange, { signal: state.abort.signal });
 
   bindSurfaceHandlers(state);
+  if (getWallDrawingEnabled()) {
+    const isCurrentWall = () => getMounted() === state && !state.abort.signal.aborted;
+    wallDrawing = mountWallDrawing({
+      surface: wallSurface,
+      slug: state.slug,
+      userId: state.userId,
+      canEdit: state.canEdit,
+      isCurrent: isCurrentWall,
+      content: () => (isCurrentWall() ? getWallInkLayer() : null),
+      doc: () => (isCurrentWall() ? state.doc : null),
+      setDoc: (mutate) => {
+        if (isCurrentWall()) mutate(state.doc);
+      },
+      isSpacePanArmed,
+      onModeChange: (drawing) => {
+        cancelWallNavigationGestures();
+        if (drawing) {
+          clearSelection();
+          enterWallDrawMode();
+        } else {
+          exitWallDrawMode();
+        }
+        syncWallCanvasModeUi();
+      },
+      requestRefetch: () => {
+        if (isCurrentWall()) void refetchDoc();
+      },
+      notify: (message) => {
+        if (isCurrentWall()) showToast(message);
+      },
+    });
+  }
 
   // Lock body scroll while the wall occupies the viewport.
   document.documentElement.style.overflow = "hidden";
@@ -352,6 +413,27 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
   dialog.showModal();
   await refetchDoc();
   if (opts.storyLocalId != null) await ensureStoryOnWall(opts.storyLocalId);
+}
+
+let wallClosePromptOpen = false;
+
+async function requestWallClose(dialog: HTMLDialogElement): Promise<void> {
+  if (wallClosePromptOpen) return;
+  if (wallDrawing?.hasUnsavedWork()) {
+    wallClosePromptOpen = true;
+    let discard = false;
+    try {
+      discard = await showConfirmDialog(
+        (hasI18nKey("wall.draw.closeUnsavedMessage") ? t("wall.draw.closeUnsavedMessage") : "Some drawing changes on this wall are not confirmed as saved. Closing discards them; changes already being sent may or may not have been saved."),
+        (hasI18nKey("wall.draw.closeUnsavedTitle") ? t("wall.draw.closeUnsavedTitle") : "Unsaved drawing"),
+        (hasI18nKey("wall.draw.closeUnsavedAction") ? t("wall.draw.closeUnsavedAction") : "Discard and close"),
+      );
+    } finally {
+      wallClosePromptOpen = false;
+    }
+    if (!discard) return;
+  }
+  if (dialog.open) dialog.close();
 }
 
 function teardown(): void {
@@ -365,6 +447,10 @@ function teardown(): void {
   state.transient.clear();
   state.selected.clear();
   cancelWallNavigationGestures();
+  wallDrawing?.destroy();
+  wallDrawing = null;
+  exitWallDrawMode();
+  resetDrawingGuards();
   syncWallCanvasModeUi();
   state.abort.abort();
   teardownWallViewport();
@@ -372,6 +458,7 @@ function teardown(): void {
     wallSurface.querySelectorAll(".wall-empty").forEach((el) => el.remove());
     const content = wallSurface.querySelector(".wall-content");
     if (content) content.innerHTML = "";
+    wallSurface.querySelector(".wall-ink-layer")?.replaceChildren();
   }
   if (wallTrash) {
     wallTrash.classList.remove("wall-trash--visible");
@@ -386,6 +473,7 @@ function teardown(): void {
 
 function refetchDoc(): Promise<void> {
   return refetchDocImpl({
+    onDeferred: () => wallDrawing?.markDeferredRefetch(),
     onApplyDoc: (state, doc) => {
       const next = normalizeDoc(doc);
       const diff = diffWallDoc(state.doc, next);
@@ -394,6 +482,7 @@ function refetchDoc(): Promise<void> {
         renderSurface();
         return;
       }
+      if (diff.kind === "incremental" && diff.changedDrawings) wallDrawing?.render();
       // Fast path: single-note field changes (or nothing at all). No
       // innerHTML wipe, so any note that the user just saved does not
       // blink, and collaborative single-note updates are cheap.
@@ -417,7 +506,7 @@ function refetchDoc(): Promise<void> {
 type WallDocDiff =
   | { kind: "full" }
   | { kind: "noop" }
-  | { kind: "incremental"; changedNotes: WallNote[]; changedStories: WallStory[] };
+  | { kind: "incremental"; changedNotes: WallNote[]; changedStories: WallStory[]; changedDrawings: boolean };
 
 // Compare the currently-rendered doc against an incoming one. We only take
 // the fast path when the set of notes and the set of edges are unchanged
@@ -469,8 +558,9 @@ function diffWallDoc(prev: WallDocument, next: WallDocument): WallDocDiff {
     ) changedStories.push(story);
   }
 
-  if (changedNotes.length === 0 && changedStories.length === 0) return { kind: "noop" };
-  return { kind: "incremental", changedNotes, changedStories };
+  const changedDrawings = wallDrawingsDiffer(prev.drawings, next.drawings);
+  if (changedNotes.length === 0 && changedStories.length === 0 && !changedDrawings) return { kind: "noop" };
+  return { kind: "incremental", changedNotes, changedStories, changedDrawings };
 }
 
 function wallNoteFieldsDiffer(a: WallNote, b: WallNote): boolean {
@@ -493,13 +583,14 @@ function applyTransient(payload: unknown): void {
 }
 
 function normalizeDoc(doc: WallDocument | null | undefined): WallDocument {
-  if (!doc || !Array.isArray(doc.notes)) return { notes: [], edges: [], stories: [], version: 0 };
+  if (!doc || !Array.isArray(doc.notes)) return { notes: [], edges: [], stories: [], drawings: [], version: 0 };
   return {
     notes: doc.notes.map((n) => ({ ...n })),
     edges: Array.isArray(doc.edges) ? doc.edges.map((e) => ({ ...e })) : [],
     stories: Array.isArray(doc.stories)
       ? doc.stories.map((story) => ({ ...story, todo: { ...story.todo, tags: [...(story.todo.tags ?? [])] } }))
       : [],
+    drawings: sanitizeWallDrawings(doc.drawings),
     version: typeof doc.version === "number" ? doc.version : 0,
     updatedAt: doc.updatedAt,
   };
@@ -554,8 +645,11 @@ function renderSurface(): void {
   }
   wallSurface.querySelectorAll(".wall-empty").forEach((el) => el.remove());
   content.innerHTML = "";
+  wallDrawing?.render();
   if (state.doc.notes.length === 0 && (state.doc.stories?.length ?? 0) === 0) {
-    wallSurface.insertAdjacentHTML("beforeend", renderEmptyWallHtml(state.canEdit));
+    if ((state.doc.drawings?.length ?? 0) === 0 || !wallDrawing) {
+      wallSurface.insertAdjacentHTML("beforeend", renderEmptyWallHtml(state.canEdit));
+    }
     return;
   }
   const frag = document.createDocumentFragment();

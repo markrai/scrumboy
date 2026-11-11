@@ -1,6 +1,51 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.40.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.41.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
+
+## [3.41.0] - 2026-11-11
+
+### Added
+
+- **Story Notes handwriting** - A pencil toggle beside the Notes
+  Write/Preview tabs turns on a transparent ink surface directly over
+  the Notes editor, with pen, highlighter, stroke eraser, colours,
+  sizes, undo/redo, and clear. With drawing off, typing and selection
+  work normally and the ink stays visible. Ink is stored in CSS pixels
+  relative to the Notes content, scrolls with the document, works on
+  empty Notes and over images, and is independent of browser zoom; if
+  the Notes width later differs from the width it was drawn at, the
+  ink keeps its position and a notice says so. Ink is saved with the
+  Story in the same transaction (Cancel discards it, a failed save
+  persists nothing) in a new `todo_notes_ink` table (migration 089),
+  needs no Markdown reference, and is shown read-only to viewers and
+  on published public boards.
+- **Wall drawing** - The Wall gains a draw mode with pen, highlighter,
+  and eraser. Strokes are stored in world coordinates on the Wall
+  document (migration 088), stay aligned through pan and zoom, render
+  above every note, story, and connector, and are committed through a
+  durable queue that keeps strokes after failed saves (with retry or
+  discard), guards closing with unsaved ink, and ignores late
+  responses from a previously opened Wall.
+- **Wall on mobile** - The Wall entry point is now available on mobile
+  viewports, including touch drawing.
+- Stored image annotations and standalone drawing blocks (migration
+  087) continue to render in Notes, previews, and public views.
+
+### Changed
+
+- **Backup archive format 1.4** - `.sbz` exports are stamped `1.4` and
+  carry Story drawings, Notes ink, and Wall drawings. `1.3` archives
+  still import; older Scrumboy versions reject `1.4` archives
+  explicitly rather than dropping drawings. JSON exports stay `1.2`
+  and drawing-bearing exports are routed to `.sbz`. Merge imports
+  replace a Story's Notes ink only when the archive carries ink for
+  that Story.
+
+### Configuration
+
+- `SCRUMBOY_DRAWING_ENABLED` and `SCRUMBOY_WALL_DRAWING_ENABLED`
+  (default on) hide the drawing UI and reject new drawing writes when
+  set off; stored drawings and ink are never deleted.
 
 ## [3.40.7] - 2026-11-09
 

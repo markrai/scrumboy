@@ -28,6 +28,7 @@ type Store struct {
 	maxImportProjects      int
 	maxImportTodos         int
 	instanceAuditEnabled   bool
+	drawingsDisabled       bool
 }
 
 type StoreOptions struct {
@@ -35,6 +36,7 @@ type StoreOptions struct {
 	ConfiguredOIDCIssuer string // Canonical active issuer; empty means no currently usable SSO provider.
 	AssetBudgets         AssetBudgets
 	InstanceAuditEnabled bool
+	DrawingsDisabled     bool
 }
 
 // AssetBudgets caps committed note-image bytes per project and per instance. Zero disables a budget.
@@ -61,6 +63,7 @@ func New(db *sql.DB, opts *StoreOptions) *Store {
 		s.configuredOIDCIssuer = opts.ConfiguredOIDCIssuer
 		s.assetBudgets = opts.AssetBudgets
 		s.instanceAuditEnabled = opts.InstanceAuditEnabled
+		s.drawingsDisabled = opts.DrawingsDisabled
 	}
 	return s
 }

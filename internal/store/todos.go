@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,6 +24,8 @@ type CreateTodoInput struct {
 	BeforeID         *int64
 	// CustomFields sets initial values by field key; nil values are ignored.
 	CustomFields CustomFieldValues
+	Drawings     map[string]json.RawMessage
+	NotesInk     NotesInkChange
 }
 
 // Bounds for a due date: after the Unix epoch and before 2100-01-01 UTC. Past
@@ -310,6 +313,14 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			_ = tx.Rollback()
 			return Todo{}, err
 		}
+		if err := s.syncTodoDrawingsTx(ctx, tx, projectID, todoID, in.Body, in.Drawings, nowMs); err != nil {
+			_ = tx.Rollback()
+			return Todo{}, err
+		}
+		if err := s.syncTodoNotesInkTx(ctx, tx, projectID, todoID, in.NotesInk, nowMs); err != nil {
+			_ = tx.Rollback()
+			return Todo{}, err
+		}
 
 		// Board-scoped tag path: unowned anonymous temp, OR any temp with no user in ctx (link holder creating todos with tags).
 		useBoardScopedTags := isAnonymousBoard || (isTemporaryProject(p) && userIDPtr == nil)
@@ -432,6 +443,8 @@ type UpdateTodoInput struct {
 	// CustomFields is a sparse patch keyed by field key; a nil value clears
 	// that field. Keys not present are untouched.
 	CustomFields CustomFieldValues
+	Drawings     map[string]json.RawMessage
+	NotesInk     NotesInkChange
 }
 
 // resolveDoneAtForColumnTransition returns the value to write for done_at.
@@ -618,6 +631,12 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 				return Todo{}, fmt.Errorf("update todo body: %w", err)
 			}
 			if err := syncTodoAssetsTx(ctx, tx, existing.ProjectID, todoID, in.Body, nowMs); err != nil {
+				return Todo{}, err
+			}
+			if err := s.syncTodoDrawingsTx(ctx, tx, existing.ProjectID, todoID, in.Body, in.Drawings, nowMs); err != nil {
+				return Todo{}, err
+			}
+			if err := s.syncTodoNotesInkTx(ctx, tx, existing.ProjectID, todoID, in.NotesInk, nowMs); err != nil {
 				return Todo{}, err
 			}
 			if err := touchProject(ctx, tx, existing.ProjectID, nowMs); err != nil {
@@ -838,6 +857,12 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		}
 	}
 	if err := syncTodoAssetsTx(ctx, tx, existing.ProjectID, todoID, in.Body, nowMs); err != nil {
+		return Todo{}, err
+	}
+	if err := s.syncTodoDrawingsTx(ctx, tx, existing.ProjectID, todoID, in.Body, in.Drawings, nowMs); err != nil {
+		return Todo{}, err
+	}
+	if err := s.syncTodoNotesInkTx(ctx, tx, existing.ProjectID, todoID, in.NotesInk, nowMs); err != nil {
 		return Todo{}, err
 	}
 

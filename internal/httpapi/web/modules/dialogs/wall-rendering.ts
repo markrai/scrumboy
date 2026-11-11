@@ -23,6 +23,7 @@ import type { BoardMember } from "../state/state.js";
 import { renderStoryCardContent, type RenderTodoCardOpts } from "../views/board-rendering.js";
 import { WALL_STORY_WIDTH } from "./wall-story-geometry.js";
 import { parseWallEdgeEndpoint, wallEdgeEndpointCenter } from "./wall-edge-endpoint.js";
+import type { DrawingStroke } from "../drawing/drawing-types.js";
 
 export interface WallNote {
   id: string;
@@ -57,6 +58,7 @@ export interface WallDocument {
   notes: WallNote[];
   edges?: WallEdge[];
   stories?: WallStory[];
+  drawings?: DrawingStroke[];
   version: number;
   updatedAt?: number;
 }

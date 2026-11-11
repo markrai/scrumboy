@@ -57,6 +57,10 @@ func (s *Server) handlePublicBoard(w http.ResponseWriter, r *http.Request, parts
 		return
 	}
 
+	if s.handlePublicDrawingRoutes(w, r, parts, prepared) {
+		return
+	}
+
 	switch {
 	case isEvents:
 		if len(r.URL.Query()) != 0 {

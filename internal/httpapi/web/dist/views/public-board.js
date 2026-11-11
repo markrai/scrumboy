@@ -11,6 +11,7 @@
 import { app } from '../dom/elements.js';
 import { t } from '../i18n/index.js';
 import { showToast } from '../utils.js';
+import { isStoryDrawingEnabled } from '../drawing/drawing-flags.js';
 import { getAuthStatusAvailable, getInlineImagesEnabled, getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getUser } from '../state/selectors.js';
 import { signInPath } from '../app-home.js';
 import { setBoard, setBoardAccess, setProjectId } from '../state/mutations.js';
@@ -739,6 +740,7 @@ function dialogContext(s) {
         markdownEnabled: getMarkdownNotesEnabled(),
         mermaidEnabled: getMermaidNotesEnabled(),
         inlineImagesEnabled: getInlineImagesEnabled(),
+        drawingEnabled: isStoryDrawingEnabled(),
         onNavigateToStory: (localId) => openStoryFromBoard(s, localId),
         onSignIn: !getUser() && getAuthStatusAvailable() ? startSignIn : undefined,
         onClosedByUser: () => {

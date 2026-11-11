@@ -1,6 +1,7 @@
 # Data and DB (self-hosted instance data)
 /data/
 /data/scrumboy.env
+/data.before-recovery-*/
 *.db
 *.db-wal
 *.db-shm

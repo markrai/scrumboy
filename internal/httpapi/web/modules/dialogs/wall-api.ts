@@ -9,6 +9,7 @@
 
 import { apiFetch } from "../api.js";
 import type { WallDocument, WallEdge, WallNote, WallStory } from "./wall-rendering.js";
+import type { DrawingStroke } from "../drawing/drawing-types.js";
 
 export type NoteCreateInput = {
   x: number;
@@ -39,6 +40,21 @@ function wallBase(slug: string): string {
 
 export function fetchWall(slug: string): Promise<WallDocument> {
   return apiFetch<WallDocument>(wallBase(slug));
+}
+
+export type WallDrawingCommitInput = {
+  baseVersion: number;
+  add: DrawingStroke[];
+  erase: string[];
+};
+
+export type WallDrawingCommitResult = WallDocument & { applied: boolean };
+
+export function postWallDrawings(slug: string, body: WallDrawingCommitInput): Promise<WallDrawingCommitResult> {
+  return apiFetch<WallDrawingCommitResult>(`${wallBase(slug)}/drawings`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export function createNote(slug: string, body: NoteCreateInput): Promise<WallNote> {

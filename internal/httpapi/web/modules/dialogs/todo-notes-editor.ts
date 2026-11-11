@@ -9,13 +9,21 @@ import type * as CMView from "@codemirror/view";
 import { hasI18nKey, t } from "../i18n/index.js";
 import { parseNoteMarkdownTokens } from "../markdown-preview.js";
 import {
+  CANONICAL_ASSET_PATH_RE,
   NOTE_IMAGE_DEFAULT_MAX_WIDTH,
   NOTE_IMAGE_MIN_WIDTH,
   clampImageWidth,
+  drawingPath,
   findNoteImageRefs,
   formatImageAlt,
+  formatMediaMarkdown,
+  parseDrawingPath,
+  parseImageAlt,
+  referencedDrawingIds,
   type NoteImageRef,
 } from "../note-images.js";
+import { attachImageOverlay, createStandaloneSvg, detachImageOverlay, renderDocumentIntoSvg } from "../drawing/drawing-overlay.js";
+import { STANDALONE_DEFAULT_HEIGHT, STANDALONE_DEFAULT_WIDTH, type DrawingDocument } from "../drawing/drawing-types.js";
 import { getAppRuntime } from "../platform/runtime.js";
 import type { AcquiredServerResource } from "../platform/server-transport.js";
 import type { ImageUploadHandlers, ImageUploadTarget, UploadReservation } from "./todo-image-upload.js";
@@ -52,8 +60,32 @@ export type NotesEditor = {
   clear(): void;
   destroy(): void;
   readonly uploadTarget: ImageUploadTarget;
+  readonly scroller: HTMLElement;
+  readonly content: HTMLElement;
   setUploadHandlers(handlers: ImageUploadHandlers | null): void;
+  setDrawingHost(host: NotesDrawingHost | null): void;
+  drawingIds(): string[];
+  stripDrawingRefs(shouldStrip: (id: string) => boolean): number;
+  insertStandaloneDrawing(drawingId: string, alt: string): boolean;
 };
+
+export type NotesDrawingHost = {
+  canEdit(): boolean;
+  slug(): string | null;
+  get(id: string): DrawingDocument | undefined;
+  isKnown(id: string): boolean;
+  subscribe(listener: (id: string | null) => void): () => void;
+  adoptPasted(id: string): string | null;
+  rememberCopied(ids: string[]): void;
+  notify(message: string): void;
+};
+
+const PASTED_IMAGE_RE = /!\[([^[\]\\`\r\n]*)\]\(([^()\s]+)\)/g;
+const SELECTED_DRAWING_ID_RE = /(?:\|draw:|\/drawings\/)(drw_[A-Za-z0-9_-]{6,64})/g;
+
+function mediaOf(wrapper: Element | null | undefined): (HTMLElement | SVGSVGElement) | null {
+  return wrapper?.querySelector<HTMLElement | SVGSVGElement>(".todo-notes-image__img, .todo-notes-drawing__svg") ?? null;
+}
 
 export type NotesEditorOptions = {
   parent: HTMLElement;
@@ -248,6 +280,8 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
   const pool = new ImageResourcePool();
   const readOnlyCompartment = new CM.Compartment();
   let uploadHandlers: ImageUploadHandlers | null = null;
+  let drawingHost: NotesDrawingHost | null = null;
+  let drawingUnsubscribe: (() => void) | null = null;
   let original = "";
   let originalLF = "";
   const announce = (message: string) => opts.announce?.(message);
@@ -255,18 +289,19 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
   // ---- image widgets ----
 
   class ImageWidget extends WidgetType {
-    constructor(readonly path: string, readonly alt: string, readonly width: number | null) {
+    constructor(readonly path: string, readonly alt: string, readonly width: number | null, readonly drawingId: string | null = null) {
       super();
     }
 
     eq(other: ImageWidget): boolean {
-      return other.path === this.path && other.alt === this.alt && other.width === this.width;
+      return other.path === this.path && other.alt === this.alt && other.width === this.width && other.drawingId === this.drawingId;
     }
 
     toDOM(view: CMView.EditorView): HTMLElement {
       const wrapper = document.createElement("span");
       wrapper.className = "todo-notes-image todo-notes-image--editor todo-notes-image--loading";
       wrapper.dataset.path = this.path;
+      if (this.drawingId && drawingHost) wrapper.dataset.drawingId = this.drawingId;
       const img = document.createElement("img");
       img.className = "todo-notes-image__img";
       img.decoding = "async";
@@ -288,11 +323,13 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
       // The widget changes size once the image loads: let CodeMirror update its line heights.
       img.addEventListener("load", () => view.requestMeasure(), { once: true });
       pool.attach(this.path, wrapper, img, this.alt);
+      if (this.drawingId && drawingHost) attachImageOverlay(wrapper, img, drawingHost.get(this.drawingId));
       return wrapper;
     }
 
     updateDOM(dom: HTMLElement): boolean {
       if (dom.dataset.path !== this.path) return false;
+      if ((dom.dataset.drawingId ?? "") !== (this.drawingId && drawingHost ? this.drawingId : "")) return false;
       const img = dom.querySelector("img");
       if (img) this.apply(dom, img);
       return true;
@@ -306,7 +343,65 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
     }
 
     destroy(dom: HTMLElement): void {
+      detachImageOverlay(dom);
       pool.detach(this.path, dom);
+    }
+
+    ignoreEvent(): boolean {
+      return true;
+    }
+  }
+
+  class StandaloneDrawingWidget extends WidgetType {
+    constructor(readonly path: string, readonly alt: string, readonly width: number | null, readonly drawingId: string) {
+      super();
+    }
+
+    eq(other: StandaloneDrawingWidget): boolean {
+      return other.path === this.path && other.alt === this.alt && other.width === this.width && other.drawingId === this.drawingId;
+    }
+
+    toDOM(view: CMView.EditorView): HTMLElement {
+      const wrapper = document.createElement("span");
+      wrapper.className = "todo-notes-image todo-notes-image--editor todo-notes-drawing";
+      wrapper.dataset.path = this.path;
+      wrapper.dataset.drawingId = this.drawingId;
+      wrapper.dataset.standalone = "1";
+      if (!drawingHost) {
+        wrapper.classList.add("todo-notes-image--unavailable");
+        const unavailable = text("drawing.unavailable", "Drawing unavailable");
+        wrapper.textContent = this.alt ? `${unavailable}: ${this.alt}` : unavailable;
+        return wrapper;
+      }
+      const svg = createStandaloneSvg(drawingHost.get(this.drawingId), STANDALONE_DEFAULT_WIDTH, STANDALONE_DEFAULT_HEIGHT);
+      svg.setAttribute("role", "img");
+      svg.setAttribute("aria-label", this.alt || text("drawing.standaloneLabel", "Drawing"));
+      wrapper.append(svg);
+      const handle = document.createElement("span");
+      handle.className = "todo-notes-image__handle";
+      handle.setAttribute("aria-hidden", "true");
+      handle.addEventListener("pointerdown", (event) => startResize(view, wrapper, event));
+      wrapper.append(handle);
+      wrapper.addEventListener("mousedown", (event) => event.preventDefault());
+      wrapper.addEventListener("click", (event) => {
+        event.preventDefault();
+        selectImageAt(view, wrapper);
+      });
+      this.apply(wrapper, svg);
+      return wrapper;
+    }
+
+    updateDOM(dom: HTMLElement): boolean {
+      if (dom.dataset.path !== this.path || !drawingHost) return false;
+      const svg = mediaOf(dom);
+      if (svg) this.apply(dom, svg);
+      return true;
+    }
+
+    private apply(wrapper: HTMLElement, svg: HTMLElement | SVGSVGElement): void {
+      wrapper.setAttribute("aria-label", text("drawing.editorLabel", "Drawing: {alt}", { alt: this.alt }));
+      wrapper.classList.toggle("todo-notes-image--sized", this.width != null);
+      svg.style.width = this.width != null ? `${this.width}px` : "";
     }
 
     ignoreEvent(): boolean {
@@ -342,7 +437,11 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
       refs = [];
     }
     const deco = Decoration.set(
-      refs.map((ref) => Decoration.replace({ widget: new ImageWidget(ref.path, ref.alt, ref.width) }).range(ref.from, ref.to)),
+      refs.map((ref) => Decoration.replace({
+        widget: ref.kind === "drawing" && ref.drawingId
+          ? new StandaloneDrawingWidget(ref.path, ref.alt, ref.width, ref.drawingId)
+          : new ImageWidget(ref.path, ref.alt, ref.width, ref.drawingId),
+      }).range(ref.from, ref.to)),
     );
     return { refs, deco };
   };
@@ -423,7 +522,7 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
   };
 
   const displayedWidth = (view: CMView.EditorView, ref: NoteImageRef): number => {
-    const img = widgetFor(view, ref)?.querySelector("img");
+    const img = mediaOf(widgetFor(view, ref));
     const measured = img ? Math.round(img.getBoundingClientRect().width) : 0;
     return ref.width ?? (measured > 0 ? measured : NOTE_IMAGE_DEFAULT_MAX_WIDTH);
   };
@@ -434,7 +533,7 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
     const style = getComputedStyle(view.contentDOM);
     const content = view.contentDOM.clientWidth - parseFloat(style.paddingLeft || "0") - parseFloat(style.paddingRight || "0");
     const img = wrapper?.querySelector("img");
-    const border = img ? img.offsetWidth - img.clientWidth : 0;
+    const border = img ? (img.offsetWidth - img.clientWidth) || 0 : 0;
     const natural = Number(wrapper?.dataset.naturalWidth || 0);
     let ceiling = content > 0 ? content : Infinity;
     if (natural > 0) ceiling = Math.min(ceiling, Math.max(natural + border, NOTE_IMAGE_MIN_WIDTH));
@@ -457,7 +556,7 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
 
   // setWidth rewrites only the alt text's width suffix and keeps the image selected.
   const setWidth = (view: CMView.EditorView, ref: NoteImageRef, width: number | null): void => {
-    const alt = formatImageAlt(ref.alt, width);
+    const alt = formatImageAlt(ref.alt, width, ref.drawingId);
     const delta = alt.length - (ref.altTo - ref.altFrom);
     if (delta === 0 && view.state.sliceDoc(ref.altFrom, ref.altTo) === alt) return;
     view.dispatch({
@@ -473,7 +572,7 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
     event.preventDefault();
     event.stopPropagation();
     const ref = refAt(view.state, view.posAtDOM(wrapper));
-    const img = wrapper.querySelector("img");
+    const img = mediaOf(wrapper);
     if (!ref || !img) return;
     if (selectedRef(view.state)?.from !== ref.from) view.dispatch({ selection: EditorSelection.single(ref.from, ref.to) });
     const handle = event.currentTarget as HTMLElement;
@@ -591,7 +690,26 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
 
   const hasFiles = (dt: DataTransfer | null) => !!dt && Array.from(dt.types ?? []).includes("Files");
 
+  const rememberSelectionDrawings = (view: CMView.EditorView) => {
+    if (!drawingHost) return;
+    const ids = new Set<string>();
+    for (const range of view.state.selection.ranges) {
+      if (range.empty) continue;
+      const slice = view.state.sliceDoc(range.from, range.to);
+      for (const m of slice.matchAll(SELECTED_DRAWING_ID_RE)) ids.add(m[1]);
+    }
+    if (ids.size > 0) drawingHost.rememberCopied(Array.from(ids));
+  };
+
   const domHandlers = EditorView.domEventHandlers({
+    copy(_event, view) {
+      rememberSelectionDrawings(view);
+      return false;
+    },
+    cut(_event, view) {
+      rememberSelectionDrawings(view);
+      return false;
+    },
     paste(event, view) {
       if (!uploadHandlers || view.state.readOnly) return false;
       return uploadHandlers.handlePaste(event);
@@ -620,6 +738,58 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
     },
   });
 
+  const rewritePastedDrawings = (pasted: string): { text: string; stripped: boolean } => {
+    const host = drawingHost;
+    if (!host || !pasted.includes("drw_")) return { text: pasted, stripped: false };
+    const slug = host.slug();
+    const forks = new Map<string, string | null>();
+    let stripped = false;
+    const out = pasted.replace(PASTED_IMAGE_RE, (whole: string, altRaw: string, dest: string) => {
+      const parsed = parseImageAlt(altRaw);
+      const standalone = parseDrawingPath(dest);
+      const isAsset = CANONICAL_ASSET_PATH_RE.test(dest);
+      const id = standalone?.drawingId ?? parsed.drawingId;
+      if (!id || (!standalone && !isAsset)) return whole;
+      if (host.isKnown(id)) return whole;
+      if (!forks.has(id)) forks.set(id, host.adoptPasted(id));
+      const fresh = forks.get(id) ?? null;
+      if (fresh && (!standalone || slug)) {
+        return standalone
+          ? `![${formatImageAlt(parsed.alt, parsed.width, fresh)}](${drawingPath(slug as string, fresh)})`
+          : `![${formatImageAlt(parsed.alt, parsed.width, fresh)}](${dest})`;
+      }
+      stripped = true;
+      return standalone ? parsed.alt : `![${formatImageAlt(parsed.alt, parsed.width, null)}](${dest})`;
+    });
+    return { text: out, stripped };
+  };
+
+  const pasteDrawingFilter = EditorState.transactionFilter.of((tr) => {
+    if (!drawingHost || !tr.docChanged || !tr.isUserEvent("input.paste")) return tr;
+    let changed = false;
+    let stripped = false;
+    const specs: { from: number; to: number; insert: string }[] = [];
+    tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+      const original = inserted.toString();
+      const next = rewritePastedDrawings(original);
+      if (next.text !== original) changed = true;
+      if (next.stripped) stripped = true;
+      specs.push({ from: fromA, to: toA, insert: next.text });
+    });
+    if (!changed) return tr;
+    if (stripped) {
+      const message = text("drawing.pasteStripped", "Pasted annotations from another story could not be copied and were removed.");
+      queueMicrotask(() => drawingHost?.notify(message));
+    }
+    const changes = tr.startState.changes(specs);
+    return {
+      changes,
+      selection: EditorSelection.cursor(changes.mapPos(tr.startState.selection.main.head, 1)),
+      userEvent: "input.paste",
+      scrollIntoView: true,
+    };
+  });
+
   const maxLengthFilter = EditorState.transactionFilter.of((tr) =>
     tr.docChanged && tr.newDoc.length > opts.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr,
   );
@@ -643,12 +813,34 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
     readOnlyCompartment.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
     imageField,
     uploadField,
+    pasteDrawingFilter,
     maxLengthFilter,
     domHandlers,
     EditorView.updateListener.of((update) => {
       if (update.selectionSet || update.docChanged || update.viewportChanged || update.focusChanged) syncSelection(update.view);
     }),
   ];
+
+  const refreshDrawings = (id: string | null) => {
+    const host = drawingHost;
+    if (!host) return;
+    for (const wrapper of Array.from(view.contentDOM.querySelectorAll<HTMLElement>("[data-drawing-id]"))) {
+      const wid = wrapper.dataset.drawingId ?? "";
+      if (id !== null && wid !== id) continue;
+      const doc = host.get(wid);
+      if (wrapper.dataset.standalone === "1") {
+        const svg = wrapper.querySelector<SVGSVGElement>("svg.todo-notes-drawing__svg");
+        if (svg) {
+          renderDocumentIntoSvg(svg, doc, { width: STANDALONE_DEFAULT_WIDTH, height: STANDALONE_DEFAULT_HEIGHT });
+          svg.style.aspectRatio = `${doc?.width ?? STANDALONE_DEFAULT_WIDTH} / ${doc?.height ?? STANDALONE_DEFAULT_HEIGHT}`;
+        }
+      } else {
+        const img = wrapper.querySelector("img");
+        if (img) attachImageOverlay(wrapper, img, doc);
+      }
+    }
+    view.requestMeasure();
+  };
 
   let readOnly = false;
   const view = new EditorView({ parent: opts.parent, state: EditorState.create({ doc: "", extensions: extensions(false) }) });
@@ -771,8 +963,52 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
       view.destroy();
     },
     uploadTarget,
+    get scroller() {
+      return view.scrollDOM;
+    },
+    get content() {
+      return view.contentDOM;
+    },
     setUploadHandlers(handlers: ImageUploadHandlers | null) {
       uploadHandlers = handlers;
+    },
+    setDrawingHost(host: NotesDrawingHost | null) {
+      drawingUnsubscribe?.();
+      drawingUnsubscribe = null;
+      drawingHost = host;
+      if (host) drawingUnsubscribe = host.subscribe(refreshDrawings);
+    },
+    drawingIds() {
+      return referencedDrawingIds(view.state.field(imageField).refs);
+    },
+    stripDrawingRefs(shouldStrip: (id: string) => boolean) {
+      const refs = view.state.field(imageField).refs.filter((r) => r.drawingId && shouldStrip(r.drawingId));
+      if (refs.length === 0) return 0;
+      const changes = refs.map((r) =>
+        r.kind === "drawing"
+          ? { from: r.from, to: r.to, insert: r.alt }
+          : { from: r.altFrom, to: r.altTo, insert: formatImageAlt(r.alt, r.width, null) },
+      );
+      view.dispatch({ changes, userEvent: "input.drawing" });
+      return refs.length;
+    },
+    insertStandaloneDrawing(drawingId: string, alt: string) {
+      const slug = drawingHost?.slug();
+      if (!slug || view.state.readOnly) return false;
+      const markdown = `![${formatImageAlt(alt, null, drawingId)}](${drawingPath(slug, drawingId)})`;
+      const doc = view.state.doc;
+      const sel = view.state.selection.main;
+      const before = sel.from > 0 ? doc.sliceString(sel.from - 1, sel.from) : "\n";
+      const after = doc.sliceString(sel.to, sel.to + 1);
+      const insert = `${before === "\n" ? "" : "\n"}${markdown}${after === "\n" ? "" : "\n"}`;
+      if (doc.length - (sel.to - sel.from) + insert.length > opts.maxLength) return false;
+      view.dispatch({
+        changes: { from: sel.from, to: sel.to, insert },
+        selection: EditorSelection.cursor(sel.from + insert.length),
+        userEvent: "input.drawing",
+        annotations: CM.isolateHistory?.of("full"),
+      });
+      return true;
     },
   };
 }

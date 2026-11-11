@@ -71,9 +71,9 @@ describe('wall topbar gating', () => {
     expect(html).toContain('id="wallBtn"');
   });
 
-  it('hides the wall button on mobile even for maintainers', () => {
+  it('shows the wall button on mobile so the wall and its drawing tools are reachable', () => {
     const html = render({ role: 'maintainer', isAnonymousTempBoard: false, wallEnabled: true, isMobile: true });
-    expect(html).not.toContain('id="wallBtn"');
+    expect(html).toContain('id="wallBtn"');
   });
 
   it('places the wall button immediately after the mic when voice is on (desktop)', () => {
