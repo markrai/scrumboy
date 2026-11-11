@@ -13,22 +13,44 @@ export const NOTE_IMAGE_DEFAULT_MAX_HEIGHT = 240;
 export const MAX_NOTE_IMAGES = 50;
 // The width suffix: "|" then 2-4 digits without a leading zero, ending the alt text.
 const WIDTH_SUFFIX_RE = /\|([1-9][0-9]{1,3})$/;
-/**
- * Splits a display width off image alt text: `![screenshot|480](...)` is alt "screenshot" shown
- * 480 CSS px wide. Values outside NOTE_IMAGE_MIN_WIDTH..NOTE_IMAGE_MAX_WIDTH are not widths.
- */
-export function parseImageAlt(alt) {
-    const match = WIDTH_SUFFIX_RE.exec(alt);
+const DRAWING_SUFFIX_RE = /\|draw:(drw_[A-Za-z0-9_-]{6,64})$/;
+export const CANONICAL_DRAWING_PATH_RE = /^\/api\/board\/([A-Za-z0-9_-]{1,128})\/drawings\/(drw_[A-Za-z0-9_-]{6,64})$/;
+export function parseImageAlt(rawAlt) {
+    let text = rawAlt;
+    let width = null;
+    const match = WIDTH_SUFFIX_RE.exec(text);
     if (match) {
-        const width = Number(match[1]);
-        if (width >= NOTE_IMAGE_MIN_WIDTH && width <= NOTE_IMAGE_MAX_WIDTH) {
-            return { alt: alt.slice(0, match.index), width };
+        const value = Number(match[1]);
+        if (value >= NOTE_IMAGE_MIN_WIDTH && value <= NOTE_IMAGE_MAX_WIDTH) {
+            width = value;
+            text = text.slice(0, match.index);
         }
     }
-    return { alt, width: null };
+    let drawingId = null;
+    const draw = DRAWING_SUFFIX_RE.exec(text);
+    if (draw) {
+        drawingId = draw[1];
+        text = text.slice(0, draw.index);
+    }
+    return { alt: text, width, drawingId };
 }
-export function formatImageAlt(alt, width) {
-    return width == null ? alt : `${alt}|${width}`;
+export function formatImageAlt(alt, width, drawingId = null) {
+    let out = alt;
+    if (drawingId)
+        out += `|draw:${drawingId}`;
+    if (width != null)
+        out += `|${width}`;
+    return out;
+}
+export function drawingPath(slug, drawingId) {
+    return `/api/board/${slug}/drawings/${drawingId}`;
+}
+export function parseDrawingPath(path) {
+    const m = CANONICAL_DRAWING_PATH_RE.exec(path);
+    return m ? { slug: m[1], drawingId: m[2] } : null;
+}
+export function isRenderableMediaPath(path) {
+    return CANONICAL_ASSET_PATH_RE.test(path) || CANONICAL_DRAWING_PATH_RE.test(path);
 }
 /** Rounds and clamps a width to the stored range and an optional smaller ceiling (>= minimum). */
 export function clampImageWidth(width, ceiling = NOTE_IMAGE_MAX_WIDTH) {
@@ -37,7 +59,7 @@ export function clampImageWidth(width, ceiling = NOTE_IMAGE_MAX_WIDTH) {
 }
 // Only the simple form the uploader writes is edited visually: inline destination, no title, and
 // alt text without brackets, backslashes, backticks or line breaks. Other forms stay text.
-const EDITABLE_IMAGE_RE = /!\[([^[\]\\`\r\n]*)\]\((\/api\/assets\/[0-9a-f-]{36})\)/g;
+const EDITABLE_IMAGE_RE = /!\[([^[\]\\`\r\n]*)\]\((\/api\/(?:assets\/[0-9a-f-]{36}|board\/[A-Za-z0-9_-]{1,128}\/drawings\/drw_[A-Za-z0-9_-]{6,64}))\)/g;
 // codeSpanRanges returns [start, end) offsets of CommonMark code spans in text: a backtick string
 // opens a span closed by the next backtick string of the same length; unmatched ones are text.
 // Outside code spans a backslash escapes the next character.
@@ -117,7 +139,7 @@ export function findNoteImageRefs(text, tokens) {
         const available = new Map();
         for (const child of token.children ?? []) {
             const src = child.type === "image" ? child.attrGet?.("src") ?? "" : "";
-            if (CANONICAL_ASSET_PATH_RE.test(src))
+            if (isRenderableMediaPath(src))
                 available.set(src, (available.get(src) ?? 0) + 1);
         }
         if (available.size === 0)
@@ -128,7 +150,7 @@ export function findNoteImageRefs(text, tokens) {
             const start = m.index;
             const end = start + m[0].length;
             const path = m[2];
-            if (!CANONICAL_ASSET_PATH_RE.test(path) || used.has(blockFrom + start))
+            if (!isRenderableMediaPath(path) || used.has(blockFrom + start))
                 continue;
             if (spans.some(([a, b]) => start < b && end > a))
                 continue;
@@ -140,9 +162,12 @@ export function findNoteImageRefs(text, tokens) {
             const left = available.get(path) ?? 0;
             if (left === 0)
                 continue;
+            const parsed = parseImageAlt(m[1]);
+            const standalone = parseDrawingPath(path);
+            if (standalone && parsed.drawingId && parsed.drawingId !== standalone.drawingId)
+                continue;
             available.set(path, left - 1);
             used.add(blockFrom + start);
-            const parsed = parseImageAlt(m[1]);
             refs.push({
                 from: blockFrom + start,
                 to: blockFrom + end,
@@ -151,10 +176,29 @@ export function findNoteImageRefs(text, tokens) {
                 path,
                 alt: parsed.alt,
                 width: parsed.width,
+                drawingId: standalone ? standalone.drawingId : parsed.drawingId,
+                kind: standalone ? "drawing" : "asset",
             });
             if (refs.length >= MAX_NOTE_IMAGES)
                 break;
         }
     }
     return refs.sort((a, b) => a.from - b.from);
+}
+export function formatMediaMarkdown(ref, drawingId, slug) {
+    if (ref.kind === "drawing" && drawingId && slug) {
+        return `![${formatImageAlt(ref.alt, ref.width, drawingId)}](${drawingPath(slug, drawingId)})`;
+    }
+    return `![${formatImageAlt(ref.alt, ref.width, drawingId)}](${ref.path})`;
+}
+export function referencedDrawingIds(refs) {
+    const out = [];
+    const seen = new Set();
+    for (const ref of refs) {
+        if (ref.drawingId && !seen.has(ref.drawingId)) {
+            seen.add(ref.drawingId);
+            out.push(ref.drawingId);
+        }
+    }
+    return out;
 }

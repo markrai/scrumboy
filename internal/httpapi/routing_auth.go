@@ -126,6 +126,8 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 				"markdownNotesEnabled":            s.markdownNotesEnabled,
 				"mermaidNotesEnabled":             s.mermaidNotesEnabled,
 				"inlineImagesEnabled":             false,
+				"drawingEnabled":                  false,
+				"wallDrawingEnabled":              false,
 				"publicProjectsEnabled":           false,
 				"landingPageEnabled":              false,
 			})
@@ -168,6 +170,8 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 			"mermaidNotesEnabled":             s.mermaidNotesEnabled,
 			// Presentation only; never authorization evidence.
 			"inlineImagesEnabled": s.inlineImagesEnabled,
+			"drawingEnabled":      s.drawingEnabled,
+			"wallDrawingEnabled":  s.wallDrawingEnabled,
 		}
 		resp["oidcEnabled"] = s.oidcService != nil
 		resp["mobileOidcEnabled"] = s.oidcService != nil

@@ -142,8 +142,12 @@ type TodoExport struct {
 	CustomFields map[string]any `json:"customFields,omitempty"`
 	// PriorityKeyPresent distinguishes preserve-on-merge omission from an
 	// explicit null clear.
-	PriorityKeyPresent bool `json:"-"`
-	ArchivedAtPresent  bool `json:"-"`
+	PriorityKeyPresent bool                `json:"-"`
+	ArchivedAtPresent  bool                `json:"-"`
+	Drawings           []TodoDrawingExport `json:"drawings,omitempty"`
+	DrawingsPresent    bool                `json:"-"`
+	NotesInk           json.RawMessage     `json:"notesInk,omitempty"`
+	NotesInkPresent    bool                `json:"-"`
 }
 
 func supportedExportVersion(v string) bool { return v == "1.1" || v == "1.2" }
@@ -175,11 +179,11 @@ func validateBackupData(data *ExportData, fromArchive bool) error {
 		return fmt.Errorf("%w: missing export data", ErrValidation)
 	}
 	if fromArchive {
-		if data.Version != version.ArchiveExportFormatVersion {
+		if !version.IsSupportedArchiveVersion(data.Version) {
 			return fmt.Errorf("%w: unsupported archive export version %q (expected %s)", ErrValidation, data.Version, version.ArchiveExportFormatVersion)
 		}
 	} else {
-		if data.Version == version.ArchiveExportFormatVersion {
+		if version.IsSupportedArchiveVersion(data.Version) {
 			return fmt.Errorf("%w: backups with images (format %s) must be imported as a .sbz archive", ErrValidation, data.Version)
 		}
 		if !supportedExportVersion(data.Version) {
@@ -220,7 +224,7 @@ func validateBackupData(data *ExportData, fromArchive bool) error {
 			}
 		}
 	}
-	return nil
+	return validateBackupDrawings(data, fromArchive)
 }
 
 func (p ProjectExport) MarshalJSON() ([]byte, error) {
@@ -294,9 +298,13 @@ func (t *TodoExport) UnmarshalJSON(data []byte) error {
 	}
 	_, present := fields["priorityKey"]
 	_, archivedPresent := fields["archivedAt"]
+	_, drawingsPresent := fields["drawings"]
+	_, notesInkPresent := fields["notesInk"]
 	*t = TodoExport(decoded)
 	t.PriorityKeyPresent = present
 	t.ArchivedAtPresent = archivedPresent
+	t.DrawingsPresent = drawingsPresent
+	t.NotesInkPresent = notesInkPresent
 	return nil
 }
 
@@ -328,8 +336,10 @@ type WallExport struct {
 	// StoriesPresent distinguishes a legacy omission from an explicitly empty
 	// current-format placement set. Merge imports preserve existing placements
 	// only for the legacy omission.
-	StoriesPresent bool  `json:"-"`
-	Version        int64 `json:"version,omitempty"`
+	StoriesPresent  bool            `json:"-"`
+	Version         int64           `json:"version,omitempty"`
+	Drawings        []DrawingStroke `json:"drawings,omitempty"`
+	DrawingsPresent bool            `json:"-"`
 }
 
 func (w WallExport) MarshalJSON() ([]byte, error) {
@@ -356,6 +366,9 @@ func (w WallExport) MarshalJSON() ([]byte, error) {
 		}
 		fields["stories"] = storiesJSON
 	}
+	if w.DrawingsPresent && len(w.Drawings) == 0 {
+		fields["drawings"] = json.RawMessage("[]")
+	}
 	return json.Marshal(fields)
 }
 
@@ -370,8 +383,10 @@ func (w *WallExport) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	_, present := fields["stories"]
+	_, drawingsPresent := fields["drawings"]
 	*w = WallExport(decoded)
 	w.StoriesPresent = present
+	w.DrawingsPresent = drawingsPresent
 	return nil
 }
 
@@ -651,6 +666,10 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 				ArchivedAtPresent:  true,
 				DueAt:              dueAtMs,
 			})
+		}
+
+		if err := s.attachTodoDrawingsForExport(ctx, p.ID, todos, todoExports); err != nil {
+			return nil, err
 		}
 
 		// The image list is derived from the exported bodies themselves, so it always matches
@@ -1145,7 +1164,8 @@ func (s *Store) exportWallForProject(ctx context.Context, projectID int64) (*Wal
 	if err != nil {
 		return nil, fmt.Errorf("get wall: %w", err)
 	}
-	if len(wall.Notes) == 0 && len(wall.Edges) == 0 && len(wall.Stories) == 0 {
+	live := LiveWallDrawings(wall.Drawings)
+	if len(wall.Notes) == 0 && len(wall.Edges) == 0 && len(wall.Stories) == 0 && len(live) == 0 {
 		return nil, nil
 	}
 	stories := make([]WallStoryPlacementExport, 0, len(wall.Stories))
@@ -1158,11 +1178,13 @@ func (s *Store) exportWallForProject(ctx context.Context, projectID int64) (*Wal
 		})
 	}
 	return &WallExport{
-		Notes:          wall.Notes,
-		Edges:          wall.Edges,
-		Stories:        stories,
-		StoriesPresent: true,
-		Version:        wall.Version,
+		Notes:           wall.Notes,
+		Edges:           wall.Edges,
+		Stories:         stories,
+		StoriesPresent:  true,
+		Version:         wall.Version,
+		Drawings:        nonEmptyStrokes(live),
+		DrawingsPresent: len(live) > 0,
 	}, nil
 }
 
@@ -1886,12 +1908,21 @@ func (s *Store) importReplaceAll(ctx context.Context, data *ExportData, mode Mod
 			tx.Rollback()
 			return nil, err
 		}
+		todos, drawingRows, err := planImportDrawingsTx(ctx, tx, projectID, todos)
+		if err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 
 		// Bulk insert todos (strict mode for Replace)
 		imported, err := bulkInsertTodos(ctx, tx, projectID, todos, true, &result.Warnings, sprintIDByNumber)
 		if err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("import todos for project %q: %w", pExport.Name, err)
+		}
+		if err := writeImportedDrawingsTx(ctx, tx, projectID, imported, drawingRows); err != nil {
+			tx.Rollback()
+			return nil, err
 		}
 
 		// Bulk upsert tags (mode parameter kept for backward compatibility but not used)
@@ -2359,6 +2390,10 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 		if err != nil {
 			return nil, err
 		}
+		todos, drawingRows, err := planImportDrawingsTx(ctx, tx, projectID, todos)
+		if err != nil {
+			return nil, err
+		}
 
 		// Import todos - (project_id, local_id) is stable identity
 		imported := newImportedTodos(len(todos))
@@ -2544,6 +2579,9 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 
 				result.Created++
 			}
+		}
+		if err := writeImportedDrawingsTx(ctx, tx, projectID, imported, drawingRows); err != nil {
+			return nil, err
 		}
 
 		// Import tags - upsert by (project_id, name)
@@ -2761,6 +2799,10 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 		if err != nil {
 			return nil, err
 		}
+		todos, drawingRows, err := planImportDrawingsTx(ctx, tx, newProjectID, todos)
+		if err != nil {
+			return nil, err
+		}
 
 		// Import todos - preserve localId values from import
 		imported := newImportedTodos(len(todos))
@@ -2863,6 +2905,10 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 			if err := s.importTodoTags(ctx, tx, newProjectID, todoID, tExport.Tags, mode); err != nil {
 				return nil, fmt.Errorf("import todo tags: %w", err)
 			}
+		}
+
+		if err := writeImportedDrawingsTx(ctx, tx, newProjectID, imported, drawingRows); err != nil {
+			return nil, err
 		}
 
 		// Import tags with remapped project_id
@@ -3263,4 +3309,11 @@ func (s *Store) previewImport(ctx context.Context, data *ExportData, mode Mode, 
 	log.Printf("PreviewImport: Returning preview - Projects:%d Todos:%d Tags:%d WillCreate:%d WillUpdate:%d WillDelete:%d",
 		result.Projects, result.Todos, result.Tags, result.WillCreate, result.WillUpdate, result.WillDelete)
 	return result, nil
+}
+
+func nonEmptyStrokes(strokes []DrawingStroke) []DrawingStroke {
+	if len(strokes) == 0 {
+		return nil
+	}
+	return strokes
 }

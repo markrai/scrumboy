@@ -13,7 +13,7 @@ import { apiFetch, archiveTodos, restoreTodos } from './dist/api.js';
 import { navigate, router } from './dist/router.js';
 import { getRoute, getProjectId, getBoard, getAuthStatusAvailable, getMobileTab, getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getProjectView, getProjectsTab, getProjects, getSettingsProjectId, getEditingTodo, getAvailableTags, getAutocompleteSuggestion, getAvailableTagsMap, getTagColors, getUser, getSettingsActiveTab, getBackupImportBtn, getBackupData, getBackupPreview, getAuthStatusChecked } from './dist/state/selectors.js';
 import { setProjectId, setBoard, setSlug, setMobileTab, setProjects, setProjectsTab, setProjectView, setEditingTodo, setAvailableTags, setAvailableTagsMap, setAutocompleteSuggestion, setTagColors, setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview } from './dist/state/mutations.js';
-import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose, getTodoDialogOpenGeneration, notifyTodoCreated, isTodoImageUploadPending, getTodoNotesValue } from './dist/dialogs/todo.js';
+import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose, getTodoDialogOpenGeneration, notifyTodoCreated, isTodoImageUploadPending, getTodoNotesValue, prepareTodoDrawingsForSave, prepareTodoNotesInkForSave } from './dist/dialogs/todo.js';
 import { buildTodoCreatePayload, buildTodoPatchPayload, shouldSubmitSprintAssignment } from './dist/dialogs/todo-submit.js';
 import { hasIncompleteDueInput, resolveDueAtForSubmit } from './dist/dialogs/todo-due.js';
 import { hasInvalidCustomFieldInput, readCustomFieldInputs, readCustomFieldTypes, resolveCustomFieldsForSubmit } from './dist/dialogs/todo-custom-fields.js';
@@ -219,6 +219,15 @@ todoForm.addEventListener("submit", async (e) => {
 
   const title = todoTitle.value;
   const todoDialogGeneration = getTodoDialogOpenGeneration();
+  let drawings = null;
+  let notesInk;
+  try {
+    drawings = await prepareTodoDrawingsForSave();
+    notesInk = await prepareTodoNotesInkForSave();
+  } catch (err) {
+    showToast(err?.message || t("todo.saveFailed"));
+    return;
+  }
   const body = getTodoNotesValue();
   const tags = getTagsFromChips();
   const columnKey = todoStatus.value;
@@ -267,6 +276,8 @@ todoForm.addEventListener("submit", async (e) => {
         dueAt: resolveDueAtForSubmit("edit", dueAtValue, todo.dueAt),
         customFields: resolveCustomFieldsForSubmit("edit", customFieldInputs, customFieldTypes, todo.customFields),
       });
+      if (drawings) patchPayload.drawings = drawings;
+      if (notesInk !== undefined) patchPayload.notesInk = notesInk;
       recordLocalMutation();
       await apiFetch(`/api/board/${getSlug()}/todos/${todo.localId}`, {
         method: "PATCH",
@@ -300,6 +311,8 @@ todoForm.addEventListener("submit", async (e) => {
         dueAt: resolveDueAtForSubmit("create", dueAtValue, null),
         customFields: resolveCustomFieldsForSubmit("create", customFieldInputs, customFieldTypes, null),
       });
+      if (drawings) createPayload.drawings = drawings;
+      if (notesInk) createPayload.notesInk = notesInk;
       recordLocalMutation();
       const createdTodo = await apiFetch(`/api/board/${getSlug()}/todos`, {
         method: "POST",

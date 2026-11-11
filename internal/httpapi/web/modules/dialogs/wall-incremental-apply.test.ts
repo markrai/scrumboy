@@ -100,6 +100,15 @@ describe("Phase 3 · diffWallDoc pure helper", () => {
     expect(__diffWallDocForTest(a, b)).toEqual({ kind: "noop" });
   });
 
+  it("returns incremental for a drawings-only peer change instead of noop", () => {
+    const stroke = { id: "s1", tool: "pen" as const, color: "#112233", size: 4, opacity: 1, createdAt: 1, points: [[0, 0, 0.5]] as [number, number, number][] };
+    const a = { notes: [{ ...baseNote }], edges: [], drawings: [], version: 1 };
+    const b = { notes: [{ ...baseNote }], edges: [], drawings: [stroke], version: 2 };
+    const diff = __diffWallDocForTest(a, b);
+    expect(diff).toEqual({ kind: "incremental", changedNotes: [], changedStories: [], changedDrawings: true });
+    expect(__diffWallDocForTest(b, { ...b })).toEqual({ kind: "noop" });
+  });
+
   it("returns incremental with only the changed note when a single field differs", () => {
     const a = { notes: [{ ...baseNote }], edges: [], version: 1 };
     const b = {

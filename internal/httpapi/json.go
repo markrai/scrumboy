@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -863,22 +864,24 @@ type projectExportJSON struct {
 }
 
 type todoExportJSON struct {
-	LocalID          int64          `json:"localId"`
-	Title            string         `json:"title"`
-	Body             string         `json:"body"`
-	Status           string         `json:"status"`
-	Rank             int64          `json:"rank"`
-	EstimationPoints *int64         `json:"estimationPoints,omitempty"`
-	AssigneeUserId   *int64         `json:"assigneeUserId,omitempty"`
-	SprintNumber     *int64         `json:"sprintNumber,omitempty"`
-	PriorityKey      *string        `json:"priorityKey"`
-	Tags             []string       `json:"tags"`
-	CreatedAt        time.Time      `json:"createdAt"`
-	UpdatedAt        time.Time      `json:"updatedAt"`
-	DoneAt           *int64         `json:"doneAt,omitempty"`
-	ArchivedAt       *int64         `json:"archivedAt"`
-	DueAt            *int64         `json:"dueAt,omitempty"`
-	CustomFields     map[string]any `json:"customFields,omitempty"`
+	LocalID          int64                     `json:"localId"`
+	Title            string                    `json:"title"`
+	Body             string                    `json:"body"`
+	Status           string                    `json:"status"`
+	Rank             int64                     `json:"rank"`
+	EstimationPoints *int64                    `json:"estimationPoints,omitempty"`
+	AssigneeUserId   *int64                    `json:"assigneeUserId,omitempty"`
+	SprintNumber     *int64                    `json:"sprintNumber,omitempty"`
+	PriorityKey      *string                   `json:"priorityKey"`
+	Tags             []string                  `json:"tags"`
+	CreatedAt        time.Time                 `json:"createdAt"`
+	UpdatedAt        time.Time                 `json:"updatedAt"`
+	DoneAt           *int64                    `json:"doneAt,omitempty"`
+	ArchivedAt       *int64                    `json:"archivedAt"`
+	DueAt            *int64                    `json:"dueAt,omitempty"`
+	CustomFields     map[string]any            `json:"customFields,omitempty"`
+	Drawings         []store.TodoDrawingExport `json:"drawings,omitempty"`
+	NotesInk         json.RawMessage           `json:"notesInk,omitempty"`
 }
 
 type tagExportJSON struct {
@@ -914,6 +917,8 @@ func exportDataToJSON(data *store.ExportData) exportDataJSON {
 				ArchivedAt:       t.ArchivedAt,
 				DueAt:            t.DueAt,
 				CustomFields:     t.CustomFields,
+				Drawings:         t.Drawings,
+				NotesInk:         t.NotesInk,
 			})
 		}
 

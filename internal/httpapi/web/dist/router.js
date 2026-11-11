@@ -5,6 +5,7 @@ import { hydrateNotificationsForUser, initNotificationBadge } from './core/notif
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getMobileOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
 import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setInlineImagesEnabled, setPublicProjectsEnabled, setLandingPageEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, setBoardAccess, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setDrawingFeatureFlags } from './drawing/drawing-flags.js';
 import { getTagsFromUrl, sameOrderedTags } from './state/board-filter-url.js';
 import { loadUserTheme } from './theme.js';
 import { appHomePath, isWorkspacePath } from './app-home.js';
@@ -182,6 +183,10 @@ async function routeOnceBody() {
         setMarkdownNotesEnabled(!!(st && st.markdownNotesEnabled));
         setMermaidNotesEnabled(!!(st && st.mermaidNotesEnabled));
         setInlineImagesEnabled(!isAnonymousMode && !!(st && st.inlineImagesEnabled));
+        setDrawingFeatureFlags({
+            story: !isAnonymousMode && !!(st && st.drawingEnabled),
+            wall: !isAnonymousMode && !!(st && st.wallDrawingEnabled),
+        });
         setPublicProjectsEnabled(!isAnonymousMode && !!(st && st.publicProjectsEnabled));
         setLandingPageEnabled(!isAnonymousMode && !!(st && st.landingPageEnabled));
         // Load full profile (including avatar) when logged in; /api/auth/status omits image to keep it lean

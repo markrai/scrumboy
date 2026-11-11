@@ -80,6 +80,10 @@ func (s *Server) handleBoardWallRoutes(w http.ResponseWriter, r *http.Request, r
 	case len(rest) == 4 && rest[2] == "edges" && r.Method == http.MethodDelete:
 		s.handleWallDeleteEdge(w, r, project.ID, rest[3])
 		return true
+
+	case len(rest) == 3 && rest[2] == "drawings" && r.Method == http.MethodPost:
+		s.handleWallDrawings(w, r, project)
+		return true
 	}
 
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
@@ -103,7 +107,13 @@ func (s *Server) handleWallGet(w http.ResponseWriter, r *http.Request, project s
 		writeStoreErr(w, err, true)
 		return
 	}
-	writeJSON(w, http.StatusOK, wallToJSON(wall, project))
+	writeJSON(w, http.StatusOK, wallWithDrawingsJSON(wall, project))
+}
+
+func wallWithDrawingsJSON(wall store.Wall, project store.Project) map[string]any {
+	body := wallToJSON(wall, project)
+	body["drawings"] = store.LiveWallDrawings(wall.Drawings)
+	return body
 }
 
 type wallNoteInputJSON struct {

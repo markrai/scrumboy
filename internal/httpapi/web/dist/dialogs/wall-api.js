@@ -13,6 +13,12 @@ function wallBase(slug) {
 export function fetchWall(slug) {
     return apiFetch(wallBase(slug));
 }
+export function postWallDrawings(slug, body) {
+    return apiFetch(`${wallBase(slug)}/drawings`, {
+        method: "POST",
+        body: JSON.stringify(body),
+    });
+}
 export function createNote(slug, body) {
     return apiFetch(`${wallBase(slug)}/notes`, {
         method: "POST",

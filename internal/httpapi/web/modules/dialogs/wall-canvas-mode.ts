@@ -1,4 +1,4 @@
-export type WallCanvasMode = "select" | "pan";
+export type WallCanvasMode = "select" | "pan" | "draw";
 
 // Global (not per-project) canvas-mode preference. The wall is per-project but
 // the Select/Pan toggle is remembered across every board's wall via a single
@@ -31,13 +31,28 @@ export function setWallCanvasMode(mode: WallCanvasMode): void {
 }
 
 export function toggleWallCanvasMode(): WallCanvasMode {
-  wallCanvasMode = wallCanvasMode === "select" ? "pan" : "select";
+  wallCanvasMode = wallCanvasMode === "pan" ? "select" : wallCanvasMode === "select" ? "pan" : "select";
   saveWallCanvasMode(wallCanvasMode);
   return wallCanvasMode;
 }
 
 export function isWallPanMode(): boolean {
   return wallCanvasMode === "pan";
+}
+
+let modeBeforeDraw: "select" | "pan" = "select";
+
+export function enterWallDrawMode(): void {
+  if (wallCanvasMode !== "draw") modeBeforeDraw = wallCanvasMode;
+  wallCanvasMode = "draw";
+}
+
+export function exitWallDrawMode(): void {
+  if (wallCanvasMode === "draw") wallCanvasMode = modeBeforeDraw;
+}
+
+export function isWallDrawMode(): boolean {
+  return wallCanvasMode === "draw";
 }
 
 /** Load the persisted global preference into memory and return it. */

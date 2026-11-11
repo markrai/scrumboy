@@ -6,6 +6,10 @@ import { DIALOG_CLOSE_REQUEST_EVENT } from '../core/modal-outside-click.js';
 import { releaseMarkdownPreviewResources, renderMarkdownPreviewInto } from '../markdown-preview.js';
 import { createTodoImageUploader } from './todo-image-upload.js';
 import { createNotesEditor, notesEditorAvailable } from './todo-notes-editor.js';
+import { DrawingSession, clipboardDrawing, rememberClipboardDrawing } from '../drawing/drawing-session.js';
+import { isStoryDrawingEnabled as getDrawingEnabled } from '../drawing/drawing-flags.js';
+import { mountNotesInk } from '../drawing/notes-ink.js';
+import { newDrawingId } from '../drawing/drawing-types.js';
 import { THEME_CHANGE_EVENT } from '../theme.js';
 import { getBoard, getBoardMembers, getInlineImagesEnabled, getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getTagColors, getUser } from '../state/selectors.js';
 import { setAvailableTags, setAvailableTagsMap, setEditingTodo, setTagColors } from '../state/mutations.js';
@@ -38,6 +42,110 @@ let todoDialogClosePromptOpen = false;
 let todoCreatorLocaleAbort = null;
 let todoDialogOpenGeneration = 0;
 let todoCreatedCallback = null;
+const todoDrawingSession = new DrawingSession();
+let todoDrawingsEditable = false;
+let todoDrawingSlug = null;
+let todoNotesInk = null;
+function drawingText(key, fallback) {
+    return hasI18nKey(key) ? t(key) : fallback;
+}
+const todoDrawingHost = {
+    canEdit: () => todoDrawingsEditable,
+    slug: () => todoDrawingSlug,
+    get: (id) => todoDrawingSession.get(id),
+    isKnown: (id) => todoDrawingSession.has(id),
+    subscribe: (listener) => todoDrawingSession.subscribe(listener),
+    adoptPasted: (id) => {
+        const doc = clipboardDrawing(id);
+        if (!doc)
+            return null;
+        const fresh = newDrawingId();
+        todoDrawingSession.setDraft(fresh, doc);
+        return fresh;
+    },
+    rememberCopied: (ids) => {
+        for (const id of ids) {
+            const doc = todoDrawingSession.get(id);
+            if (doc)
+                rememberClipboardDrawing(id, doc);
+        }
+    },
+    notify: (message) => showToast(message),
+};
+function ensureTodoNotesInk() {
+    if (todoNotesInk || !todoNotesEditor)
+        return todoNotesInk;
+    const host = todoNotesEditorHost();
+    const editorBox = host?.parentElement ?? null;
+    const labelRow = document.getElementById("todoBodyLabel")?.parentElement ?? null;
+    let toolsHost = null;
+    if (editorBox?.parentElement) {
+        toolsHost = document.createElement("div");
+        toolsHost.className = "notes-ink-tools-host";
+        editorBox.parentElement.insertBefore(toolsHost, editorBox);
+    }
+    todoNotesInk = mountNotesInk({
+        scroller: todoNotesEditor.scroller,
+        content: todoNotesEditor.content,
+        toggleHost: labelRow,
+        toolsHost,
+        onDrawingChange: (on) => host?.classList.toggle("todo-notes-visual--inking", on),
+    });
+    return todoNotesInk;
+}
+function configureTodoDrawings(opts) {
+    todoDrawingSession.clear();
+    const active = getDrawingEnabled() && todoNotesVisual && !!todoNotesEditor;
+    todoDrawingsEditable = active && opts.editable && !!opts.slug;
+    todoDrawingSlug = opts.slug;
+    const ink = active ? ensureTodoNotesInk() : todoNotesInk;
+    if (ink) {
+        ink.setDrawing(false);
+        ink.setDocument(null);
+        ink.setLocked(false);
+        ink.setEditable(todoDrawingsEditable);
+    }
+    if (active && opts.slug && opts.localId != null) {
+        ink?.setLocked(true);
+        const generation = todoDialogOpenGeneration;
+        const url = `/api/board/${opts.slug}/todos/${opts.localId}/drawings`;
+        void todoDrawingSession.hydrate(url, (u, signal) => apiFetch(u, { signal })).then(() => {
+            if (generation !== todoDialogOpenGeneration || !ink)
+                return;
+            if (!todoDrawingSession.hydrationFailed)
+                ink.setDocument(todoDrawingSession.notesInk);
+            ink.setLocked(todoDrawingSession.hydrationFailed);
+        });
+    }
+}
+function resolveTodoPreviewDrawing(id) {
+    if (todoDrawingSession.isLoading)
+        return todoDrawingSession.whenReady().then(() => todoDrawingSession.get(id));
+    return todoDrawingSession.get(id);
+}
+function drawingsLoadFailedError() {
+    return new Error(drawingText("drawing.loadFailedSave", "This story's drawings could not be loaded. Reload the story before saving so no handwriting or annotation is lost."));
+}
+export async function prepareTodoDrawingsForSave() {
+    if (!todoNotesVisual || !todoNotesEditor || !getDrawingEnabled())
+        return null;
+    await todoDrawingSession.whenReady();
+    if (todoDrawingSession.hydrationFailed)
+        throw drawingsLoadFailedError();
+    const stripped = todoNotesEditor.stripDrawingRefs((id) => !todoDrawingSession.has(id));
+    if (stripped > 0) {
+        showToast(drawingText("drawing.unresolvedStripped", "Annotations that no longer exist were removed from the notes."));
+    }
+    return todoDrawingSession.savePayload(todoNotesEditor.drawingIds());
+}
+export async function prepareTodoNotesInkForSave() {
+    if (!todoNotesVisual || !todoNotesInk || !getDrawingEnabled() || !todoDrawingsEditable)
+        return undefined;
+    await todoDrawingSession.whenReady();
+    if (todoDrawingSession.hydrationFailed)
+        throw drawingsLoadFailedError();
+    return todoNotesInk.saveValue();
+}
 function sprintStateLabel(state) {
     const key = `todo.sprint.state.${state}`;
     return state && hasI18nKey(key) ? t(key) : state;
@@ -148,6 +256,8 @@ function ensureTodoNotesEditor() {
                 status.textContent = message;
         },
     });
+    if (getDrawingEnabled())
+        todoNotesEditor.setDrawingHost(todoDrawingHost);
     document.getElementById("todoBodyLabel")?.addEventListener("click", (event) => {
         if (todoNotesVisual) {
             event.preventDefault();
@@ -183,7 +293,18 @@ async function renderTodoNotesPreview() {
         return;
     }
     try {
-        await renderMarkdownPreviewInto(todoBodyPreview, getTodoNotesValue(), { mermaidEnabled: getMermaidNotesEnabled(), inlineImagesEnabled: getInlineImagesEnabled() });
+        const preview = todoBodyPreview;
+        await renderMarkdownPreviewInto(preview, getTodoNotesValue(), {
+            mermaidEnabled: getMermaidNotesEnabled(),
+            inlineImagesEnabled: getInlineImagesEnabled(),
+            resolveDrawing: getDrawingEnabled() && todoNotesVisual ? resolveTodoPreviewDrawing : undefined,
+        });
+        if (getDrawingEnabled() && todoNotesVisual && todoNotesInk?.hasInk()) {
+            const hint = document.createElement("p");
+            hint.className = "notes-ink-preview-hint";
+            hint.textContent = drawingText("drawing.notesPreviewHint", "This story has handwriting. It is shown over the notes in the Markdown view.");
+            preview.prepend(hint);
+        }
     }
     catch (err) {
         showToast(apiErrorMessage(err, { fallbackKey: "todo.notes.previewUnavailable" }));
@@ -335,6 +456,7 @@ function readTodoDialogSnapshot() {
         priority: todoPriority?.value ?? "",
         dueAt: todoDueAt?.value ?? "",
         customFields: JSON.stringify(readCustomFieldInputs(document.getElementById("todoCustomFields"))),
+        drawings: `${todoDrawingSession.revision}|${todoNotesInk?.isDirty() ? todoNotesInk.revision() : 0}`,
     };
 }
 function captureTodoDialogBaseline() {
@@ -354,6 +476,7 @@ function isTodoDialogDirty() {
         current.priority !== todoDialogBaseline.priority ||
         current.dueAt !== todoDialogBaseline.dueAt ||
         current.customFields !== todoDialogBaseline.customFields ||
+        current.drawings !== todoDialogBaseline.drawings ||
         current.tags.length !== todoDialogBaseline.tags.length ||
         current.tags.some((tag, idx) => tag !== todoDialogBaseline?.tags[idx]));
 }
@@ -427,6 +550,10 @@ function bindTodoDialogCloseGuards() {
     todoDialog.addEventListener("close", () => {
         abortTodoImageUploads();
         todoImageContext = null;
+        todoNotesInk?.setDrawing(false);
+        todoNotesInk?.setDocument(null);
+        todoDrawingSession.clear();
+        todoDrawingsEditable = false;
         releaseTodoNotesPreview();
         // Releases the editor's image files (native handles on Android) right away.
         todoNotesEditor?.clear();
@@ -783,6 +910,17 @@ export async function openTodoDialog(opts) {
         permissions.canEditNotes &&
         (mode === "create" ? permissions.canSubmitTodo : todo?.localId != null);
     configureTodoImageUploads(imagesAllowed ? { slug: imageSlug, todoLocalId: mode === "create" ? null : Number(todo.localId) } : null);
+    configureTodoDrawings({
+        editable: !!imageSlug &&
+            !!board?.project &&
+            !board.project.expiresAt &&
+            !isAnonymousBoard(board) &&
+            !isArchived &&
+            permissions.canEditNotes &&
+            (mode === "create" ? permissions.canSubmitTodo : todo?.localId != null),
+        slug: imageSlug ?? null,
+        localId: mode === "edit" && todo?.localId != null ? Number(todo.localId) : null,
+    });
     const tagsChips = document.getElementById("tagsChips");
     if (tagsChips)
         tagsChips.innerHTML = "";

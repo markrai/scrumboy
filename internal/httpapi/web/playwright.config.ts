@@ -11,6 +11,7 @@ export default defineConfig({
     "scripts/public-board.playwright.ts",
     "scripts/public-board-phase5.playwright.ts",
     "scripts/inline-images.playwright.ts",
+    "scripts/drawing.playwright.ts",
   ],
   outputDir: path.join(os.tmpdir(), "scrumboy-web-playwright-results"),
   reporter: "line",

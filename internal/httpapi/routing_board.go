@@ -151,6 +151,9 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 	if s.handleBoardAssetRoutes(w, r, rest, &pc) {
 		return
 	}
+	if s.handleBoardDrawingRoutes(w, r, rest, &pc) {
+		return
+	}
 	if s.handleBoardTodoRoutes(w, r, rest, &pc) {
 		return
 	}
@@ -740,6 +743,8 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 			PriorityKey      *string         `json:"priorityKey"`
 			DueAt            *time.Time      `json:"dueAt"`
 			CustomFields     json.RawMessage `json:"customFields"`
+			Drawings         json.RawMessage `json:"drawings"`
+			NotesInk         json.RawMessage `json:"notesInk"`
 			Position         *struct {
 				AfterID  *int64 `json:"afterId"`
 				BeforeID *int64 `json:"beforeId"`
@@ -757,6 +762,15 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 				return true
 			}
 			customFields = values
+		}
+
+		drawings, ok := s.decodeTodoDrawingsField(w, in.Drawings)
+		if !ok {
+			return true
+		}
+		notesInk, ok := s.decodeNotesInkField(w, in.NotesInk, in.NotesInk != nil)
+		if !ok {
+			return true
 		}
 
 		columnKey := normalizeLaneKey(in.ColumnKey)
@@ -789,6 +803,8 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 				PriorityKey:      in.PriorityKey,
 				DueAt:            in.DueAt,
 				CustomFields:     customFields,
+				Drawings:         drawings,
+				NotesInk:         notesInk,
 			},
 			Position: position,
 		})
@@ -1114,6 +1130,20 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 					return true
 				}
 				patch.CustomFields = todoapp.Field[store.CustomFieldValues]{Present: true, Value: values}
+			}
+			if rawDrawings, hasDrawings := raw["drawings"]; hasDrawings {
+				drawings, ok := s.decodeTodoDrawingsField(w, rawDrawings)
+				if !ok {
+					return true
+				}
+				patch.Drawings = todoapp.Field[map[string]json.RawMessage]{Present: true, Value: drawings}
+			}
+			if rawInk, hasInk := raw["notesInk"]; hasInk {
+				notesInk, ok := s.decodeNotesInkField(w, rawInk, true)
+				if !ok {
+					return true
+				}
+				patch.NotesInk = todoapp.Field[json.RawMessage]{Present: true, Value: notesInk.Data}
 			}
 			prepared := s.todoUpdates.Prepare(s.requestContext(r), todoapp.ResolvedUpdateTarget{
 				ProjectContext: *pc,

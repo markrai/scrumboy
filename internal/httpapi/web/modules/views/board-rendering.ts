@@ -430,10 +430,9 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
   const voiceCommandClass = showVoiceCommands ? "topbar--voice-commands-on" : "topbar--voice-commands-off";
   const voiceCommandTriggerHTML = showVoiceCommands ? renderVoiceCommandTriggerHtml() : "";
   // Scrumbaby is durable-projects-only; temp/anonymous boards never see the entry point.
-  // Desktop only: to the right of the mic (voice trigger) in the topbar flex order.
+  // To the right of the mic (voice trigger) in the topbar flex order.
   const wallButtonHTML =
     wallEnabled &&
-    !isMobile &&
     !isTemporaryBoard(board) &&
     (currentUserProjectRole === "maintainer" || currentUserProjectRole === "contributor" || currentUserProjectRole === "viewer")
       ? `<button class="btn btn--ghost" type="button" id="wallBtn" title="${escapeHTML(t("board.actions.openWall"))}" aria-label="${escapeHTML(t("board.actions.openWall"))}" data-i18n-title="board.actions.openWall" data-i18n-aria-label="board.actions.openWall"><img src="/postit.svg" alt="" width="20" height="20" decoding="async" /></button>`

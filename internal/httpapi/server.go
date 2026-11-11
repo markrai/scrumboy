@@ -96,7 +96,9 @@ type Options struct {
 	// WallEnabled gates the Scrumbaby feature. When false, all /wall routes
 	// return 404 and the frontend hides the Wall topbar button. Defaults on;
 	// set SCRUMBOY_WALL_ENABLED=0 to disable (see config.FromEnv semantics).
-	WallEnabled bool
+	WallEnabled        bool
+	DrawingEnabled     bool
+	WallDrawingEnabled bool
 
 	// MarkdownNotesEnabled gates the todo notes markdown/preview experience in the
 	// SPA. When false, the frontend behaves exactly as before.
@@ -213,6 +215,7 @@ type Server struct {
 	wallNoteMutations             *wallapp.RESTNoteService
 	wallReplacements              *wallapp.RESTReplacementService
 	wallEdgeMutations             *wallapp.RESTEdgeService
+	wallDrawingMutations          *wallapp.RESTDrawingService
 	wallTransientMutations        *wallapp.RESTTransientService
 	wallStoryMutations            *wallapp.RESTStoryService
 
@@ -295,6 +298,8 @@ type Server struct {
 	dataDir string // user-wallpapers storage; empty = disabled
 
 	wallEnabled          bool // Scrumbaby wall; default on (SCRUMBOY_WALL_ENABLED=0 to disable)
+	drawingEnabled       bool
+	wallDrawingEnabled   bool
 	markdownNotesEnabled bool // Todo notes markdown preview; default on (SCRUMBOY_MARKDOWN_NOTES_ENABLED=0 to disable)
 	mermaidNotesEnabled  bool // Mermaid in todo notes preview; default on, requires markdown notes
 
@@ -536,6 +541,13 @@ type storeAPI interface {
 	ReplaceWall(ctx context.Context, projectID int64, notes []store.WallNote) (store.Wall, error)
 	CreateEdge(ctx context.Context, projectID int64, fromEndpoint, toEndpoint string) (store.WallEdge, store.Wall, error)
 	DeleteEdge(ctx context.Context, projectID int64, edgeID string) (store.Wall, error)
+	ApplyWallDrawingOps(ctx context.Context, projectID, actorID int64, ops store.WallDrawingOps) (store.WallDrawingResult, error)
+	ListTodoDrawingsByLocalID(ctx context.Context, projectID, localID int64) (map[string]json.RawMessage, error)
+	GetProjectDrawing(ctx context.Context, projectID int64, drawingID string, includeArchived bool) (json.RawMessage, error)
+	ListPublicTodoDrawings(ctx context.Context, projectID int64, expectedSlug string, localID int64) (map[string]json.RawMessage, error)
+	GetPublicDrawing(ctx context.Context, projectID int64, expectedSlug, drawingID string) (json.RawMessage, error)
+	GetTodoNotesInkByLocalID(ctx context.Context, projectID, localID int64) (json.RawMessage, error)
+	GetPublicTodoNotesInk(ctx context.Context, projectID int64, expectedSlug string, localID int64) (json.RawMessage, error)
 	PinWallStory(ctx context.Context, projectID, localID int64, x, y float64) (store.WallStoryPlacement, bool, error)
 	PatchWallStory(ctx context.Context, projectID, localID int64, ifVersion int64, x, y float64) (store.WallStoryPlacement, error)
 	UnpinWallStory(ctx context.Context, projectID, localID int64) error
@@ -816,6 +828,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		pushStatus:                     preparedPush.status,
 		pushDebug:                      pushDebug,
 		wallEnabled:                    opts.WallEnabled,
+		wallDrawingEnabled:             opts.WallDrawingEnabled && opts.WallEnabled,
 		markdownNotesEnabled:           opts.MarkdownNotesEnabled,
 		mermaidNotesEnabled:            opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 		inlineImagesEnabled: opts.InlineImagesEnabled && mode == "full" && opts.MarkdownNotesEnabled &&
@@ -824,6 +837,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		assetPending: opts.AssetPending,
 		assetJanitor: opts.AssetJanitor,
 	}
+	server.drawingEnabled = opts.DrawingEnabled && server.inlineImagesEnabled
 	if server.inlineImagesEnabled {
 		server.assetService = assetapp.NewService(assetapp.ServiceOptions{
 			Store:     st,
@@ -895,6 +909,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Roles:        st,
 		Replacements: st,
 		Refresh:      wallRefreshPublisher{server: server},
+	})
+	server.wallDrawingMutations = wallapp.NewRESTDrawingService(wallapp.RESTDrawingServiceDependencies{
+		Roles:     st,
+		Mutations: st,
+		Refresh:   wallRefreshPublisher{server: server},
 	})
 	server.wallEdgeMutations = wallapp.NewRESTEdgeService(wallapp.RESTEdgeServiceDependencies{
 		Roles:     st,

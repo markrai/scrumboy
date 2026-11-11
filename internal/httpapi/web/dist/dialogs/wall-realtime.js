@@ -25,7 +25,7 @@ import { updateEdgesForEndpoint } from "./wall-rendering.js";
 import { storyEdgeCenter } from "./wall-edge-endpoint.js";
 import { getViewportState } from "./wall-viewport.js";
 import { fetchWall } from "./wall-api.js";
-import { getActiveEditNoteId, getMounted, isDragActive, setPendingRefetch, } from "./wall-state.js";
+import { getActiveEditNoteId, getMounted, isDragActive, isWallDrawingOrSaving, setPendingRefetch, } from "./wall-state.js";
 /**
  * Phase 2: trailing-debounce window for `wall.refresh_needed` events.
  *
@@ -72,6 +72,10 @@ export async function refetchDoc(opts) {
             return;
         if (getActiveEditNoteId()) {
             setPendingRefetch(true);
+            return;
+        }
+        if (isWallDrawingOrSaving() && !opts.allowDuringDrawing) {
+            opts.onDeferred?.();
             return;
         }
         opts.onApplyDoc(state, doc);
@@ -148,7 +152,7 @@ export function startRealtime(opts) {
         debounceTimer = null;
         if (!pending)
             return;
-        if (isDragActive()) {
+        if (isDragActive() || isWallDrawingOrSaving()) {
             debounceTimer = setTimeout(fireDebounced, REFRESH_DEBOUNCE_MS);
             return;
         }
@@ -173,7 +177,7 @@ export function startRealtime(opts) {
             }
             if (!pending)
                 return;
-            if (isDragActive())
+            if (isDragActive() || isWallDrawingOrSaving())
                 return;
             pending = false;
             opts.onRefreshNeeded();
@@ -193,7 +197,7 @@ export function startRealtime(opts) {
         // If a refresh is pending and no drag/edit is blocking, flush once so
         // teardown does not lose a convergence. Otherwise drop: the dialog is
         // going away and a fresh mount will GET /wall on open anyway.
-        if (pending && !isDragActive() && !getActiveEditNoteId()) {
+        if (pending && !isDragActive() && !isWallDrawingOrSaving() && !getActiveEditNoteId()) {
             pending = false;
             if (debounceTimer !== null) {
                 clearTimeout(debounceTimer);

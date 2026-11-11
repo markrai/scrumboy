@@ -309,6 +309,8 @@ export interface AuthStatusResponse {
   mermaidNotesEnabled?: boolean;
   /** Effective inline-images capability (presentation only). */
   inlineImagesEnabled?: boolean;
+  drawingEnabled?: boolean;
+  wallDrawingEnabled?: boolean;
   /** Effective Full Mode public-projects capability (presentation only). */
   publicProjectsEnabled?: boolean;
   /** Effective Full Mode landing override (/ is marketing, /_app is the workspace). */

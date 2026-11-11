@@ -8,6 +8,7 @@
 
 import {
   fetchPublicTodo,
+  fetchPublicTodoDrawings,
   fetchPublicTodoLinks,
   isPublicAbort,
   isPublicNotFound,
@@ -18,6 +19,11 @@ import {
 } from '../public-board-api.js';
 import { releaseMarkdownPreviewResources, renderMarkdownPreviewInto } from '../markdown-preview.js';
 import { sanitizeHexColor } from '../utils.js';
+import { sanitizeDrawingDocument, sanitizeNotesInk } from '../drawing/drawing-validate.js';
+import type { DrawingDocument } from '../drawing/drawing-types.js';
+import { mountNotesInk, type NotesInkController } from '../drawing/notes-ink.js';
+import { createNotesEditor, notesEditorAvailable, type NotesEditor } from './todo-notes-editor.js';
+import type { PublicTodoDrawingPayload } from '../public-board-api.js';
 import { t } from '../i18n/index.js';
 
 export const PUBLIC_TODO_DIALOG_ID = 'publicTodoDialog';
@@ -31,6 +37,7 @@ export type PublicTodoDialogContext = {
   readonly mermaidEnabled: boolean;
   /** Effective inline-images capability; images still require public-board access per request. */
   readonly inlineImagesEnabled?: boolean;
+  readonly drawingEnabled?: boolean;
   /** Navigates to another story of the same public board by local ID. */
   readonly onNavigateToStory: (localId: number) => void;
   /** Called when the dialog is closed by the user (button, Escape, outside click). */
@@ -137,8 +144,60 @@ function chip(text: string, colorValue: string | null, className: string, accent
   return el;
 }
 
-async function renderBody(container: HTMLElement, body: string, ctx: PublicTodoDialogContext): Promise<void> {
+const publicNotesSurfaces = new WeakMap<HTMLElement, { editor: NotesEditor; ink: NotesInkController }>();
+
+function publicDrawingsEnabled(ctx: PublicTodoDialogContext): boolean {
+  return !!ctx.drawingEnabled && !!ctx.inlineImagesEnabled;
+}
+
+function sanitizedDrawings(payload: PublicTodoDrawingPayload | null): Map<string, DrawingDocument> {
+  const out = new Map<string, DrawingDocument>();
+  for (const [id, raw] of Object.entries(payload?.drawings ?? {})) {
+    const doc = sanitizeDrawingDocument(raw);
+    if (doc) out.set(id, doc);
+  }
+  return out;
+}
+
+function renderPublicNotesSurface(container: HTMLElement, body: string, ink: DrawingDocument, drawings: Map<string, DrawingDocument>): void {
+  container.className = 'public-todo__notes public-todo__notes--surface';
+  container.replaceChildren();
+  const editor = createNotesEditor({ parent: container, maxLength: Math.max(20000, body.length) });
+  editor.setDrawingHost({
+    canEdit: () => false,
+    slug: () => null,
+    get: (id) => drawings.get(id),
+    isKnown: (id) => drawings.has(id),
+    subscribe: () => () => undefined,
+    adoptPasted: () => null,
+    rememberCopied: () => undefined,
+    notify: () => undefined,
+  });
+  editor.setReadOnly(true);
+  editor.setValue(body);
+  const noticeHost = document.createElement('div');
+  noticeHost.className = 'notes-ink-tools-host notes-ink-tools-host--readonly';
+  container.append(noticeHost);
+  const inkController = mountNotesInk({ scroller: editor.scroller, content: editor.content, noticeHost });
+  inkController.setEditable(false);
+  inkController.setDocument(ink);
+  publicNotesSurfaces.set(container, { editor, ink: inkController });
+}
+
+async function renderBody(container: HTMLElement, body: string, ctx: PublicTodoDialogContext, localId: number): Promise<void> {
   container.className = 'todo-markdown-preview public-todo__notes';
+  const payload = publicDrawingsEnabled(ctx) ? await fetchPublicTodoDrawings(ctx.slug, localId).catch(() => null) : null;
+  const drawings = sanitizedDrawings(payload);
+  const ink = sanitizeNotesInk(payload?.notesInk ?? null);
+  if (ink && ink.strokes.length > 0 && ctx.markdownEnabled && notesEditorAvailable()) {
+    try {
+      renderPublicNotesSurface(container, body, ink, drawings);
+      return;
+    } catch {
+      container.className = 'todo-markdown-preview public-todo__notes';
+      container.replaceChildren();
+    }
+  }
   if (body.trim() === '') {
     container.classList.add('muted');
     container.setAttribute('data-i18n-text', 'publicBoard.story.noNotes');
@@ -150,10 +209,13 @@ async function renderBody(container: HTMLElement, body: string, ctx: PublicTodoD
       await renderMarkdownPreviewInto(container, body, {
         mermaidEnabled: ctx.mermaidEnabled,
         inlineImagesEnabled: !!ctx.inlineImagesEnabled,
+        resolveDrawing: publicDrawingsEnabled(ctx) ? (id: string) => drawings.get(id) ?? null : undefined,
       });
       return;
     } catch {
-      // Markdown vendor unavailable: fall through to inert plain text.
+      container.classList.add('public-todo__notes--plain');
+      container.textContent = body;
+      return;
     }
   }
   container.classList.add('public-todo__notes--plain');
@@ -192,7 +254,7 @@ export async function renderPublicTodoContent(
   container.replaceChildren();
   const notes = document.createElement('div');
   container.append(field('todo.fields.notes', notes));
-  await renderBody(notes, todo.body, ctx);
+  await renderBody(notes, todo.body, ctx, todo.localId);
 
   if (todo.tags.length > 0) {
     const tags = document.createElement('div');
@@ -240,6 +302,12 @@ function setLoading(dialog: HTMLDialogElement, localId: number): void {
 // notes container under root before that content is discarded.
 function releaseNotesWithin(root: ParentNode): void {
   for (const notes of Array.from(root.querySelectorAll<HTMLElement>('.public-todo__notes'))) {
+    const surface = publicNotesSurfaces.get(notes);
+    if (surface) {
+      surface.ink.destroy();
+      surface.editor.destroy();
+      publicNotesSurfaces.delete(notes);
+    }
     releaseMarkdownPreviewResources(notes);
   }
 }
