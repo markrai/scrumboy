@@ -30,6 +30,7 @@ import {
   getActiveEditNoteId,
   getMounted,
   isDragActive,
+  isWallDrawingOrSaving,
   setPendingRefetch,
   type Mounted,
 } from "./wall-state.js";
@@ -51,6 +52,8 @@ const REFRESH_DEBOUNCE_MS = 120;
 export interface RefetchDocOptions {
   /** Called once with the normalized document on success. */
   onApplyDoc: (state: Mounted, doc: WallDocument) => void;
+  allowDuringDrawing?: boolean;
+  onDeferred?: () => void;
 }
 
 // Phase 0 debug counters. Off by default; surfaced via test-only getters
@@ -86,6 +89,10 @@ export async function refetchDoc(opts: RefetchDocOptions): Promise<void> {
     if (getMounted() !== state) return;
     if (getActiveEditNoteId()) {
       setPendingRefetch(true);
+      return;
+    }
+    if (isWallDrawingOrSaving() && !opts.allowDuringDrawing) {
+      opts.onDeferred?.();
       return;
     }
     opts.onApplyDoc(state, doc);
@@ -181,7 +188,7 @@ export function startRealtime(opts: StartRealtimeOptions): () => void {
   function fireDebounced(): void {
     debounceTimer = null;
     if (!pending) return;
-    if (isDragActive()) {
+    if (isDragActive() || isWallDrawingOrSaving()) {
       debounceTimer = setTimeout(fireDebounced, REFRESH_DEBOUNCE_MS);
       return;
     }
@@ -207,7 +214,7 @@ export function startRealtime(opts: StartRealtimeOptions): () => void {
         debounceTimer = null;
       }
       if (!pending) return;
-      if (isDragActive()) return;
+      if (isDragActive() || isWallDrawingOrSaving()) return;
       pending = false;
       opts.onRefreshNeeded();
     },
@@ -227,7 +234,7 @@ export function startRealtime(opts: StartRealtimeOptions): () => void {
     // If a refresh is pending and no drag/edit is blocking, flush once so
     // teardown does not lose a convergence. Otherwise drop: the dialog is
     // going away and a fresh mount will GET /wall on open anyway.
-    if (pending && !isDragActive() && !getActiveEditNoteId()) {
+    if (pending && !isDragActive() && !isWallDrawingOrSaving() && !getActiveEditNoteId()) {
       pending = false;
       if (debounceTimer !== null) {
         clearTimeout(debounceTimer);

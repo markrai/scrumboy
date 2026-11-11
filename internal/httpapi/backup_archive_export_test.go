@@ -11,6 +11,7 @@ import (
 
 	"scrumboy/internal/backuparchive"
 	"scrumboy/internal/store"
+	"scrumboy/internal/version"
 )
 
 func (f *assetHTTPFixture) export(t *testing.T, role, query string) (*http.Response, []byte, error) {
@@ -76,7 +77,7 @@ func TestExportWithImagesIsArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("archive invalid: %v", err)
 	}
-	if a.Data.Version != "1.3" {
+	if a.Data.Version != version.ArchiveExportFormatVersion {
 		t.Fatalf("version %s", a.Data.Version)
 	}
 	if _, ok := a.Assets[active]; !ok {

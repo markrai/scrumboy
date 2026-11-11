@@ -2,6 +2,7 @@ package todo
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"scrumboy/internal/store"
@@ -22,6 +23,8 @@ type CreateValues struct {
 	PriorityKey      *string
 	DueAt            *time.Time
 	CustomFields     store.CustomFieldValues
+	Drawings         map[string]json.RawMessage
+	NotesInk         store.NotesInkChange
 }
 
 // ResolvedCreatePosition carries internal todo-row identities (store.Todo.ID)
@@ -80,6 +83,8 @@ func MaterializeCreateInput(command CreateCommand) store.CreateTodoInput {
 		PriorityKey:      cloneCreateStringPtr(command.Values.PriorityKey),
 		DueAt:            cloneCreateTimePtr(command.Values.DueAt),
 		CustomFields:     cloneCreateCustomFields(command.Values.CustomFields),
+		Drawings:         cloneDrawings(command.Values.Drawings),
+		NotesInk:         cloneNotesInk(command.Values.NotesInk),
 		AfterID:          cloneCreateInt64Ptr(command.Position.AfterTodoID),
 		BeforeID:         cloneCreateInt64Ptr(command.Position.BeforeTodoID),
 	}
@@ -127,4 +132,19 @@ func cloneCreateCustomFields(values store.CustomFieldValues) store.CustomFieldVa
 		cloned[k] = v
 	}
 	return cloned
+}
+
+func cloneDrawings(values map[string]json.RawMessage) map[string]json.RawMessage {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]json.RawMessage, len(values))
+	for k, v := range values {
+		cloned[k] = append(json.RawMessage(nil), v...)
+	}
+	return cloned
+}
+
+func cloneNotesInk(change store.NotesInkChange) store.NotesInkChange {
+	return store.NotesInkChange{Present: change.Present, Data: append(json.RawMessage(nil), change.Data...)}
 }

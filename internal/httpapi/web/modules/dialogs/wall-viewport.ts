@@ -166,6 +166,7 @@ export function teardownWallViewport(): void {
   if (viewportSlug) saveViewportNow(viewportSlug);
   viewportSurface = null;
   viewportContent = null;
+  viewportInkLayer = null;
   viewportSlug = null;
   panX = 0;
   panY = 0;
@@ -192,9 +193,42 @@ export function setViewportState(state: ViewportState): void {
   scheduleSaveViewport();
 }
 
+const viewportListeners = new Set<() => void>();
+
+export function onViewportChange(listener: () => void): () => void {
+  viewportListeners.add(listener);
+  return () => viewportListeners.delete(listener);
+}
+
+export function getViewportSurfaceRect(): DOMRect {
+  return surfaceRect();
+}
+
+let viewportInkLayer: HTMLElement | null = null;
+
+export function ensureWallInkLayer(surface: HTMLElement): HTMLElement {
+  let layer = surface.querySelector<HTMLElement>(":scope > .wall-ink-layer");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.className = "wall-ink-layer";
+    layer.setAttribute("aria-hidden", "true");
+    surface.appendChild(layer);
+  }
+  viewportInkLayer = layer;
+  applyTransform();
+  return layer;
+}
+
+export function getWallInkLayer(): HTMLElement | null {
+  return viewportInkLayer;
+}
+
 export function applyTransform(): void {
   if (!viewportContent) return;
-  viewportContent.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  const transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  viewportContent.style.transform = transform;
+  if (viewportInkLayer) viewportInkLayer.style.transform = transform;
+  for (const listener of Array.from(viewportListeners)) listener();
 }
 
 function surfaceRect(): DOMRect {

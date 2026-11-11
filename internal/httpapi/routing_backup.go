@@ -67,9 +67,9 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 		// Format: scrumboy-backup-2026-01-24-03-45-PM.json
 		stem := fmt.Sprintf("scrumboy-backup-%s-%s", now.Format("2006-01-02"), now.Format("03-04-PM"))
 
-		if store.ExportHasAssets(data) {
+		if store.ExportHasAssets(data) || store.ExportHasDrawings(data) {
 			if guarded {
-				writeError(w, http.StatusConflict, "ARCHIVE_EXPORT_UNSUPPORTED_CLIENT", "this backup contains images; export it from a web browser", nil)
+				writeError(w, http.StatusConflict, "ARCHIVE_EXPORT_UNSUPPORTED_CLIENT", "this backup contains images or drawings; export it from a web browser", nil)
 				return
 			}
 			s.writeArchiveExport(w, data, stem+".sbz")

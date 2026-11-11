@@ -17,6 +17,7 @@
     "test:cards-per-lane": "playwright test --config=playwright.config.ts scripts/cards-per-lane.playwright.ts",
     "test:mermaid-browser": "playwright test --config=playwright.config.ts scripts/mermaid-vendor.playwright.ts",
     "test:inline-images": "playwright test --config=playwright.config.ts scripts/inline-images.playwright.ts",
+    "test:drawing": "playwright test --config=playwright.config.ts scripts/drawing.playwright.ts",
     "test:e2e": "playwright test --config=playwright.config.ts",
     "copy:i18n": "node scripts/copy-i18n-locales.mjs",
     "build:capacitor-web": "node scripts/build-capacitor-web.mjs",

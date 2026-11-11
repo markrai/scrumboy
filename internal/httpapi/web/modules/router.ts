@@ -5,6 +5,7 @@ import { hydrateNotificationsForUser, initNotificationBadge } from './core/notif
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getMobileOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
 import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setInlineImagesEnabled, setPublicProjectsEnabled, setLandingPageEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, setBoardAccess, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setDrawingFeatureFlags } from './drawing/drawing-flags.js';
 import { getTagsFromUrl, sameOrderedTags } from './state/board-filter-url.js';
 import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
@@ -245,6 +246,10 @@ async function routeOnceBody(): Promise<void> {
     setMarkdownNotesEnabled(!!(st && st.markdownNotesEnabled));
     setMermaidNotesEnabled(!!(st && st.mermaidNotesEnabled));
     setInlineImagesEnabled(!isAnonymousMode && !!(st && st.inlineImagesEnabled));
+    setDrawingFeatureFlags({
+      story: !isAnonymousMode && !!(st && st.drawingEnabled),
+      wall: !isAnonymousMode && !!(st && st.wallDrawingEnabled),
+    });
     setPublicProjectsEnabled(!isAnonymousMode && !!(st && st.publicProjectsEnabled));
     setLandingPageEnabled(!isAnonymousMode && !!(st && st.landingPageEnabled));
     

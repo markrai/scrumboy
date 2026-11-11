@@ -241,8 +241,8 @@ func (a *Archive) readManifest(f *zip.File) (*store.ExportData, error) {
 	if dec.More() {
 		return nil, invalid("trailing data after manifest JSON")
 	}
-	if data.Version != version.ArchiveExportFormatVersion {
-		return nil, invalid("manifest version %q (expected %s)", data.Version, version.ArchiveExportFormatVersion)
+	if !version.IsSupportedArchiveVersion(data.Version) {
+		return nil, invalid("manifest version %q (expected %s or %s)", data.Version, version.ArchiveExportFormatVersion, version.LegacyArchiveExportFormatVersion)
 	}
 	return &data, nil
 }

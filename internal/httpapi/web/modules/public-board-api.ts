@@ -432,6 +432,17 @@ export async function fetchPublicTodoLinks(slug: string, localId: number, opts: 
   return normalizePublicTodoLinks(data);
 }
 
+export type PublicTodoDrawingPayload = { drawings: Record<string, unknown>; notesInk: unknown };
+
+export async function fetchPublicTodoDrawings(slug: string, localId: number, opts: RequestOpts = {}): Promise<PublicTodoDrawingPayload> {
+  const data = await getPublicJSON(`${todoPath(slug, localId)}/drawings`, opts);
+  const map = (data as { drawings?: unknown } | null)?.drawings;
+  return {
+    drawings: map && typeof map === "object" && !Array.isArray(map) ? (map as Record<string, unknown>) : {},
+    notesInk: (data as { notesInk?: unknown } | null)?.notesInk ?? null,
+  };
+}
+
 export async function fetchPublicSprints(slug: string, opts: RequestOpts = {}): Promise<PublicSprint[]> {
   const data = await getPublicJSON(`${boardPath(slug)}/sprints`, opts);
   return normalizePublicSprints(data);

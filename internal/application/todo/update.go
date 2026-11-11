@@ -2,6 +2,7 @@ package todo
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"scrumboy/internal/store"
@@ -35,6 +36,8 @@ type UpdatePatch struct {
 	DueAt Field[*time.Time]
 	// CustomFields is a sparse key->value patch; a nil value clears that field.
 	CustomFields Field[store.CustomFieldValues]
+	Drawings     Field[map[string]json.RawMessage]
+	NotesInk     Field[json.RawMessage]
 }
 
 // HasFields reports syntactic patch presence. It intentionally does not
@@ -50,7 +53,9 @@ func (p UpdatePatch) HasFields() bool {
 		p.SprintID.Present ||
 		p.PriorityKey.Present ||
 		p.DueAt.Present ||
-		p.CustomFields.Present
+		p.CustomFields.Present ||
+		p.Drawings.Present ||
+		p.NotesInk.Present
 }
 
 // UpdateCommand identifies a todo by its project-local ID and carries its
@@ -154,6 +159,8 @@ func MaterializeUpdateInput(existing store.Todo, patch UpdatePatch) store.Update
 		DueAt:                dueAt,
 		DueAtPresent:         patch.DueAt.Present,
 		CustomFields:         cloneUpdateCustomFields(patch.CustomFields),
+		Drawings:             cloneDrawings(patch.Drawings.Value),
+		NotesInk:             store.NotesInkChange{Present: patch.NotesInk.Present, Data: append(json.RawMessage(nil), patch.NotesInk.Value...)},
 	}
 }
 

@@ -90,3 +90,31 @@ export function isDragActive(): boolean {
 export function setDragActive(flag: boolean): void {
   activeDrag = flag;
 }
+
+const DEFAULT_DRAWING_GUARD_OWNER = {};
+const drawingPointerOwners = new Set<object>();
+const drawingCommitOwners = new Set<object>();
+
+export function setPointerDrawingActive(active: boolean, owner: object = DEFAULT_DRAWING_GUARD_OWNER): void {
+  if (active) drawingPointerOwners.add(owner);
+  else drawingPointerOwners.delete(owner);
+}
+
+export function setDrawingCommitInFlight(inFlight: boolean, owner: object = DEFAULT_DRAWING_GUARD_OWNER): void {
+  if (inFlight) drawingCommitOwners.add(owner);
+  else drawingCommitOwners.delete(owner);
+}
+
+export function releaseDrawingGuards(owner: object): void {
+  drawingPointerOwners.delete(owner);
+  drawingCommitOwners.delete(owner);
+}
+
+export function isWallDrawingOrSaving(): boolean {
+  return drawingPointerOwners.size > 0 || drawingCommitOwners.size > 0;
+}
+
+export function resetDrawingGuards(): void {
+  drawingPointerOwners.clear();
+  drawingCommitOwners.clear();
+}

@@ -319,6 +319,14 @@ export async function fetchPublicTodoLinks(slug, localId, opts = {}) {
     const data = await getPublicJSON(`${todoPath(slug, localId)}/links`, opts);
     return normalizePublicTodoLinks(data);
 }
+export async function fetchPublicTodoDrawings(slug, localId, opts = {}) {
+    const data = await getPublicJSON(`${todoPath(slug, localId)}/drawings`, opts);
+    const map = data?.drawings;
+    return {
+        drawings: map && typeof map === "object" && !Array.isArray(map) ? map : {},
+        notesInk: data?.notesInk ?? null,
+    };
+}
 export async function fetchPublicSprints(slug, opts = {}) {
     const data = await getPublicJSON(`${boardPath(slug)}/sprints`, opts);
     return normalizePublicSprints(data);

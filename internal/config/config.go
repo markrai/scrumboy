@@ -79,6 +79,8 @@ type Config struct {
 	// SCRUMBOY_INLINE_IMAGES_ENABLED=0. This is the operator setting; the effective
 	// value is InlineImagesActive (Full mode with markdown notes enabled).
 	InlineImagesEnabled bool
+	DrawingEnabled      bool
+	WallDrawingEnabled  bool
 	// Byte budgets for stored note images (0 disables that budget).
 	// SCRUMBOY_ASSET_PROJECT_BUDGET_MB / SCRUMBOY_ASSET_INSTANCE_BUDGET_MB.
 	AssetProjectBudgetBytes  int64
@@ -138,6 +140,8 @@ func FromEnv() Config {
 	markdownNotesEnabled := defaultOnFeatureFromEnv("SCRUMBOY_MARKDOWN_NOTES_ENABLED", &warnings)
 	mermaidNotesEnabled := defaultOnFeatureFromEnv("SCRUMBOY_MERMAID_NOTES_ENABLED", &warnings) && markdownNotesEnabled
 	inlineImagesEnabled := defaultOnFeatureFromEnv("SCRUMBOY_INLINE_IMAGES_ENABLED", &warnings)
+	drawingEnabled := defaultOnFeatureFromEnv("SCRUMBOY_DRAWING_ENABLED", &warnings)
+	wallDrawingEnabled := defaultOnFeatureFromEnv("SCRUMBOY_WALL_DRAWING_ENABLED", &warnings)
 	smtpPort, smtpPortExplicit := smtpPortFromEnv()
 
 	return Config{
@@ -180,6 +184,8 @@ func FromEnv() Config {
 		MermaidNotesEnabled:  mermaidNotesEnabled,
 
 		InlineImagesEnabled:      inlineImagesEnabled,
+		DrawingEnabled:           drawingEnabled,
+		WallDrawingEnabled:       wallDrawingEnabled,
 		AssetProjectBudgetBytes:  assetBudgetBytesFromEnv("SCRUMBOY_ASSET_PROJECT_BUDGET_MB", 1024),
 		AssetInstanceBudgetBytes: assetBudgetBytesFromEnv("SCRUMBOY_ASSET_INSTANCE_BUDGET_MB", 10240),
 
@@ -319,6 +325,14 @@ func trustProxyFromEnv() bool {
 // requires a data directory and asset storage.
 func (c Config) InlineImagesActive() bool {
 	return c.InlineImagesEnabled && c.MarkdownNotesEnabled && c.ScrumboyMode == "full"
+}
+
+func (c Config) DrawingActive() bool {
+	return c.DrawingEnabled && c.InlineImagesActive()
+}
+
+func (c Config) WallDrawingActive() bool {
+	return c.WallDrawingEnabled && c.WallEnabled && c.ScrumboyMode == "full"
 }
 
 // OIDCEnabled returns true if all required OIDC env vars are set.

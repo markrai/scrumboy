@@ -103,6 +103,7 @@ func main() {
 		EncryptionKey:        encKey,
 		ConfiguredOIDCIssuer: configuredOIDCIssuer,
 		InstanceAuditEnabled: cfg.InstanceAuditEnabled,
+		DrawingsDisabled:     !cfg.DrawingActive(),
 		AssetBudgets: store.AssetBudgets{
 			ProjectBytes:  cfg.AssetProjectBudgetBytes,
 			InstanceBytes: cfg.AssetInstanceBudgetBytes,
@@ -203,6 +204,8 @@ func main() {
 		VAPIDSubscriber:       cfg.VAPIDSubscriber,
 		PushDebug:             cfg.PushDebug,
 		WallEnabled:           cfg.WallEnabled,
+		DrawingEnabled:        cfg.DrawingActive(),
+		WallDrawingEnabled:    cfg.WallDrawingActive(),
 		MarkdownNotesEnabled:  cfg.MarkdownNotesEnabled,
 		MermaidNotesEnabled:   cfg.MermaidNotesEnabled,
 		InlineImagesEnabled:   cfg.InlineImagesEnabled,
