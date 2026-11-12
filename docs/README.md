@@ -72,6 +72,7 @@ Persistence restore matrix (SQLite, wallpapers, encryption key, Mermaid override
 
 | Doc | Audience | Source of truth | Status |
 |-----|----------|-----------------|--------|
+| [cli.md](cli.md) | Users / scripters | `cmd/scrumboy-cli` | current |
 | [mcp.md](mcp.md) | Agents / integrators | `internal/mcp` `implementedTools()` | current |
 | [oauth.md](oauth.md) | Integrators | `internal/oauth` | current |
 | [agoragentic.md](agoragentic.md) | Agents | Agora manifest + MCP bridge | current |

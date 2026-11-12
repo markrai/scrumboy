@@ -2,6 +2,18 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.41.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## [Unreleased]
+
+### Added
+
+- **`scrumboy-cli` command-line client** - `cmd/scrumboy-cli`: list, get,
+  create, update, move, link, archive and delete todos, view boards, manage
+  projects and sprints, and call any tool with `scrumboy-cli tool`. It uses
+  `sb_` API tokens over the existing `POST /mcp` interface and shares no code
+  with the server. Release builds (linux/darwin/windows, amd64/arm64),
+  checksums and a Homebrew formula are attached to each GitHub Release by
+  `.github/workflows/cli-release.yml`. See [docs/cli.md](docs/cli.md).
+
 ## [3.41.1] - 2026-11-11
 
 ### Security

@@ -1,0 +1,162 @@
+name: Release scrumboy-cli
+
+# Builds the CLI for linux/darwin/windows (amd64+arm64), attaches the archives,
+# checksums and a Homebrew formula to the GitHub Release, smoke-tests the
+# binaries natively on Linux, macOS and Windows, and opens a PR updating
+# Formula/scrumboy-cli.rb. The CLI is versioned with the server: it is built
+# from the release tag.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to (re)build the CLI assets for
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and attach CLI assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # upload release assets
+    env:
+      TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+          clean: true
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Test CLI
+        run: go test ./cmd/scrumboy-cli -count=1
+
+      - name: Build archives
+        run: scripts/build-cli-release.sh "$TAG" dist
+
+      - name: Smoke-test the linux/amd64 binary
+        run: |
+          set -euo pipefail
+          tar -xzf "dist/scrumboy-cli_${TAG}_linux_amd64.tar.gz" -C dist
+          out="$("dist/scrumboy-cli_${TAG}_linux_amd64/scrumboy-cli" version)"
+          echo "$out"
+          case "$out" in *"$TAG"*) ;; *) echo "version string does not contain $TAG" >&2; exit 1 ;; esac
+
+      - name: Render Homebrew formula
+        run: scripts/render-homebrew-formula.sh "$TAG" "$GH_REPO" "dist/scrumboy-cli_${TAG}_checksums.txt" > dist/scrumboy-cli.rb
+
+      - name: Attach assets to the release
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" --clobber \
+            dist/scrumboy-cli_"${TAG}"_*.tar.gz \
+            dist/scrumboy-cli_"${TAG}"_*.zip \
+            "dist/scrumboy-cli_${TAG}_checksums.txt" \
+            dist/scrumboy-cli.rb
+
+      - name: Upload build for the smoke and formula jobs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scrumboy-cli-dist
+          path: dist/*.*
+          if-no-files-found: error
+
+  smoke:
+    name: Smoke-test ${{ matrix.name }} binary
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: linux/amd64, os: ubuntu-latest, goos: linux, goarch: amd64, ext: tar.gz}
+          - {name: linux/arm64, os: ubuntu-24.04-arm, goos: linux, goarch: arm64, ext: tar.gz}
+          - {name: darwin/arm64, os: macos-latest, goos: darwin, goarch: arm64, ext: tar.gz}
+          - {name: darwin/amd64, os: macos-15-intel, goos: darwin, goarch: amd64, ext: tar.gz}
+          - {name: windows/amd64, os: windows-latest, goos: windows, goarch: amd64, ext: zip}
+    env:
+      TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Download build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: scrumboy-cli-dist
+
+      - name: Verify checksum, unpack and run the real binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="scrumboy-cli_${TAG}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.ext }}"
+          grep " ${archive}$" "scrumboy-cli_${TAG}_checksums.txt" > one.sum
+          if command -v sha256sum >/dev/null; then sha256sum -c one.sum; else shasum -a 256 -c one.sum; fi
+          if [ "${{ matrix.ext }}" = zip ]; then unzip -q "$archive"; else tar -xzf "$archive"; fi
+          bin="scrumboy-cli_${TAG}_${{ matrix.goos }}_${{ matrix.goarch }}/scrumboy-cli"
+          [ "${{ matrix.goos }}" = windows ] && bin="${bin}.exe"
+          out="$("$bin" version)"
+          echo "$out"
+          case "$out" in *"$TAG"*) ;; *) echo "version string does not contain $TAG" >&2; exit 1 ;; esac
+
+  formula-pr:
+    name: Open formula update PR
+    needs: [build, smoke]
+    # The repo is its own Homebrew tap (brew tap <owner>/scrumboy <repo-url>), so
+    # the released formula is proposed as a PR rather than pushed to main.
+    # Prereleases never become the installable version.
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Download build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: scrumboy-cli-dist
+          path: dist
+
+      - name: Open or update the PR
+        run: |
+          set -euo pipefail
+          branch="chore/scrumboy-cli-formula-${TAG}"
+          mkdir -p Formula
+          scripts/render-homebrew-formula.sh "$TAG" "$GH_REPO" "dist/scrumboy-cli_${TAG}_checksums.txt" > Formula/scrumboy-cli.rb
+          if git diff --quiet -- Formula/scrumboy-cli.rb; then
+            echo "Formula already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$branch"
+          git add Formula/scrumboy-cli.rb
+          git commit -s -m "chore: scrumboy-cli formula ${TAG}"
+          git push --force origin "$branch"
+          gh pr create --head "$branch" --title "chore: scrumboy-cli formula ${TAG}" \
+            --body "Updates Formula/scrumboy-cli.rb to the ${TAG} release archives (checksums from the release checksums file)." \
+            || gh pr edit "$branch" --title "chore: scrumboy-cli formula ${TAG}"

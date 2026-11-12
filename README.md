@@ -202,6 +202,8 @@ Scrumboy supports API access tokens for automation and integrations, including p
 
 ### MCP (JSON-RPC) for AI agents
 
+A command-line client, `scrumboy-cli`, covers everyday board work (list, create, update, move todos; view boards; scripting and CI) with the same API tokens. See [docs/cli.md](docs/cli.md).
+
 Scrumboy supports native MCP clients such as Cursor and Claude Code over **HTTP** Streamable JSON-RPC at `/mcp/rpc` (stdio is not supported). The older `/mcp` HTTP interface remains available for legacy and programmatic use. Details: [docs/mcp.md](docs/mcp.md), [docs/oauth.md](docs/oauth.md), and [API.md](API.md). Compatible agent workspaces can also use the optional Board Operator package in [plugins/scrumboy-board-operator](plugins/scrumboy-board-operator).
 
 ### Webhooks (outbound HTTP)
