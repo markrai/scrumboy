@@ -14,6 +14,12 @@ type adminUpdateUserRoleInput struct {
 	Role   string `json:"role"`
 }
 
+type adminUpdateUserInput struct {
+	UserId int64   `json:"userId"`
+	Name   *string `json:"name"`
+	Email  *string `json:"email"`
+}
+
 type adminDeleteUserInput struct {
 	UserId int64 `json:"userId"`
 }
@@ -222,5 +228,51 @@ func (a *Adapter) handleAdminDeleteUser(ctx context.Context, input any) (any, ma
 	return map[string]any{
 		"status": "deleted",
 		"userId": in.UserId,
+	}, map[string]any{}, nil
+}
+
+// handleAdminUpdateUser changes a human user's display name and/or email. Owner only, enforced in
+// the store transaction (UpdateUserProfile); the adapter only checks authentication and mode.
+func (a *Adapter) handleAdminUpdateUser(ctx context.Context, input any) (any, map[string]any, *adapterError) {
+	auth, bootstrapAvailable, err := a.authState(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	switch {
+	case a.mode == "anonymous":
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "admin_updateUser is unavailable in anonymous mode", nil)
+	case bootstrapAvailable:
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "admin_updateUser is unavailable before bootstrap", nil)
+	case !auth.Authenticated:
+		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	}
+
+	requesterID, ok := store.UserIDFromContext(ctx)
+	if !ok {
+		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	}
+
+	var in adminUpdateUserInput
+	if err := decodeInput(input, &in); err != nil {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid input", map[string]any{"detail": err.Error()})
+	}
+	if in.UserId <= 0 {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid userId", map[string]any{"field": "userId"})
+	}
+	if in.Name == nil && in.Email == nil {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "name or email is required", map[string]any{"fields": []string{"name", "email"}})
+	}
+
+	if updateErr := a.store.UpdateUserProfile(ctx, requesterID, in.UserId, in.Name, in.Email); updateErr != nil {
+		return nil, nil, mapPrivilegedStoreError(updateErr)
+	}
+
+	updated, getErr := a.store.GetUser(ctx, in.UserId)
+	if getErr != nil {
+		return nil, nil, mapStoreError(getErr)
+	}
+	return map[string]any{
+		"user": adminUserToItem(updated),
 	}, map[string]any{}, nil
 }
