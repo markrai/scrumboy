@@ -496,7 +496,7 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 
 **admin**
 
-- `admin_listUsers`, `admin_updateUserRole`, `admin_deleteUser` - System-level user management (owner/admin system role, not project role).
+- `admin_listUsers`, `admin_updateUserRole`, `admin_updateUser`, `admin_deleteUser` - System-level user management (owner/admin system role, not project role).
 - `admin_createServiceAccount`, `admin_listServiceAccounts`, `admin_deleteServiceAccount` - Service-identity lifecycle with per-tool Owner/Admin authorization.
 - `admin_createServiceToken`, `admin_listServiceTokens`, `admin_revokeServiceToken` - One-time credential issuance and metadata-only discovery/revocation. See [the MCP permission matrix and examples](docs/mcp.md#available-tools).
 
@@ -866,6 +866,7 @@ System-level user management, gated by **system role** (owner/admin), not projec
 |------|-------|--------|
 | `admin_listUsers` | `{}` | `data.items` - all users (`userId`, `email`, `name`, `systemRole`, `isBootstrap`, `isService`, `createdAt`); requires **owner or admin** |
 | `admin_updateUserRole` | `userId`, `role` (`admin` \| `user` only) | `data.user` (updated); requires **owner**. Promotion to `owner` is not exposed through this tool, matching the REST admin API. Demoting the last owner → `VALIDATION_ERROR` |
+| `admin_updateUser` | `userId`, `name` and/or `email` (at least one) | `data.user` (updated); requires **owner**. Email is trimmed, lowercased and validated like user creation; an address another user already has → `CONFLICT`. Service accounts → `FORBIDDEN`. Sessions, OIDC links and memberships follow the user id and are unaffected |
 | `admin_deleteUser` | `userId` | `data` with `status: "deleted"`, `userId`; requires **owner**. Self-deletion and deleting the last owner → `VALIDATION_ERROR` |
 | `admin_createServiceAccount` | `name` | `data.account` with `userId`, `stableUserId`, `name`, `isService`, `createdAt`; requires **owner or admin** and issues no credential |
 | `admin_listServiceAccounts` | optional `limit`, `cursor` | `data.items`, bounded to service identities only; requires **owner or admin** |

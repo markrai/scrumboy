@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
 	"scrumboy/internal/auth"
@@ -704,6 +705,74 @@ func (s *Store) UpdateUserRole(ctx context.Context, requesterID, targetUserID in
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit update role tx: %w", err)
+	}
+	return nil
+}
+
+// maxUserNameRunes bounds an administrator-supplied display name.
+const maxUserNameRunes = 200
+
+// UpdateUserProfile changes a human user's display name and/or email. A nil argument leaves that
+// field unchanged; at least one must be set. Requires owner role. Email is normalized and validated
+// exactly like CreateUser (reserved service-account domains are refused) and must stay unique:
+// another user already holding it yields ErrConflict. Service accounts are refused. Authorization
+// and the target's type are read on the mutation's own transaction, as in UpdateUserRole. Sessions,
+// OIDC identities and project memberships are keyed by user id, so they are unaffected.
+func (s *Store) UpdateUserProfile(ctx context.Context, requesterID, targetUserID int64, name, email *string) error {
+	if name == nil && email == nil {
+		return fmt.Errorf("%w: nothing to update", ErrValidation)
+	}
+	var newName, newEmail string
+	if name != nil {
+		newName = strings.TrimSpace(*name)
+		if newName == "" || utf8.RuneCountInString(newName) > maxUserNameRunes {
+			return fmt.Errorf("%w: invalid name", ErrValidation)
+		}
+	}
+	if email != nil {
+		newEmail = normalizeEmail(*email)
+		if newEmail == "" || !strings.Contains(newEmail, "@") || isReservedServiceEmail(newEmail) {
+			return fmt.Errorf("%w: invalid email", ErrValidation)
+		}
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin update user profile tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := requireOwnerTx(ctx, tx, requesterID); err != nil {
+		return err
+	}
+
+	var targetIsService bool
+	if err := tx.QueryRowContext(ctx, `SELECT is_service <> 0 FROM users WHERE id = ?`, targetUserID).Scan(&targetIsService); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get target user: %w", err)
+	}
+	if targetIsService {
+		return ErrServiceAccountRestricted
+	}
+
+	if name != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET name = ? WHERE id = ? AND is_service = 0`, newName, targetUserID); err != nil {
+			return wrapIdentityWriteErr("update user name", err)
+		}
+	}
+	if email != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET email = ? WHERE id = ? AND is_service = 0`, newEmail, targetUserID); err != nil {
+			if strings.Contains(err.Error(), "UNIQUE constraint failed: users.email") {
+				return fmt.Errorf("%w: email already in use", ErrConflict)
+			}
+			return wrapIdentityWriteErr("update user email", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update user profile tx: %w", err)
 	}
 	return nil
 }

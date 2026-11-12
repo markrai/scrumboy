@@ -537,6 +537,15 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"role":   jsonProp("string", "New system role: admin or user"),
 			}, []string{"userId", "role"}),
 		},
+		"admin_updateUser": {
+			Name:        "admin_updateUser",
+			Description: "Change a user's display name and/or email. Requires the owner system role. Service accounts cannot be changed through this tool, and an email already used by another user is rejected.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"userId": jsonProp("integer", "User ID"),
+				"name":   jsonProp("string", "New display name"),
+				"email":  jsonProp("string", "New email address"),
+			}, []string{"userId"}),
+		},
 		"admin_deleteUser": {
 			Name:        "admin_deleteUser",
 			Description: "Delete a user from the system. Requires the owner system role. A user cannot delete themselves, and the last owner cannot be deleted.",

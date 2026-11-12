@@ -87,6 +87,7 @@ type storeAPI interface {
 	GetRealBurndownForSprint(ctx context.Context, projectID, sprintID int64, mode store.Mode) ([]store.RealBurndownPoint, error)
 	GetBacklogSize(ctx context.Context, projectID int64, mode store.Mode) ([]store.BurndownPoint, error)
 	ListUsers(ctx context.Context, requesterID int64) ([]store.User, error)
+	UpdateUserProfile(ctx context.Context, requesterID, targetUserID int64, name, email *string) error
 	CreateServiceAccount(ctx context.Context, requesterID int64, name string) (store.User, error)
 	ListServiceAccounts(ctx context.Context, requesterID int64, limit int, cursor *string) ([]store.User, *string, error)
 	DeleteServiceAccount(ctx context.Context, requesterID, targetUserID int64) error
@@ -540,6 +541,7 @@ func (a *Adapter) implementedTools() []string {
 		"metrics_getBacklogSize",
 		"admin_listUsers",
 		"admin_updateUserRole",
+		"admin_updateUser",
 		"admin_deleteUser",
 		"admin_createServiceAccount",
 		"admin_listServiceAccounts",

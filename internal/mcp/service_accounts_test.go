@@ -47,6 +47,7 @@ func TestMCP_ServiceAccountBearerIsAuthenticatedButUnprivileged(t *testing.T) {
 	for name, input := range map[string]map[string]any{
 		"admin_listUsers":      {},
 		"admin_updateUserRole": {"userId": svc.ID, "role": "admin"},
+		"admin_updateUser":     {"userId": svc.ID, "name": "renamed"},
 		"admin_deleteUser":     {"userId": ownerID},
 	} {
 		resp, out := postMCPWithBearer(t, bare, ts.URL, raw, map[string]any{"tool": name, "input": input})
