@@ -8,8 +8,10 @@
 
 - **`scrumboy-cli` command-line client** - `cmd/scrumboy-cli`: list, get,
   create, update, move, link, archive and delete todos, view boards, manage
-  projects and sprints, and call any tool with `scrumboy-cli tool`. It uses
-  `sb_` API tokens over the existing `POST /mcp` interface and shares no code
+  projects, sprints, tags, members, workflow columns, priorities, custom
+  fields, webhooks, metrics and admin, and call any tool with
+  `scrumboy-cli tool`. It signs in with `sb_` API tokens (`POST /mcp`) or
+  OAuth in the browser (`auth login --oauth`, `/mcp/rpc`), and shares no code
   with the server. Release builds (linux/darwin/windows, amd64/arm64),
   checksums and a Homebrew formula are attached to each GitHub Release by
   `.github/workflows/cli-release.yml`. See [docs/cli.md](docs/cli.md).

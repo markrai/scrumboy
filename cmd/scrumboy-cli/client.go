@@ -9,21 +9,40 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 // maxResponseBytes bounds how much of a response body the client will read.
 const maxResponseBytes = 32 << 20
 
-// Client talks to a Scrumboy server over the legacy POST /mcp tool interface
-// (see API.md). It deliberately depends on nothing under internal/: the wire
-// protocol is documented JSON, and the CLI should keep working across server
-// refactors.
+// mcpProtocolVersion is sent on /mcp/rpc requests.
+const mcpProtocolVersion = "2025-11-25"
+
+// Client talks to a Scrumboy server (see API.md). It deliberately depends on
+// nothing under internal/: the wire protocol is documented JSON, and the CLI
+// should keep working across server refactors.
+//
+// Two transports are supported:
+//   - legacy POST /mcp ({tool, input} envelope): static sb_ API tokens.
+//   - JSON-RPC POST /mcp/rpc (tools/call): static tokens and OAuth access
+//     tokens. OAuth tokens are only accepted here.
 type Client struct {
 	BaseURL   string
 	Token     string
 	UserAgent string
 	HTTP      *http.Client
+
+	// RPC selects the JSON-RPC transport (required for OAuth tokens).
+	RPC bool
+
+	// Expiry, when set, makes the client refresh proactively shortly before it.
+	Expiry time.Time
+	// Refresh obtains a new access token (OAuth). It is called before a request
+	// when Expiry is near, and once after a 401.
+	Refresh func(ctx context.Context) (token string, expiry time.Time, err error)
+
+	rpcID atomic.Int64
 }
 
 // Result is the successful payload of a tool call.
@@ -79,7 +98,12 @@ func (e *APIError) Error() string {
 	return b.String()
 }
 
-// NewClient builds a client for the server at baseURL.
+// errUnauthorized marks a rejected credential so a refresh can be attempted.
+type errUnauthorized struct{ msg string }
+
+func (e *errUnauthorized) Error() string { return e.msg }
+
+// NewClient builds a legacy-transport client for the server at baseURL.
 func NewClient(baseURL, token, userAgent string) *Client {
 	return &Client{
 		BaseURL:   strings.TrimRight(baseURL, "/"),
@@ -95,36 +119,78 @@ func (c *Client) Call(ctx context.Context, tool string, input any) (*Result, err
 	if input == nil {
 		input = map[string]any{}
 	}
-	body, err := json.Marshal(struct {
-		Tool  string `json:"tool"`
-		Input any    `json:"input"`
-	}{tool, input})
-	if err != nil {
-		return nil, fmt.Errorf("encode request: %w", err)
+	if c.Refresh != nil && !c.Expiry.IsZero() && time.Until(c.Expiry) < time.Minute {
+		if err := c.refresh(ctx); err != nil {
+			return nil, err
+		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/mcp", bytes.NewReader(body))
+	res, err := c.once(ctx, tool, input)
+	var ua *errUnauthorized
+	if errors.As(err, &ua) && c.Refresh != nil {
+		if rerr := c.refresh(ctx); rerr != nil {
+			return nil, fmt.Errorf("%v (and refreshing the session failed: %w)", ua.msg, rerr)
+		}
+		return c.once(ctx, tool, input)
+	}
+	return res, err
+}
+
+func (c *Client) refresh(ctx context.Context) error {
+	tok, exp, err := c.Refresh(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
+		return err
+	}
+	c.Token, c.Expiry = tok, exp
+	return nil
+}
+
+func (c *Client) once(ctx context.Context, tool string, input any) (*Result, error) {
+	if c.RPC {
+		return c.callRPC(ctx, tool, input)
+	}
+	return c.callLegacy(ctx, tool, input)
+}
+
+func (c *Client) post(ctx context.Context, path string, body any, extra map[string]string) (*http.Response, []byte, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("encode request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, bytes.NewReader(raw))
+	if err != nil {
+		return nil, nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	for k, v := range extra {
+		req.Header.Set(k, v)
+	}
 	if c.UserAgent != "" {
 		req.Header.Set("User-Agent", c.UserAgent)
 	}
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request %s: %w", c.BaseURL, err)
+		return nil, nil, fmt.Errorf("request %s: %w", c.BaseURL, err)
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, nil, fmt.Errorf("read response: %w", err)
 	}
+	return resp, b, nil
+}
 
+func (c *Client) callLegacy(ctx context.Context, tool string, input any) (*Result, error) {
+	resp, raw, err := c.post(ctx, "/mcp", struct {
+		Tool  string `json:"tool"`
+		Input any    `json:"input"`
+	}{tool, input}, nil)
+	if err != nil {
+		return nil, err
+	}
 	var env envelope
 	if err := json.Unmarshal(raw, &env); err != nil {
 		// Proxies, auth gateways and wrong URLs answer with HTML or nothing.
@@ -135,9 +201,75 @@ func (c *Client) Call(ctx context.Context, tool string, input any) (*Result, err
 			return nil, fmt.Errorf("server reported failure without an error (HTTP %d)", resp.StatusCode)
 		}
 		env.Error.Status = resp.StatusCode
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, &errUnauthorized{msg: env.Error.Error()}
+		}
 		return nil, env.Error
 	}
 	return &Result{Data: env.Data, Meta: env.Meta}, nil
+}
+
+type rpcResponse struct {
+	Result *struct {
+		Content           []struct{ Type, Text string } `json:"content"`
+		StructuredContent json.RawMessage               `json:"structuredContent"`
+		IsError           bool                          `json:"isError"`
+	} `json:"result"`
+	Error *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// callRPC invokes a tool over JSON-RPC tools/call on /mcp/rpc. The tool's
+// structuredContent is the same payload the legacy transport returns as
+// `data`; the handful of tools with pagination metadata copy it beside the
+// data fields, so the same object serves as both Data and Meta.
+func (c *Client) callRPC(ctx context.Context, tool string, input any) (*Result, error) {
+	resp, raw, err := c.post(ctx, "/mcp/rpc", map[string]any{
+		"jsonrpc": "2.0",
+		"id":      c.rpcID.Add(1),
+		"method":  "tools/call",
+		"params":  map[string]any{"name": tool, "arguments": input},
+	}, map[string]string{
+		"Accept":               "application/json, text/event-stream",
+		"MCP-Protocol-Version": mcpProtocolVersion,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, &errUnauthorized{msg: "AUTH_REQUIRED: the server rejected the credentials (HTTP 401)"}
+	}
+	var rr rpcResponse
+	if err := json.Unmarshal(raw, &rr); err != nil || (rr.Result == nil && rr.Error == nil) {
+		return nil, fmt.Errorf("unexpected response from %s (HTTP %d): %s", c.BaseURL, resp.StatusCode, snippet(raw))
+	}
+	if rr.Error != nil {
+		return nil, &APIError{Code: fmt.Sprintf("RPC_%d", rr.Error.Code), Message: rr.Error.Message, Status: resp.StatusCode}
+	}
+	sc := rr.Result.StructuredContent
+	if len(sc) == 0 && len(rr.Result.Content) > 0 {
+		sc = json.RawMessage(rr.Result.Content[0].Text)
+	}
+	if rr.Result.IsError {
+		ae := &APIError{Status: resp.StatusCode}
+		if json.Unmarshal(sc, ae) != nil || ae.Message == "" {
+			ae.Message = snippet([]byte(firstText(rr)))
+		}
+		return nil, ae
+	}
+	if !json.Valid(sc) {
+		return nil, fmt.Errorf("tool %s returned no structured content", tool)
+	}
+	return &Result{Data: sc, Meta: sc}, nil
+}
+
+func firstText(r rpcResponse) string {
+	if r.Result != nil && len(r.Result.Content) > 0 {
+		return r.Result.Content[0].Text
+	}
+	return ""
 }
 
 func snippet(b []byte) string {

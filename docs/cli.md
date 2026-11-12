@@ -29,24 +29,47 @@ go install ./cmd/scrumboy-cli     # or: go build -o scrumboy-cli ./cmd/scrumboy-
 
 ## Authenticate
 
-Create an `sb_` API token in the web UI (or `POST /api/me/tokens`, see
-[API.md](../API.md#api-access-tokens-rest)). Use a human-owned token for
-personal use and a service-account token for unattended automation or CI.
+Two ways to sign in, both verified with `me_get` before anything is saved.
+
+**API token** (scripts, CI, service accounts). Create an `sb_` token in the web
+UI (or `POST /api/me/tokens`, see [API.md](../API.md#api-access-tokens-rest)).
+Use a human-owned token for personal use and a service-account token for
+unattended automation.
 
 ```sh
 echo "$TOKEN" | scrumboy-cli auth login --server https://scrumboy.example.com --with-token
-scrumboy-cli auth status
 ```
 
-`login` verifies the token (`me_get`) before saving it to
-the user config directory (`~/.config/scrumboy/config.json` on Linux, `~/Library/Application Support/scrumboy/` on macOS, `%AppData%\scrumboy\` on Windows; mode `0600`). For CI skip `login` and set
-`SCRUMBOY_URL` and `SCRUMBOY_TOKEN`. Settings resolve flag > environment >
-config file.
+**OAuth** (interactive, no token to copy around). Opens your browser, you sign
+in and approve, and the CLI keeps the session alive with a refresh token:
+
+```sh
+scrumboy-cli auth login --oauth --server https://scrumboy.example.com
+scrumboy-cli auth login --oauth --no-browser --server ...   # prints the URL; paste the redirect back
+```
+
+It uses OAuth 2.1 as described in [oauth.md](oauth.md): discovery, dynamic
+client registration, authorization code with PKCE (S256) and a loopback
+redirect on `127.0.0.1`. Refresh tokens rotate on every use, so the CLI saves
+the new one before using it; `auth logout` revokes the session on the server.
+OAuth tokens are only accepted by the server's `/mcp/rpc` endpoint, so the CLI
+switches to that transport automatically (a bearer token that does not start
+with `sb_`, passed by flag or environment, is treated as an OAuth token too).
+
+```sh
+scrumboy-cli auth status      # who you are, and which kind of credential
+scrumboy-cli auth logout
+```
+
+Credentials are saved in the user config directory (`~/.config/scrumboy/config.json`
+on Linux, `~/Library/Application Support/scrumboy/` on macOS, `%AppData%\scrumboy\`
+on Windows; mode `0600`). For CI skip `login` and set `SCRUMBOY_URL` and
+`SCRUMBOY_TOKEN`. Settings resolve flag > environment > config file.
 
 | Setting | Flag | Environment |
 |---|---|---|
 | Server URL | `--server` | `SCRUMBOY_URL` |
-| API token | `--token` (prefer `login`: argv is visible to other users) | `SCRUMBOY_TOKEN` |
+| API token / bearer token | `--token` (prefer `login`: argv is visible to other users) | `SCRUMBOY_TOKEN` |
 | Default project | `-p`, `--project` | `SCRUMBOY_PROJECT` |
 | Config file | `--config` | `SCRUMBOY_CLI_CONFIG` |
 
@@ -62,27 +85,56 @@ scrumboy-cli todo create "Fix login redirect" -p demo --tag bug --priority high 
 scrumboy-cli todo update demo/12 --assignee me --points 3 --field mr_url=https://example.com/mr/1
 scrumboy-cli todo move demo/12 done
 scrumboy-cli todo link demo/12 15 --type blocks
-scrumboy-cli sprint list -p demo
+scrumboy-cli sprint create "Sprint 4" --start 2026-12-01 --end 2026-12-14 -p demo
+scrumboy-cli member add 7 --role contributor -p demo
+scrumboy-cli webhook create https://example.com/hook --event todo.created -p demo
+scrumboy-cli dashboard todos
+scrumboy-cli metrics burndown -p demo
 ```
+
+Commands (run `scrumboy-cli <command> -h` for flags):
+
+| Command | Subcommands |
+|---|---|
+| `auth` | `login`, `logout`, `status` |
+| `project` | `list`, `create`, `update`, `delete` |
+| `board` | show a project's board |
+| `todo` | `list`, `get`, `create`, `update`, `move`, `delete`, `search`, `archive`, `restore`, `links`, `link`, `unlink` |
+| `sprint` | `list`, `active`, `get`, `create`, `update`, `activate`, `close`, `delete` |
+| `tag` | `list`, `mine`, `color`, `delete` |
+| `member` | `list`, `available`, `add`, `role`, `remove` |
+| `column`, `priority` | `list`, `add`, `update`, `delete` |
+| `field` (custom fields) | `list`, `add`, `delete` |
+| `webhook` | `list`, `create`, `delete` |
+| `dashboard` | `summary`, `todos` |
+| `metrics` | `burndown`, `backlog` |
+| `admin` | `users`, `service-account`, `service-token` (owner/admin role) |
+| `tool` | any server tool by name |
 
 - A todo is `slug/12`, `slug#12`, or `12` together with `-p`.
 - `todo update` sends only the flags you pass. `none` clears a value
-  (`--priority none`, `--due none`); `--field key=` clears a custom field and
-  `--field key:=3` sends a JSON number.
+  (`--priority none`, `--due none`); an empty value is rejected rather than
+  clearing. `--field key=` clears a custom field and `--field key:=3` sends a
+  JSON number.
 - `board`/`todo list` use `board_get`; `--all` follows per-column pagination.
   `todo search` is a title lookup for link targets, not a filter.
-- Destructive commands (`todo delete`, `project delete`) need `--yes` unless
-  run interactively.
+- Destructive commands (anything named `delete`, `remove` or `revoke`) need
+  `--yes` unless run interactively.
 - `--json` prints the tool's `data` payload (a JSON array for lists) for
   scripting. Errors go to stderr; exit status is `0` ok, `1` failure
   (including API errors), `2` usage.
-- Anything without a dedicated command (webhooks, admin, custom fields,
-  metrics, ...) is reachable with the raw escape hatch:
+- Every server tool is reachable, including any added later, with the raw
+  escape hatch:
 
   ```sh
   scrumboy-cli tool system_getCapabilities          # lists every tool
   scrumboy-cli tool metrics_getBurndown --input '{"projectSlug":"demo"}'
   ```
+
+Not covered, because the server exposes them only over its browser (REST)
+API: the archived-stories listing, inline image upload, `.sbz` backup/restore,
+public-board publication, and API token management (`/api/me/tokens` needs a
+session cookie).
 
 ## Releasing
 

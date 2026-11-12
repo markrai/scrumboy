@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
 
 	"golang.org/x/term"
@@ -14,11 +16,13 @@ import (
 
 const authUsage = `auth <login|logout|status>
 
-  login    save a server URL and sb_ API token (verified with me_get)
-  logout   remove the saved token
+  login    sign in: an sb_ API token (default) or OAuth in the browser (--oauth)
+  logout   remove the saved credentials (revokes an OAuth session)
   status   show who the current credentials authenticate as
 
-Create a token in the web UI or with POST /api/me/tokens (see API.md).
+API token: create one in the web UI or with POST /api/me/tokens (see API.md),
+then 'auth login --with-token'. OAuth: 'auth login --oauth' opens your browser
+(PKCE, loopback redirect) and keeps the session fresh with a refresh token.
 `
 
 func cmdAuth(a *app, args []string) error {
@@ -50,12 +54,20 @@ type meResp struct {
 }
 
 func authLogin(a *app, args []string) error {
-	var withToken bool
-	c, err := a.parse("auth login", "auth login [--server URL] [--with-token]", args, func(fs *flag.FlagSet) {
+	var withToken, useOAuth, noBrowser bool
+	c, err := a.parse("auth login", "auth login [--server URL] [--with-token | --oauth [--no-browser]]", args, func(fs *flag.FlagSet) {
 		fs.BoolVar(&withToken, "with-token", false, "read the token from stdin (keeps it out of argv and shell history)")
+		fs.BoolVar(&useOAuth, "oauth", false, "sign in with OAuth in your browser instead of an API token")
+		fs.BoolVar(&noBrowser, "no-browser", false, "with --oauth: print the URL instead of opening a browser (paste the redirect back)")
 	})
 	if err != nil {
 		return err
+	}
+	if useOAuth && withToken {
+		return usagef("--oauth and --with-token are mutually exclusive")
+	}
+	if noBrowser && !useOAuth {
+		return usagef("--no-browser only applies with --oauth")
 	}
 
 	server, token := c.s.Server, c.s.Token
@@ -74,18 +86,6 @@ func authLogin(a *app, args []string) error {
 		line, _ := bufio.NewReader(c.in).ReadString('\n')
 		server = strings.TrimSpace(line)
 	}
-	if token == "" {
-		if !c.isTTY {
-			return usagef("no token: use --with-token (stdin) or set %s", envToken)
-		}
-		fmt.Fprint(c.err, "API token (sb_...): ")
-		raw, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(c.err)
-		if err != nil {
-			return fmt.Errorf("read token: %w", err)
-		}
-		token = strings.TrimSpace(string(raw))
-	}
 	server, err = normalizeServer(server)
 	if err != nil {
 		return usagef("%v", err)
@@ -94,7 +94,34 @@ func authLogin(a *app, args []string) error {
 		fmt.Fprintln(c.err, warn)
 	}
 
-	c.s.Server, c.s.Token = server, token
+	cfg := c.file
+	c.s.Server, c.s.Token, c.s.OAuth = server, "", nil
+	if useOAuth {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		oc, err := oauthLogin(ctx, c, server, noBrowser)
+		if err != nil {
+			return err
+		}
+		c.s.OAuth = oc
+		cfg.OAuth, cfg.Token = oc, ""
+	} else {
+		if token == "" {
+			if !c.isTTY {
+				return usagef("no credentials: use --oauth, --with-token (stdin) or set %s", envToken)
+			}
+			fmt.Fprint(c.err, "API token (sb_...): ")
+			raw, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Fprintln(c.err)
+			if err != nil {
+				return fmt.Errorf("read token: %w", err)
+			}
+			token = strings.TrimSpace(string(raw))
+		}
+		c.s.Token = token
+		cfg.Token, cfg.OAuth = token, nil
+	}
+
 	res, err := c.call("me_get", nil)
 	if err != nil {
 		return fmt.Errorf("could not verify credentials: %w", err)
@@ -104,8 +131,7 @@ func authLogin(a *app, args []string) error {
 		return err
 	}
 
-	cfg := c.file
-	cfg.Server, cfg.Token = server, token
+	cfg.Server = server
 	if err := saveConfig(c.s.ConfigPath, cfg); err != nil {
 		return err
 	}
@@ -122,15 +148,21 @@ func authLogout(a *app, args []string) error {
 		return err
 	}
 	cfg := c.file
-	if cfg.Token == "" {
-		fmt.Fprintln(c.out, "Not logged in (no saved token).")
+	if cfg.Token == "" && cfg.OAuth == nil {
+		fmt.Fprintln(c.out, "Not logged in (no saved credentials).")
 		return nil
 	}
-	cfg.Token = ""
+	if cfg.OAuth != nil {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		server, _ := normalizeServer(cfg.Server)
+		revokeOAuth(ctx, server, *cfg.OAuth) // best effort; the local session is removed regardless
+	}
+	cfg.Token, cfg.OAuth = "", nil
 	if err := saveConfig(c.s.ConfigPath, cfg); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.out, "Removed saved token from %s\n", c.s.ConfigPath)
+	fmt.Fprintf(c.out, "Removed saved credentials from %s\n", c.s.ConfigPath)
 	return nil
 }
 
@@ -155,7 +187,17 @@ func authStatus(a *app, args []string) error {
 		kind = "service account"
 	}
 	fmt.Fprintf(c.out, "Server:  %s\nUser:    %s <%s> (%s, id %d)\n", c.s.Server, me.Name, me.Email, kind, me.UserID)
-	fmt.Fprintf(c.out, "Config:  %s\n", c.s.ConfigPath)
+	method := "API token"
+	switch {
+	case c.s.OAuth != nil:
+		method = "OAuth session"
+		if !c.s.OAuth.ExpiresAt.IsZero() {
+			method += " (access token expires " + c.s.OAuth.ExpiresAt.Local().Format("15:04:05") + "; refreshed automatically)"
+		}
+	case !strings.HasPrefix(c.s.Token, "sb_"):
+		method = "OAuth bearer token"
+	}
+	fmt.Fprintf(c.out, "Auth:    %s\nConfig:  %s\n", method, c.s.ConfigPath)
 	return nil
 }
 

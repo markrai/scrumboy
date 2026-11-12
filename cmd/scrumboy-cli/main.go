@@ -13,10 +13,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/signal"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -32,15 +34,17 @@ type app struct {
 	in       io.Reader
 	getenv   func(string) string
 	isTTY    bool
+	openURL  func(string) error // opens a browser; replaced in tests
 }
 
 func defaultApp() *app {
 	return &app{
-		out:    os.Stdout,
-		err:    os.Stderr,
-		in:     os.Stdin,
-		getenv: os.Getenv,
-		isTTY:  term.IsTerminal(int(os.Stdin.Fd())),
+		out:     os.Stdout,
+		err:     os.Stderr,
+		in:      os.Stdin,
+		getenv:  os.Getenv,
+		isTTY:   term.IsTerminal(int(os.Stdin.Fd())),
+		openURL: openBrowser,
 	}
 }
 
@@ -73,6 +77,11 @@ func init() {
 	commands["member"] = cmdMember
 	commands["column"] = cmdColumn
 	commands["priority"] = cmdPriority
+	commands["field"] = cmdField
+	commands["webhook"] = cmdWebhook
+	commands["dashboard"] = cmdDashboard
+	commands["metrics"] = cmdMetrics
+	commands["admin"] = cmdAdmin
 	commands["tool"] = cmdTool
 	commands["version"] = func(a *app, _ []string) error {
 		fmt.Fprintf(a.out, "%s %s\n", progName, version)
@@ -116,16 +125,21 @@ Usage:
   scrumboy-cli <command> [subcommand] [flags]
 
 Commands:
-  auth       login, logout, status
+  auth       login (API token or --oauth), logout, status
   project    list, create, update, delete
   board      show a project's board
   todo       list, get, create, update, move, delete, search, archive,
              restore, links, link, unlink
-  sprint     list, active, create, activate, close
-  tag        list a project's tags
-  member     list a project's members
-  column     list a project's workflow columns
-  priority   list a project's priority tiers
+  sprint     list, active, get, create, update, activate, close, delete
+  tag        list, mine, color, delete
+  member     list, available, add, role, remove
+  column     list, add, update, delete (workflow lanes)
+  priority   list, add, update, delete
+  field      list, add, delete (custom fields)
+  webhook    list, create, delete
+  dashboard  summary, todos (your work across projects)
+  metrics    burndown, backlog
+  admin      users, service-account, service-token (owner/admin)
   tool       call any server tool directly (escape hatch for scripting)
   version    print the version
 
@@ -215,8 +229,12 @@ func (a *app) parse(name, usage string, args []string, bind func(*flag.FlagSet))
 }
 
 // client returns an authenticated client or an actionable error.
+//
+// Static sb_ tokens use the legacy /mcp transport. OAuth credentials (the
+// saved session, or any non-sb_ bearer token supplied via flag/env) use the
+// JSON-RPC /mcp/rpc transport, the only one that accepts OAuth tokens.
 func (c *cmdCtx) client() (*Client, error) {
-	if c.s.Server == "" || c.s.Token == "" {
+	if c.s.Server == "" || (c.s.Token == "" && c.s.OAuth == nil) {
 		return nil, fmt.Errorf("not logged in: run '%s auth login' or set %s and %s", progName, envServer, envToken)
 	}
 	server, err := normalizeServer(c.s.Server)
@@ -226,7 +244,79 @@ func (c *cmdCtx) client() (*Client, error) {
 	if w := insecureWarning(server); w != "" {
 		fmt.Fprintln(c.err, w)
 	}
-	return NewClient(server, c.s.Token, progName+"/"+version), nil
+	cl := NewClient(server, c.s.Token, progName+"/"+version)
+	if c.s.OAuth == nil {
+		cl.RPC = !strings.HasPrefix(c.s.Token, "sb_")
+		return cl, nil
+	}
+	if err := requireSameOrigin(server, map[string]string{"token endpoint": c.s.OAuth.TokenEndpoint, "revocation endpoint": c.s.OAuth.RevokeEndpoint}); err != nil {
+		return nil, fmt.Errorf("saved login looks tampered with: %w", err)
+	}
+	cl.RPC = true
+	cl.Token = c.s.OAuth.AccessToken
+	cl.Expiry = c.s.OAuth.ExpiresAt
+	cl.Refresh = c.refreshSession
+	return cl, nil
+}
+
+// refreshSession renews the saved OAuth session under a lock file. The server
+// rotates the refresh token on every use, so concurrent CLI processes must not
+// both spend the same one; whoever comes second adopts what the first saved.
+func (c *cmdCtx) refreshSession(ctx context.Context) (string, time.Time, error) {
+	unlock, err := lockFile(c.s.ConfigPath)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	defer unlock()
+
+	cfg, err := loadConfig(c.s.ConfigPath)
+	if err != nil {
+		return "", time.Time{}, err // never overwrite a config we could not read
+	}
+	cur := c.s.OAuth
+	disk := cfg.OAuth
+	if disk == nil || disk.ClientID != cur.ClientID || disk.Resource != cur.Resource || !sameServer(disk.Server, cur.Server) {
+		return "", time.Time{}, errors.New("the saved login changed or was removed; run 'auth login --oauth' again")
+	}
+	if disk.AccessToken != cur.AccessToken && time.Until(disk.ExpiresAt) > time.Minute {
+		c.s.OAuth = disk // another process already refreshed
+		return disk.AccessToken, disk.ExpiresAt, nil
+	}
+	next, err := refreshOAuth(ctx, *disk)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	cfg.OAuth = next
+	if err := saveConfig(c.s.ConfigPath, cfg); err != nil {
+		return "", time.Time{}, fmt.Errorf("could not save the refreshed session: %w", err)
+	}
+	c.s.OAuth = next
+	return next.AccessToken, next.ExpiresAt, nil
+}
+
+// lockFile takes an exclusive lock next to the config file (O_EXCL, with stale
+// lock recovery) and returns its release function.
+func lockFile(configPath string) (func(), error) {
+	lp := configPath + ".lock"
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		f, err := os.OpenFile(lp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			f.Close()
+			return func() { os.Remove(lp) }, nil
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return nil, fmt.Errorf("lock config: %w", err)
+		}
+		if st, serr := os.Stat(lp); serr == nil && time.Since(st.ModTime()) > 30*time.Second {
+			os.Remove(lp) // left behind by a crashed process
+			continue
+		}
+		if time.Now().After(deadline) {
+			return nil, errors.New("timed out waiting for another scrumboy-cli process to finish refreshing the session")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // call runs one tool call with a signal-aware context.

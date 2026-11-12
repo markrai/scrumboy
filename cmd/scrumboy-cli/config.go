@@ -21,6 +21,9 @@ type fileConfig struct {
 	Server  string `json:"server,omitempty"`
 	Token   string `json:"token,omitempty"`
 	Project string `json:"project,omitempty"`
+	// OAuth is an OAuth session from 'auth login --oauth'; it takes the place
+	// of Token and refreshes itself.
+	OAuth *oauthConfig `json:"oauth,omitempty"`
 }
 
 // settings are the resolved values for one invocation.
@@ -30,6 +33,9 @@ type settings struct {
 	Token      string
 	Project    string
 	ConfigPath string
+	// OAuth is set only when the credentials come from the config file's OAuth
+	// session (an explicit flag/env token always wins).
+	OAuth *oauthConfig
 }
 
 func defaultConfigPath(getenv func(string) string) (string, error) {
@@ -90,6 +96,13 @@ func saveConfig(path string, cfg fileConfig) error {
 	return os.Rename(tmp.Name(), path)
 }
 
+// sameServer compares two server URLs after normalization.
+func sameServer(a, b string) bool {
+	na, err1 := normalizeServer(a)
+	nb, err2 := normalizeServer(b)
+	return err1 == nil && err2 == nil && na == nb
+}
+
 func resolveSettings(flagServer, flagToken, flagProject, flagConfig string, getenv func(string) string) (settings, fileConfig, error) {
 	path := flagConfig
 	if path == "" {
@@ -110,10 +123,21 @@ func resolveSettings(flagServer, flagToken, flagProject, flagConfig string, gete
 		}
 		return ""
 	}
-	return settings{
+	st := settings{
 		Server:     pick(flagServer, getenv(envServer), file.Server),
-		Token:      pick(flagToken, getenv(envToken), file.Token),
+		Token:      pick(flagToken, getenv(envToken)),
 		Project:    pick(flagProject, getenv(envProject), file.Project),
 		ConfigPath: path,
-	}, file, nil
+	}
+	if st.Token == "" {
+		// Saved credentials belong to the server they were issued by: never
+		// send them to a different one chosen by --server or the environment.
+		switch {
+		case file.OAuth != nil && file.OAuth.AccessToken != "" && sameServer(st.Server, file.OAuth.Server):
+			st.OAuth = file.OAuth
+		case file.Token != "" && sameServer(st.Server, file.Server):
+			st.Token = file.Token
+		}
+	}
+	return st, file, nil
 }

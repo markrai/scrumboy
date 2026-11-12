@@ -11,33 +11,18 @@ import (
 	"time"
 )
 
-// listCmd builds a handler for a read-only `<noun> list` command that calls
-// one tool with just the project slug and renders data.items as a table.
-func listCmd(noun, tool string, headers []string, row func(m map[string]any) []string) handler {
-	return func(a *app, args []string) error {
-		if len(args) > 0 && (args[0] == "list" || args[0] == "ls") {
-			args = args[1:]
-		}
-		c, err := a.parse(noun+" list", noun+" list [-p slug]", args, nil)
-		if err != nil {
-			return err
-		}
-		if err := c.wantPos(0, "no positional arguments"); err != nil {
-			return err
-		}
-		slug, err := c.requireProject()
-		if err != nil {
-			return err
-		}
-		res, err := c.call(tool, map[string]any{"projectSlug": slug})
-		if err != nil {
-			return err
-		}
-		return printItems(c, res, headers, row)
+// pageHint tells the user when a list was truncated and how to continue it.
+func pageHint(c *cmdCtx, res *Result) {
+	var meta struct {
+		NextCursor *string `json:"nextCursor"`
+	}
+	if res.DecodeMeta(&meta) == nil && meta.NextCursor != nil && *meta.NextCursor != "" {
+		fmt.Fprintf(c.err, "More results available: add --cursor %s\n", *meta.NextCursor)
 	}
 }
 
 func printItems(c *cmdCtx, res *Result, headers []string, row func(map[string]any) []string) error {
+	defer pageHint(c, res)
 	if c.json {
 		var raw struct {
 			Items json.RawMessage `json:"items"`
@@ -86,30 +71,6 @@ func millisDate(m map[string]any, key string) string {
 		return "-"
 	}
 	return time.UnixMilli(int64(f)).UTC().Format("2006-01-02")
-}
-
-func cmdTag(a *app, args []string) error {
-	return listCmd("tag", "tags_listProject", []string{"NAME", "COUNT", "COLOR"}, func(m map[string]any) []string {
-		return []string{str(m, "name"), str(m, "count"), str(m, "color")}
-	})(a, args)
-}
-
-func cmdMember(a *app, args []string) error {
-	return listCmd("member", "members_list", []string{"USER", "NAME", "EMAIL", "ROLE"}, func(m map[string]any) []string {
-		return []string{str(m, "userId"), str(m, "name"), str(m, "email"), str(m, "role")}
-	})(a, args)
-}
-
-func cmdColumn(a *app, args []string) error {
-	return listCmd("column", "workflow_list", []string{"KEY", "NAME", "DONE", "COLOR"}, func(m map[string]any) []string {
-		return []string{str(m, "key"), str(m, "name"), str(m, "isDone"), str(m, "color")}
-	})(a, args)
-}
-
-func cmdPriority(a *app, args []string) error {
-	return listCmd("priority", "priorities_list", []string{"KEY", "NAME", "COLOR"}, func(m map[string]any) []string {
-		return []string{str(m, "key"), str(m, "name"), str(m, "color")}
-	})(a, args)
 }
 
 // --- project ----------------------------------------------------------------
@@ -255,13 +216,16 @@ func projectDelete(a *app, args []string) error {
 
 // --- sprint -----------------------------------------------------------------
 
-const sprintUsage = `sprint <list|active|create|activate|close>
+const sprintUsage = `sprint <list|active|get|create|update|activate|close|delete>
 
   list                                   all sprints (ids are used by other commands)
   active                                 the active sprint, if any
+  get <sprint-id>
   create <name> --start D --end D        D is RFC 3339 or YYYY-MM-DD
+  update <sprint-id> [--name N] [--start D] [--end D]
   activate <sprint-id>
   close <sprint-id>
+  delete <sprint-id> [--yes]
 `
 
 func cmdSprint(a *app, args []string) error {
@@ -364,6 +328,9 @@ func cmdSprint(a *app, args []string) error {
 	case "-h", "--help", "help":
 		fmt.Fprint(a.out, sprintUsage)
 		return nil
+	}
+	if sp, ok := sprintSpecs[args[0]]; ok {
+		return sp.run(a, "sprint "+args[0], rest)
 	}
 	return usagef("unknown sprint subcommand %q", args[0])
 }
