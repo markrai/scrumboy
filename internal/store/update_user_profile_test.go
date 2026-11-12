@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func strp(s string) *string { return &s }
@@ -117,4 +118,107 @@ func TestUpdateUserProfile(t *testing.T) {
 			}
 		}
 	})
+}
+
+// UpdateUserProfile is the first code path that changes users.email after creation, and that column
+// is the local sign-in key, the self-service recovery lookup, and the canonical address explicit OIDC
+// linking is checked against. Everything else (sessions, OIDC links, 2FA, recovery codes) must keep
+// following the user id.
+func TestUpdateUserProfilePreservesAuthLifecycle(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	const issuer = "https://idp.example.test"
+
+	owner, err := st.BootstrapUser(ctx, "owner@test.com", "password123", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := st.CreateUser(ctx, "old@test.com", "password123", "Old Name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionToken, _, err := st.CreateSession(ctx, target.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.LinkOIDCIdentity(ctx, target.ID, issuer, "subject-target", "old@test.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetUserTwoFactor(ctx, target.ID, "encrypted-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddRecoveryCodes(ctx, target.ID, []string{"ABCD-EFGH"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A name-only change leaves the sign-in key alone.
+	if err := st.UpdateUserProfile(ctx, owner.ID, target.ID, strp("Interim Name"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := st.AuthenticateUser(ctx, "old@test.com", "password123"); err != nil || u.ID != target.ID {
+		t.Fatalf("login after name-only change: user=%d err=%v", u.ID, err)
+	}
+
+	if err := st.UpdateUserProfile(ctx, owner.ID, target.ID, nil, strp("New@Test.com")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Local sign-in moves to the new address with the same password and account.
+	if u, err := st.AuthenticateUser(ctx, "new@test.com", "password123"); err != nil || u.ID != target.ID {
+		t.Fatalf("login with new email: user=%d err=%v", u.ID, err)
+	}
+	if _, err := st.AuthenticateUser(ctx, "old@test.com", "password123"); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("login with old email: err=%v, want ErrUnauthorized", err)
+	}
+	if _, err := st.GetUserByEmail(ctx, "old@test.com"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("recovery lookup by old email: err=%v, want ErrNotFound", err)
+	}
+
+	// Existing sessions stay with the same account.
+	if u, err := st.GetUserBySessionToken(ctx, sessionToken); err != nil || u.ID != target.ID || u.Email != "new@test.com" {
+		t.Fatalf("session after email change: user=%+v err=%v", u, err)
+	}
+
+	// The existing OIDC link still resolves by (issuer, subject), and an IdP still reporting the old
+	// address only refreshes the identity's metadata, not the administrator's canonical email.
+	if u, err := st.GetUserByOIDCIdentity(ctx, issuer, "subject-target"); err != nil || u.ID != target.ID {
+		t.Fatalf("linked OIDC identity: user=%d err=%v", u.ID, err)
+	}
+	if err := st.UpdateOIDCIdentityEmailAtLogin(ctx, target.ID, issuer, "subject-target", "old@test.com"); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := st.GetUser(ctx, target.ID); u.Email != "new@test.com" {
+		t.Fatalf("IdP login metadata overwrote canonical email: %q", u.Email)
+	}
+
+	// An unlinked IdP identity asserting the new address is neither attached to the account nor
+	// allowed to create a second account holding it.
+	if _, err := st.CreateUserOIDC(ctx, issuer, issuer, "subject-stranger", "new@test.com", "Stranger"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("OIDC signup with reassigned email: err=%v, want ErrConflict", err)
+	}
+	if _, err := st.GetUserByOIDCIdentity(ctx, issuer, "subject-stranger"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stranger identity was linked: err=%v", err)
+	}
+
+	// Explicit linking is checked against the current canonical email.
+	if err := st.LinkOIDCIdentityExplicit(ctx, target.ID, issuer, "subject-second", "old@test.com"); !errors.Is(err, ErrValidation) {
+		t.Fatalf("explicit link with old email: err=%v, want ErrValidation", err)
+	}
+	if err := st.LinkOIDCIdentityExplicit(ctx, target.ID, issuer, "subject-second", "new@test.com"); err != nil {
+		t.Fatalf("explicit link with new email: %v", err)
+	}
+
+	// 2FA enrollment and recovery codes stay with the account.
+	if u, _ := st.GetUser(ctx, target.ID); !u.TwoFactorEnabled {
+		t.Fatal("2FA enrollment lost after email change")
+	}
+	if id, _, err := st.MatchRecoveryCodeProof(ctx, target.ID, "ABCD-EFGH"); err != nil || id <= 0 {
+		t.Fatalf("recovery code after email change: id=%d err=%v", id, err)
+	}
+
+	// Re-applying the current values succeeds, so a client retry after an ambiguous response is safe.
+	if err := st.UpdateUserProfile(ctx, owner.ID, target.ID, strp("Interim Name"), strp("new@test.com")); err != nil {
+		t.Fatalf("same-value update: %v", err)
+	}
 }
