@@ -5,11 +5,13 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+const fileAllAccess windows.ACCESS_MASK = 0x1F01FF
 
 // TestConfigACLIsOwnerOnlyOnWindows: Chmod(0600) does nothing for access on
 // Windows. A config saved under a directory that grants other accounts access
@@ -43,16 +45,76 @@ func TestConfigACLIsOwnerOnlyOnWindows(t *testing.T) {
 		if err := saveConfig(path, fileConfig{Server: "https://a", Token: "sb_x"}); err != nil {
 			t.Fatal(err)
 		}
-		got, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-		if err != nil {
+		assertOwnerOnlyDACL(t, path, user.User.Sid)
+	}
+}
+
+// assertOwnerOnlyDACL compares trustee SIDs rather than SDDL text: Windows
+// prints well-known accounts as aliases (the built-in Administrator account
+// as LA, for example), so the user's numeric SID need not appear in the SDDL.
+func assertOwnerOnlyDACL(t *testing.T, path string, me *windows.SID) {
+	t.Helper()
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	control, _, err := sd.Control()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if control&windows.SE_DACL_PROTECTED == 0 {
+		t.Fatalf("config DACL is not protected from inheritance: %s", sd)
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dacl == nil {
+		t.Fatalf("config has a NULL DACL, which grants everyone full access")
+	}
+	system, err := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admins, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		name string
+		sid  *windows.SID
+	}{{"current user", me}, {"SYSTEM", system}, {"Administrators", admins}}
+	seen := map[string]bool{}
+	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &ace); err != nil {
 			t.Fatal(err)
 		}
-		sddl := got.String()
-		if !strings.HasPrefix(sddl, "D:P") || strings.Contains(sddl, ";;;AU)") || strings.Contains(sddl, ";;;BU)") || strings.Contains(sddl, ";;;WD)") {
-			t.Fatalf("config ACL is not owner-only: %s", sddl)
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
+			t.Fatalf("config ACE %d has type %d, want access-allowed: %s", i, ace.Header.AceType, sd)
 		}
-		if !strings.Contains(sddl, ";;;"+me+")") {
-			t.Fatalf("config ACL does not grant the current user: %s", sddl)
+		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+		name := ""
+		for _, w := range want {
+			if sid.Equals(w.sid) {
+				name = w.name
+			}
+		}
+		switch {
+		case name == "":
+			t.Fatalf("config ACL grants %s, which is not the current user, SYSTEM or Administrators: %s", sid, sd)
+		case seen[name]:
+			t.Fatalf("config ACL lists %s more than once: %s", name, sd)
+		case ace.Header.AceFlags&windows.INHERITED_ACE != 0:
+			t.Fatalf("config ACE for %s is inherited: %s", name, sd)
+		case ace.Mask != fileAllAccess:
+			t.Fatalf("config ACE for %s has mask %#x, want full access %#x: %s", name, ace.Mask, fileAllAccess, sd)
+		}
+		seen[name] = true
+	}
+	for _, w := range want {
+		if !seen[w.name] {
+			t.Fatalf("config ACL does not grant %s (%s): %s", w.name, w.sid, sd)
 		}
 	}
 }
