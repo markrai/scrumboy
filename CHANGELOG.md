@@ -1,8 +1,8 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.41.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
-## [Unreleased]
+## [3.42.0] - 2026-11-13
 
 ### Added
 
@@ -14,7 +14,15 @@
   OAuth in the browser (`auth login --oauth`, `/mcp/rpc`), and shares no code
   with the server. Release builds (linux/darwin/windows, amd64/arm64),
   checksums and a Homebrew formula are attached to each GitHub Release by
-  `.github/workflows/cli-release.yml`. See [docs/cli.md](docs/cli.md).
+  `.github/workflows/cli-release.yml` once every binary has passed a native
+  smoke test; the archives are reproducible and published assets are never
+  replaced. See [docs/cli.md](docs/cli.md).
+
+### Security
+
+- **Validation error details** - Drop an unneeded map capacity hint in
+  `internal/httpapi` flagged by CodeQL (`go/allocation-size-overflow`). No
+  behavior change.
 
 ## [3.41.1] - 2026-11-11
 
