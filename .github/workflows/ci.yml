@@ -31,6 +31,58 @@ jobs:
       - name: Test Go
         run: go test ./... -count=1 -timeout=10m
 
+  cli:
+    name: CLI test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Vet CLI
+        run: go vet ./cmd/scrumboy-cli
+
+      - name: Test CLI
+        run: go test ./cmd/scrumboy-cli -count=1
+
+  cli-build:
+    name: CLI cross-build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # Same script the release workflow uses, so a target that stops compiling
+      # (or a broken packaging step) fails the PR, not the release.
+      - name: Build linux/darwin/windows x amd64/arm64 archives
+        run: scripts/build-cli-release.sh v0.0.0-ci cli-dist
+
+      - name: Test release publication script
+        run: bash scripts/test-publish-cli-release.sh
+
+      - name: Upload CLI binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scrumboy-cli-ci
+          path: cli-dist/
+          retention-days: 7
+          if-no-files-found: error
+
   frontend:
     name: Frontend tests
     runs-on: ubuntu-latest

@@ -110,7 +110,7 @@ func validationDetails(reason string, extra map[string]any) map[string]any {
 	if reason == "" && len(extra) == 0 {
 		return nil
 	}
-	details := make(map[string]any, len(extra)+1)
+	details := make(map[string]any, len(extra))
 	for key, value := range extra {
 		details[key] = value
 	}
