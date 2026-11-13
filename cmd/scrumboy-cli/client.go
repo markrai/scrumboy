@@ -103,13 +103,25 @@ type errUnauthorized struct{ msg string }
 
 func (e *errUnauthorized) Error() string { return e.msg }
 
+// noRedirectHTTP is the HTTP client for every request that carries a
+// credential. It never follows redirects: Go keeps the Authorization header
+// when the target has the same hostname, whatever its port or scheme (so also
+// https -> http), and re-sends a POST body on 307/308, which would replay a
+// tool call (a mutation) or a refresh token at the redirect target.
+func noRedirectHTTP() *http.Client {
+	return &http.Client{
+		Timeout:       30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
 // NewClient builds a legacy-transport client for the server at baseURL.
 func NewClient(baseURL, token, userAgent string) *Client {
 	return &Client{
 		BaseURL:   strings.TrimRight(baseURL, "/"),
 		Token:     token,
 		UserAgent: userAgent,
-		HTTP:      &http.Client{Timeout: 30 * time.Second},
+		HTTP:      noRedirectHTTP(),
 	}
 }
 
@@ -176,6 +188,10 @@ func (c *Client) post(ctx context.Context, path string, body any, extra map[stri
 		return nil, nil, fmt.Errorf("request %s: %w", c.BaseURL, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, nil, fmt.Errorf("%s answered with a redirect (HTTP %d to %s); credentials are never sent to a redirect target, so pass the server's final URL with --server",
+			c.BaseURL, resp.StatusCode, safeText(resp.Header.Get("Location")))
+	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return nil, nil, fmt.Errorf("read response: %w", err)

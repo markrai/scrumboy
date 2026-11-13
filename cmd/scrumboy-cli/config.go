@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
@@ -82,7 +83,7 @@ func saveConfig(path string, cfg fileConfig) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := restrictToOwner(tmp); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -93,7 +94,21 @@ func saveConfig(path string, cfg fileConfig) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	return replaceFile(tmp.Name(), path)
+}
+
+// replaceFile renames from over to, retrying briefly where the platform can
+// refuse while another process has the target open. Losing this write after a
+// refresh would lose the rotated refresh token, whose predecessor is spent.
+func replaceFile(from, to string) error {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		err := os.Rename(from, to)
+		if err == nil || !renameRetryable(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // sameServer compares two server URLs after normalization.

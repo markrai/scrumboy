@@ -51,7 +51,9 @@ scrumboy-cli auth login --oauth --no-browser --server ...   # prints the URL; pa
 It uses OAuth 2.1 as described in [oauth.md](oauth.md): discovery, dynamic
 client registration, authorization code with PKCE (S256) and a loopback
 redirect on `127.0.0.1`. Refresh tokens rotate on every use, so the CLI saves
-the new one before using it; `auth logout` revokes the session on the server.
+the new one before using it; `auth logout` revokes the session on the server
+(and warns if the server does not confirm, in which case the session stays
+valid until it expires).
 OAuth tokens are only accepted by the server's `/mcp/rpc` endpoint, so the CLI
 switches to that transport automatically (a bearer token that does not start
 with `sb_`, passed by flag or environment, is treated as an OAuth token too).
@@ -63,8 +65,16 @@ scrumboy-cli auth logout
 
 Credentials are saved in the user config directory (`~/.config/scrumboy/config.json`
 on Linux, `~/Library/Application Support/scrumboy/` on macOS, `%AppData%\scrumboy\`
-on Windows; mode `0600`). For CI skip `login` and set `SCRUMBOY_URL` and
-`SCRUMBOY_TOKEN`. Settings resolve flag > environment > config file.
+on Windows), readable only by you: mode `0600` on Linux and macOS, and on
+Windows an access list that grants only your account (plus SYSTEM and
+Administrators), also for a `--config` path outside your profile. For CI skip
+`login` and set `SCRUMBOY_URL` and `SCRUMBOY_TOKEN`. Settings resolve flag >
+environment > config file.
+
+The CLI never follows HTTP redirects, so a credential is only ever sent to the
+URL you configured: if the server answers with a redirect (for example plain
+`http://` to `https://`), the command fails and names the target to use with
+`--server` instead.
 
 | Setting | Flag | Environment |
 |---|---|---|
@@ -140,17 +150,34 @@ session cookie).
 
 Publishing a GitHub Release triggers `.github/workflows/cli-release.yml`,
 which builds the CLI from the release tag (the CLI is versioned with the
-server), attaches `scrumboy-cli_<version>_<os>_<arch>` archives for
-linux/darwin/windows x amd64/arm64, a checksums file, and a rendered Homebrew
-formula (`scrumboy-cli.rb`). `workflow_dispatch` with a tag rebuilds the assets
-for an existing release.
+server) as `scrumboy-cli_<version>_<os>_<arch>` archives for
+linux/darwin/windows x amd64/arm64, smoke-tests every binary natively, and only
+then attaches the archives, a checksums file and a rendered Homebrew formula
+(`scrumboy-cli.rb`) to the release. `workflow_dispatch` with a tag does the same
+for an existing release (also a draft).
 
-Each release also opens a PR that updates `Formula/scrumboy-cli.rb`; merge it
-and `brew install` serves the new version (the formula installs the prebuilt
-archive for your OS and CPU). Until the first release the formula only supports
-`--HEAD`. The release workflow smoke-tests the binary natively on Linux, macOS
-and Windows. CI runs the CLI tests on all three and uploads cross-built
-binaries for every pull request.
+The archives are reproducible (the same commit gives the same bytes), and
+`scripts/publish-cli-release.sh` never replaces a published asset: a re-run
+skips assets that are already there with the same checksum and fails, without
+uploading anything, if any differs. To really replace an asset, delete it on
+the release first. With GitHub's immutable releases enabled, assets can only be
+added while the release is a draft, so the run fails for an already published
+release that lacks them.
 
-Locally: `scripts/build-cli-release.sh <version> <outdir>` and
+For a published, non-prerelease release the workflow then opens a PR that
+updates `Formula/scrumboy-cli.rb`; merge it and `brew install` serves the new
+version (the formula installs the prebuilt archive for your OS and CPU). Until
+the first release the formula only supports `--HEAD`. Opening that PR needs
+**Settings > Actions > General > Allow GitHub Actions to create and approve
+pull requests**; without it the release assets are still published and only
+the formula job fails (re-run it after enabling the setting). A PR opened by
+the workflow token does not start CI on its own; close and reopen it to run the
+checks. CI runs the CLI tests on
+Linux, macOS and Windows and uploads cross-built binaries for every pull
+request.
+
+Locally (GNU tar and Info-ZIP `zip`, as on Linux):
+`scripts/build-cli-release.sh <version> <outdir>` and
 `scripts/render-homebrew-formula.sh <version> <owner/repo> <checksums.txt>`.
+`bash scripts/test-publish-cli-release.sh` (needs `jq`; also run by CI) checks
+the publication rules against a stub `gh`.

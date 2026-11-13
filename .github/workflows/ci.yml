@@ -72,6 +72,9 @@ jobs:
       - name: Build linux/darwin/windows x amd64/arm64 archives
         run: scripts/build-cli-release.sh v0.0.0-ci cli-dist
 
+      - name: Test release publication script
+        run: bash scripts/test-publish-cli-release.sh
+
       - name: Upload CLI binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

@@ -271,7 +271,12 @@ func (c *cmdCtx) fetchBoard(slug string, o *boardOpts) ([]boardColumn, error) {
 		// A board cursor is per column, so page each column on its own
 		// (re-reading all columns with one cursor would repeat the others).
 		next := meta.NextCursorByColumn[col.Key]
+		seen := map[string]bool{}
 		for next != nil {
+			if seen[*next] { // any revisited cursor, not just the previous one, would page forever
+				return nil, fmt.Errorf("server returned a repeating cursor for column %s", col.Key)
+			}
+			seen[*next] = true
 			in := o.input(slug)
 			in["columnKey"] = col.Key
 			in["cursorByColumn"] = map[string]string{col.Key: *next}
@@ -292,11 +297,7 @@ func (c *cmdCtx) fetchBoard(slug string, o *boardOpts) ([]boardColumn, error) {
 					col.Items = append(col.Items, pc.Items...)
 				}
 			}
-			n := pm.NextCursorByColumn[col.Key]
-			if n != nil && *n == *next {
-				return nil, fmt.Errorf("server returned a repeating cursor for column %s", col.Key)
-			}
-			next = n
+			next = pm.NextCursorByColumn[col.Key]
 		}
 	}
 	return data.Columns, nil

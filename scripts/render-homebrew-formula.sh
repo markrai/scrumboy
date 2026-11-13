@@ -47,28 +47,34 @@ class ScrumboyCli < Formula
 EOF
 
 if ! $head_only; then
+  # Look the checksums up as assignments: a failing $(sha ...) inside the
+  # heredoc would only end its own subshell and emit `sha256 ""`.
+  sha_darwin_arm64="$(sha darwin arm64)"
+  sha_darwin_amd64="$(sha darwin amd64)"
+  sha_linux_arm64="$(sha linux arm64)"
+  sha_linux_amd64="$(sha linux amd64)"
   cat <<EOF
   version "${version#v}"
 
   on_macos do
     on_arm do
       url "$(url darwin arm64)"
-      sha256 "$(sha darwin arm64)"
+      sha256 "${sha_darwin_arm64}"
     end
     on_intel do
       url "$(url darwin amd64)"
-      sha256 "$(sha darwin amd64)"
+      sha256 "${sha_darwin_amd64}"
     end
   end
 
   on_linux do
     on_arm do
       url "$(url linux arm64)"
-      sha256 "$(sha linux arm64)"
+      sha256 "${sha_linux_arm64}"
     end
     on_intel do
       url "$(url linux amd64)"
-      sha256 "$(sha linux amd64)"
+      sha256 "${sha_linux_amd64}"
     end
   end
 EOF

@@ -94,7 +94,8 @@ func authLogin(a *app, args []string) error {
 		fmt.Fprintln(c.err, warn)
 	}
 
-	cfg := c.file
+	var newToken string
+	var newOAuth *oauthConfig
 	c.s.Server, c.s.Token, c.s.OAuth = server, "", nil
 	if useOAuth {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -104,7 +105,7 @@ func authLogin(a *app, args []string) error {
 			return err
 		}
 		c.s.OAuth = oc
-		cfg.OAuth, cfg.Token = oc, ""
+		newOAuth = oc
 	} else {
 		if token == "" {
 			if !c.isTTY {
@@ -119,7 +120,7 @@ func authLogin(a *app, args []string) error {
 			token = strings.TrimSpace(string(raw))
 		}
 		c.s.Token = token
-		cfg.Token, cfg.OAuth = token, nil
+		newToken = token
 	}
 
 	res, err := c.call("me_get", nil)
@@ -131,8 +132,7 @@ func authLogin(a *app, args []string) error {
 		return err
 	}
 
-	cfg.Server = server
-	if err := saveConfig(c.s.ConfigPath, cfg); err != nil {
+	if err := saveLogin(c.s.ConfigPath, server, newToken, newOAuth); err != nil {
 		return err
 	}
 	if c.json {
@@ -142,27 +142,63 @@ func authLogin(a *app, args []string) error {
 	return nil
 }
 
+// saveLogin persists a completed login under the refresh lock, which is taken
+// only now, not across the interactive part. A refresh that another process
+// started earlier finishes first; saving without the lock would let it write
+// the old session back over this login. The config is re-read under the lock
+// so the other settings it holds are kept as they are now.
+func saveLogin(path, server, token string, oc *oauthConfig) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	unlock, err := lockFile(ctx, path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	cfg, err := loadConfig(path)
+	if err != nil {
+		return err // never overwrite a config we could not read
+	}
+	cfg.Server, cfg.Token, cfg.OAuth = server, token, oc
+	return saveConfig(path, cfg)
+}
+
 func authLogout(a *app, args []string) error {
 	c, err := a.parse("auth logout", "auth logout", args, nil)
 	if err != nil {
 		return err
 	}
-	cfg := c.file
-	if cfg.Token == "" && cfg.OAuth == nil {
+	if c.file.Token == "" && c.file.OAuth == nil {
 		fmt.Fprintln(c.out, "Not logged in (no saved credentials).")
 		return nil
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	// Hold the refresh lock and act on the config as it is now: a refresh in
+	// flight in another process may have rotated the tokens since we read
+	// them, and must not write the session back after it is removed.
+	unlock, err := lockFile(ctx, c.s.ConfigPath)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	cfg, err := loadConfig(c.s.ConfigPath)
+	if err != nil {
+		return err
+	}
+	var revokeErr error
 	if cfg.OAuth != nil {
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer stop()
 		server, _ := normalizeServer(cfg.Server)
-		revokeOAuth(ctx, server, *cfg.OAuth) // best effort; the local session is removed regardless
+		revokeErr = revokeOAuth(ctx, server, *cfg.OAuth) // the local session is removed regardless
 	}
 	cfg.Token, cfg.OAuth = "", nil
 	if err := saveConfig(c.s.ConfigPath, cfg); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.out, "Removed saved credentials from %s\n", c.s.ConfigPath)
+	if revokeErr != nil {
+		fmt.Fprintf(c.err, "warning: the server did not confirm revoking the OAuth session (%v); it stays valid until it expires\n", revokeErr)
+	}
 	return nil
 }
 

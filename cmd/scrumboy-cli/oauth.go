@@ -58,12 +58,7 @@ type tokenResp struct {
 
 // oauthHTTP never follows redirects: Go would re-send a POST body (a refresh
 // token, an authorization code) to the redirect target on 307/308.
-func oauthHTTP() *http.Client {
-	return &http.Client{
-		Timeout:       30 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
-}
+func oauthHTTP() *http.Client { return noRedirectHTTP() }
 
 // origin returns scheme://host[:port] of a URL, or "" if it is not absolute.
 func origin(raw string) string {
@@ -431,12 +426,15 @@ func refreshOAuth(ctx context.Context, o oauthConfig) (*oauthConfig, error) {
 	return &o, nil
 }
 
-// revokeOAuth best-effort revokes both tokens (RFC 7009).
-func revokeOAuth(ctx context.Context, server string, o oauthConfig) {
+// revokeOAuth revokes both tokens (RFC 7009) and reports any that the server
+// did not confirm. Scrumboy answers 200 for every well-formed request, so a
+// failure here is a network or server problem, not an unknown token.
+func revokeOAuth(ctx context.Context, server string, o oauthConfig) error {
 	endpoint := o.RevokeEndpoint
 	if endpoint == "" {
 		endpoint = server + "/oauth/revoke"
 	}
+	var errs []error
 	for _, t := range []struct{ tok, hint string }{{o.RefreshToken, "refresh_token"}, {o.AccessToken, "access_token"}} {
 		if t.tok == "" {
 			continue
@@ -444,13 +442,21 @@ func revokeOAuth(ctx context.Context, server string, o oauthConfig) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
 			strings.NewReader(url.Values{"token": {t.tok}, "token_type_hint": {t.hint}, "client_id": {o.ClientID}}.Encode()))
 		if err != nil {
+			errs = append(errs, err)
 			continue
 		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		if resp, err := oauthHTTP().Do(req); err == nil {
-			resp.Body.Close()
+		resp, err := oauthHTTP().Do(req)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			errs = append(errs, fmt.Errorf("%s revocation: HTTP %d", t.hint, resp.StatusCode))
 		}
 	}
+	return errors.Join(errs...)
 }
 
 // openBrowser opens u in the user's default browser.

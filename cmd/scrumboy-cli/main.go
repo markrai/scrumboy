@@ -13,9 +13,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -263,7 +263,7 @@ func (c *cmdCtx) client() (*Client, error) {
 // rotates the refresh token on every use, so concurrent CLI processes must not
 // both spend the same one; whoever comes second adopts what the first saved.
 func (c *cmdCtx) refreshSession(ctx context.Context) (string, time.Time, error) {
-	unlock, err := lockFile(c.s.ConfigPath)
+	unlock, err := lockFile(ctx, c.s.ConfigPath)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -294,28 +294,45 @@ func (c *cmdCtx) refreshSession(ctx context.Context) (string, time.Time, error) 
 	return next.AccessToken, next.ExpiresAt, nil
 }
 
-// lockFile takes an exclusive lock next to the config file (O_EXCL, with stale
-// lock recovery) and returns its release function.
-func lockFile(configPath string) (func(), error) {
-	lp := configPath + ".lock"
-	deadline := time.Now().Add(20 * time.Second)
+// lockWait bounds how long a process waits for another to finish refreshing.
+// It outlasts the token request timeout, so a slow but live refresh is waited
+// out rather than raced.
+const lockWait = 45 * time.Second
+
+// lockFile takes an exclusive advisory lock (flock / LockFileEx) on a file
+// next to the config and returns its release function. The operating system
+// drops the lock when its holder exits or crashes, so there is no stale-lock
+// recovery that could hand a slow but live holder's lock to someone else, and
+// only the holder can release it. The lock file itself stays in place:
+// deleting a locked file would let another process lock a new file of the
+// same name.
+func lockFile(ctx context.Context, configPath string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		return nil, fmt.Errorf("lock config: %w", err)
+	}
+	f, err := os.OpenFile(configPath+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("lock config: %w", err)
+	}
+	deadline := time.Now().Add(lockWait)
 	for {
-		f, err := os.OpenFile(lp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
+		ok, err := tryLockFile(f)
+		switch {
+		case err != nil:
 			f.Close()
-			return func() { os.Remove(lp) }, nil
-		}
-		if !errors.Is(err, fs.ErrExist) {
 			return nil, fmt.Errorf("lock config: %w", err)
-		}
-		if st, serr := os.Stat(lp); serr == nil && time.Since(st.ModTime()) > 30*time.Second {
-			os.Remove(lp) // left behind by a crashed process
-			continue
-		}
-		if time.Now().After(deadline) {
+		case ok:
+			return func() { unlockFile(f); f.Close() }, nil
+		case time.Now().After(deadline):
+			f.Close()
 			return nil, errors.New("timed out waiting for another scrumboy-cli process to finish refreshing the session")
 		}
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			f.Close()
+			return nil, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
 }
 
