@@ -62,6 +62,7 @@ func (a *Adapter) registerTools() {
 	a.tools["metrics_getBacklogSize"] = a.handleMetricsGetBacklogSize
 	a.tools["admin_listUsers"] = a.handleAdminListUsers
 	a.tools["admin_updateUserRole"] = a.handleAdminUpdateUserRole
+	a.tools["admin_updateUser"] = a.handleAdminUpdateUser
 	a.tools["admin_deleteUser"] = a.handleAdminDeleteUser
 	a.tools["admin_createServiceAccount"] = a.handleAdminCreateServiceAccount
 	a.tools["admin_listServiceAccounts"] = a.handleAdminListServiceAccounts

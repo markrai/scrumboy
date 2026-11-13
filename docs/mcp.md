@@ -245,6 +245,7 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "metrics_getBacklogSize",
     "admin_listUsers",
     "admin_updateUserRole",
+    "admin_updateUser",
     "admin_deleteUser"
   ]
 }
@@ -528,7 +529,7 @@ most 12 tiers and must retain one; an in-use tier cannot be deleted.
 
 **Administration**
 
-- `admin_listUsers`, `admin_updateUserRole`, `admin_deleteUser`
+- `admin_listUsers`, `admin_updateUserRole`, `admin_updateUser`, `admin_deleteUser`
 - `admin_createServiceAccount`, `admin_listServiceAccounts`, `admin_deleteServiceAccount`
 - `admin_createServiceToken`, `admin_listServiceTokens`, `admin_revokeServiceToken`
 
@@ -660,6 +661,7 @@ metrics_getBurndown
 metrics_getBacklogSize
 admin_listUsers
 admin_updateUserRole
+admin_updateUser
 admin_deleteUser
 admin_createServiceAccount
 admin_listServiceAccounts

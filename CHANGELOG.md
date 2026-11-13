@@ -24,6 +24,16 @@
   `internal/httpapi` flagged by CodeQL (`go/allocation-size-overflow`). No
   behavior change.
 
+## [3.41.2] - 2026-11-12
+
+### Added
+
+- **`admin_updateUser` MCP tool** - Owners can change a user's display
+  name and/or email (e.g. after a rename). Email is normalized and
+  validated like user creation, an address already in use is rejected
+  with `CONFLICT`, and service accounts cannot be changed. Sessions,
+  OIDC links and memberships are keyed by user id and are unaffected.
+
 ## [3.41.1] - 2026-11-11
 
 ### Security

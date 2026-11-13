@@ -489,7 +489,7 @@ func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {
 		"customFields_list", "customFields_create", "customFields_delete",
 		"dashboard_getSummary", "dashboard_listTodos",
 		"metrics_getBurndown", "metrics_getBacklogSize",
-		"admin_listUsers", "admin_updateUserRole", "admin_deleteUser",
+		"admin_listUsers", "admin_updateUserRole", "admin_updateUser", "admin_deleteUser",
 		"admin_createServiceAccount", "admin_listServiceAccounts", "admin_deleteServiceAccount",
 		"admin_createServiceToken", "admin_listServiceTokens", "admin_revokeServiceToken",
 		"webhooks_create", "webhooks_list", "webhooks_delete",
