@@ -109,7 +109,7 @@ Commands (run `scrumboy-cli <command> -h` for flags):
 | `auth` | `login`, `logout`, `status` |
 | `project` | `list`, `create`, `update`, `delete` |
 | `board` | show a project's board |
-| `todo` | `list`, `get`, `create`, `update`, `move`, `delete`, `search`, `archive`, `restore`, `links`, `link`, `unlink` |
+| `todo` | `list`, `get`, `create`, `update`, `move`, `delete`, `search`, `archive`, `restore`, `archived`, `links`, `link`, `unlink` |
 | `sprint` | `list`, `active`, `get`, `create`, `update`, `activate`, `close`, `delete` |
 | `tag` | `list`, `mine`, `color`, `delete` |
 | `member` | `list`, `available`, `add`, `role`, `remove` |
@@ -142,7 +142,7 @@ Commands (run `scrumboy-cli <command> -h` for flags):
   ```
 
 Not covered, because the server exposes them only over its browser (REST)
-API: the archived-stories listing, inline image upload, `.sbz` backup/restore,
+API: inline image upload, `.sbz` backup/restore,
 public-board publication, and API token management (`/api/me/tokens` needs a
 session cookie).
 

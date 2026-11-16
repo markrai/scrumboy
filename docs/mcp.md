@@ -204,6 +204,7 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "todos_delete",
     "todos_archive",
     "todos_restore",
+    "todos_listArchived",
     "todos_move",
     "todos_linksList",
     "todos_linkAdd",
@@ -292,6 +293,7 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()`. For the cur
 - `todos_delete`
 - `todos_archive`
 - `todos_restore`
+- `todos_listArchived`
 - `todos_move`
 - `todos_linksList`
 - `todos_linkAdd`
@@ -620,6 +622,7 @@ todos_countCompleted
 todos_delete
 todos_archive
 todos_restore
+todos_listArchived
 todos_move
 todos_linksList
 todos_linkAdd
@@ -1053,4 +1056,4 @@ Non-exhaustive **`code`** values from `internal/mcp/errors.go`:
 - **`sprints_update` `patch`:** Catalog documents `plannedStartAt` / `plannedEndAt` as **Unix milliseconds** (integers), not RFC3339 strings (unlike `sprints_create`).
 - **JSON-RPC `serverInfo.version`:** The value returned by `initialize` is the string **`1.0.0`** in code (`internal/mcp/jsonrpc_handler.go`), not necessarily the Scrumboy app version from `internal/version`.
 - **`plannedTools`:** Currently always empty / omitted; there is no separate catalog of unimplemented tools in responses.
-- **`todos_archive` / `todos_restore`:** take `localIds`, an array of **1-500** unique positive project-local IDs, and apply it **atomically** — one unknown ID fails the whole call and transitions nothing. Requires **maintainer** access on durable projects; unavailable in anonymous and pre-bootstrap modes. Re-archiving an already-archived story is an idempotent no-op counted as unchanged, not an error. Archival is orthogonal to workflow state and Done: `columnKey`, rank, `doneAt`, the story's `updatedAt`, tags, links, sprint, priority, assignment and `createdByUserId` are all preserved, so reporting and sprint history are unaffected. Archived stories are read-only (**409** `todo_archived`), but that check runs after authorization, so an unauthorized caller never learns the archive state; an empty `todos_update` patch (`{}`) stays a lookup/no-op and still succeeds. `board_get` and the default `todos_search` exclude archived stories, while `todos_get` still returns them. Link add/remove is rejected when either endpoint is archived, though `todos_linksList` keeps showing existing links and reports each target's `archivedAt`. **Both tools are realtime-silent** — like every other MCP mutation they publish no `board.refresh_needed`, unlike the equivalent REST routes. **There is no MCP archive-listing tool**; the cursor-paginated archive page is REST-only (`GET /api/board/{slug}/archive`).
+- **`todos_archive` / `todos_restore`:** take `localIds`, an array of **1-500** unique positive project-local IDs, and apply it **atomically** — one unknown ID fails the whole call and transitions nothing. Requires **maintainer** access on durable projects; unavailable in anonymous and pre-bootstrap modes. Re-archiving an already-archived story is an idempotent no-op counted as unchanged, not an error. Archival is orthogonal to workflow state and Done: `columnKey`, rank, `doneAt`, the story's `updatedAt`, tags, links, sprint, priority, assignment and `createdByUserId` are all preserved, so reporting and sprint history are unaffected. Archived stories are read-only (**409** `todo_archived`), but that check runs after authorization, so an unauthorized caller never learns the archive state; an empty `todos_update` patch (`{}`) stays a lookup/no-op and still succeeds. `board_get` and the default `todos_search` exclude archived stories, while `todos_get` still returns them. Link add/remove is rejected when either endpoint is archived, though `todos_linksList` keeps showing existing links and reports each target's `archivedAt`. **Both tools are realtime-silent** — like every other MCP mutation they publish no `board.refresh_needed`, unlike the equivalent REST routes. Archived stories are listed with **`todos_listArchived`** (`projectSlug`, optional `limit` 1-100 default 50, optional `cursor`): newest archived first, returning `items`, `nextCursor` and `hasMore` — the same page as `GET /api/board/{slug}/archive`.

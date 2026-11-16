@@ -137,6 +137,7 @@ func TestMCP_ServiceBearerNeedsMembershipForEveryProjectTool(t *testing.T) {
 		"board_get":               {},
 		"todos_search":            {},
 		"todos_countCompleted":    {"period": "this-week"},
+		"todos_listArchived":      {},
 		"sprints_list":            {},
 		"sprints_getActive":       {},
 		"tags_listProject":        {},

@@ -60,3 +60,40 @@ func TestTodoListAllRejectsMalformedCursor(t *testing.T) {
 		t.Fatalf("exit %d out %q err %q", code, h.out, h.err)
 	}
 }
+
+// TestTodoArchivedAllFollowsCursors: --all walks every page of the archive
+// and the table lists them all; without --all one page and a cursor hint.
+func TestTodoArchivedAllFollowsCursors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var c call
+		json.NewDecoder(r.Body).Decode(&c)
+		if c.Tool != "todos_listArchived" || c.Input["projectSlug"] != "demo" {
+			t.Errorf("unexpected call %+v", c)
+		}
+		switch c.Input["cursor"] {
+		case nil:
+			io.WriteString(w, `{"ok":true,"data":{"items":[{"projectSlug":"demo","localId":3,"title":"third","columnKey":"done","archivedAt":"2026-01-03T00:00:00Z"}],"nextCursor":"P2","hasMore":true}}`)
+		case "P2":
+			io.WriteString(w, `{"ok":true,"data":{"items":[{"projectSlug":"demo","localId":1,"title":"first","columnKey":"todo","archivedAt":"2026-01-01T00:00:00Z"}],"nextCursor":"","hasMore":false}}`)
+		default:
+			t.Errorf("unexpected cursor %v", c.Input["cursor"])
+		}
+	}))
+	defer srv.Close()
+
+	h := newHarness(t, srv.URL, map[string]string{envProject: "demo"})
+	if code := h.run("todo", "archived", "--all"); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, h.err)
+	}
+	if !strings.Contains(h.out.String(), "third") || !strings.Contains(h.out.String(), "first") {
+		t.Fatalf("missing rows: %s", h.out)
+	}
+
+	h = newHarness(t, srv.URL, map[string]string{envProject: "demo"})
+	if code := h.run("todo", "archived"); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, h.err)
+	}
+	if strings.Contains(h.out.String(), "first") || !strings.Contains(h.err.String(), "--cursor P2") {
+		t.Fatalf("single page: out %q err %q", h.out, h.err)
+	}
+}

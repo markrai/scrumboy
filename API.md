@@ -625,6 +625,7 @@ Conventions:
 | `todos_move` | `projectSlug`, `localId`, `toColumnKey`, optional `afterLocalId`, `beforeLocalId` | `data.todo` |
 | `todos_archive` | `projectSlug`, `localIds` (array, 1-500, unique, positive) | `data` batch result (see **Story archival**) |
 | `todos_restore` | `projectSlug`, `localIds` (array, 1-500, unique, positive) | `data` batch result (see **Story archival**) |
+| `todos_listArchived` | `projectSlug`, optional `limit` (1-100, default 50), `cursor` | `data.items` (todo shapes, newest archived first), `data.nextCursor`, `data.hasMore` (see **Story archival**) |
 | `todos_linksList` | `projectSlug`, `localId` | `data.outbound`, `data.inbound` (arrays of `{localId, title, linkType, archivedAt}`) |
 | `todos_linkAdd` | `projectSlug`, `localId`, `targetLocalId`, optional `linkType` (default `relates_to`; also `blocks`, `duplicates`, `parent`) | `data.outbound`, `data.inbound` (refreshed) |
 | `todos_linkRemove` | `projectSlug`, `localId`, `targetLocalId` | `data.outbound`, `data.inbound` (refreshed) |
@@ -681,9 +682,11 @@ Direct reads still return archived stories (`todos_get`), while `board_get` and 
 timestamp string**, or JSON `null` for an active story. (The Unix-millisecond form of this
 field appears only in backup/export payloads, not in tool responses.)
 
-**No MCP archive listing exists.** The cursor-paginated archive page is REST-only
-(`GET /api/board/{slug}/archive`); over MCP, archived stories are reachable individually via
-`todos_get`.
+**Listing archived stories.** `todos_listArchived` returns the same cursor-paginated page as
+`GET /api/board/{slug}/archive`: archived stories newest-archived first, with `nextCursor` /
+`hasMore`; pass `nextCursor` back as `cursor` for the next page. It is read-only, requires
+sign-in and is unavailable in anonymous and pre-bootstrap modes. Individual stories are also
+reachable via `todos_get`.
 
 **Realtime.** `todos_archive` and `todos_restore` publish **no** board refresh, matching every
 other MCP mutation in Scrumboy. Only the REST routes publish one. This asymmetry is

@@ -459,3 +459,58 @@ func TestTodoArchivalMCPRejectsLinkAddAndMoveOnArchivedStories(t *testing.T) {
 		t.Fatalf("rejected mutations still changed the archived story: %+v err=%v", got, err)
 	}
 }
+
+func TestTodoArchivalMCPListArchivedPagesNewestFirst(t *testing.T) {
+	ts, _, client, _, _, _, project, todos := newTodoArchiveMCPFixture(t)
+	list := func(input map[string]any) (*http.Response, map[string]any) {
+		input["projectSlug"] = project.Slug
+		return doMCP(t, client, ts.URL+"/mcp", map[string]any{"tool": "todos_listArchived", "input": input})
+	}
+
+	// Nothing archived yet.
+	resp, out := list(map[string]any{})
+	data := requireTodoArchiveMCPSuccess(t, resp, out)
+	if items, _ := data["items"].([]any); len(items) != 0 || data["hasMore"] != false {
+		t.Fatalf("empty archive data=%+v", data)
+	}
+
+	// Archive in separate calls so archived_at ordering is deterministic.
+	for _, td := range todos {
+		resp, out = callTodoArchiveMCP(t, client, ts.URL, "todos_archive", project.Slug, []int64{td.LocalID})
+		requireTodoArchiveMCPSuccess(t, resp, out)
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	resp, out = list(map[string]any{"limit": 2})
+	data = requireTodoArchiveMCPSuccess(t, resp, out)
+	items, _ := data["items"].([]any)
+	if len(items) != 2 || data["hasMore"] != true {
+		t.Fatalf("page 1 data=%+v", data)
+	}
+	first := items[0].(map[string]any)
+	if int64(first["localId"].(float64)) != todos[2].LocalID || first["archivedAt"] == nil || first["projectSlug"] != project.Slug {
+		t.Fatalf("expected newest archived first with archivedAt set, got %+v", first)
+	}
+	cursor, _ := data["nextCursor"].(string)
+	if cursor == "" {
+		t.Fatalf("missing nextCursor: %+v", data)
+	}
+
+	resp, out = list(map[string]any{"limit": 2, "cursor": cursor})
+	data = requireTodoArchiveMCPSuccess(t, resp, out)
+	items, _ = data["items"].([]any)
+	if len(items) != 1 || data["hasMore"] != false || int64(items[0].(map[string]any)["localId"].(float64)) != todos[0].LocalID {
+		t.Fatalf("page 2 data=%+v", data)
+	}
+
+	for name, input := range map[string]map[string]any{
+		"zero limit": {"limit": 0},
+		"huge limit": {"limit": 101},
+		"bad cursor": {"cursor": "nope"},
+	} {
+		resp, out = list(input)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s: status=%d response=%+v", name, resp.StatusCode, out)
+		}
+	}
+}
