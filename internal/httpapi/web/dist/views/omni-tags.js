@@ -9,6 +9,7 @@
  * member controllers, or anything that performs requests.
  */
 import { escapeHTML, sanitizeHexColor } from '../utils.js';
+import { readableTagTextColor } from '../tag-text-color.js';
 import { compareTagNames, tagIdentityKey, tagLookupKey } from '../tag-names.js';
 /** At or below this width the Omni row shows mobile pills instead of the desktop rails. */
 export const OMNI_MOBILE_MAX_WIDTH_PX = 767;
@@ -53,10 +54,10 @@ function pillStyle(color, subtle, tone) {
     if (!safe)
         return '';
     const c = escapeHTML(safe);
-    const text = tone === 'accent' ? c : 'var(--text)';
-    return subtle
-        ? ` style="border-color:${c}66;background:${c}0d;color:${text}"`
-        : ` style="border-color:${c};background:${c}20;color:${text}"`;
+    const text = tone === 'accent' ? readableTagTextColor(safe) : 'var(--text)';
+    const tint = subtle ? `${c}0d` : `${c}20`;
+    const border = subtle ? `${c}66` : c;
+    return ` style="border-color:${border};background-color:var(--bg);background-image:linear-gradient(${tint},${tint});color:${text}"`;
 }
 export function buildOmniAppliedPillHtml(tag, opts) {
     const clearAttr = tag.clearAttr ?? opts.clearAttr;

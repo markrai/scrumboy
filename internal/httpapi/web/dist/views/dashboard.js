@@ -3,6 +3,7 @@ import { apiFetch } from '../api.js';
 import { formatDate, formatLongDateWithWeekday, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { navigate } from '../router.js';
 import { escapeHTML, renderUserAvatar, sanitizeHexColor } from '../utils.js';
+import { readableTagTextColor } from '../tag-text-color.js';
 import { getDashboardLoading, getDashboardNextCursor, getDashboardSummary, getDashboardTodos, getDashboardTodoSort, getProjects, getUser, } from '../state/selectors.js';
 import { appendDashboardTodos, setDashboardLoading, setDashboardNextCursor, setDashboardTodoSort, setProjects, setProjectsTab, setSettingsActiveTab, setDashboardSummary, setDashboardTodos, } from '../state/mutations.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
@@ -377,7 +378,7 @@ function renderDashboardTodo(todo) {
     const pillLabel = escapeHTML(todo.statusName);
     const pillColor = sanitizeHexColor(todo.statusColor, "#64748b");
     // Match board's tag styling: border + 12.5% alpha background + text all same color
-    const pillStyle = `border-color: ${pillColor}; background: ${pillColor}20; color: ${pillColor};`;
+    const pillStyle = `border-color: ${pillColor}; background: ${pillColor}20; color: ${readableTagTextColor(pillColor)};`;
     const showPoints = todo.estimationPoints != null;
     return `
     <div class="list__item list__item--clickable" data-open-board="${escapeHTML(todo.projectSlug)}" data-open-todo-local-id="${todo.localId}" role="button" tabindex="0">

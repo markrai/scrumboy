@@ -68,10 +68,8 @@ describe('public board rendering', () => {
     expect(tagStyle).toContain('background: #00ff0020');
     expect(tagStyle).toContain('color: var(--text)');
     expect(tagStyle).not.toMatch(/(^|[^-])color: #00ff00/);
-    // Priority badges keep accent-colored text (shared member style string).
     const priority = root.querySelector<HTMLElement>('.card__priority')!;
-    expect(priority.getAttribute('style')).toBe('border-color:#ff0000; background:#ff000020; color:#ff0000;');
-    expect(priority.style.color).toBe('#ff0000');
+    expect(priority.getAttribute('style')).toMatch(/^border-color:#ff0000; background:#ff000020; color:light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\);$/);
   });
 
   it('renders a stable Omni shell with public-only ids and no static chips or All chip', () => {
@@ -102,7 +100,8 @@ describe('public board rendering', () => {
     const pinned = root.querySelector('.omni-tag-pill--applied')!;
     const style = pinned.getAttribute('style') ?? '';
     expect(style).toContain('border-color:#3b82f6');
-    expect(style).toContain('background:#3b82f620');
+    expect(style).toContain('background-color:var(--bg)');
+    expect(style).toContain('background-image:linear-gradient(#3b82f620,#3b82f620)');
     expect(style).toContain('color:var(--text)');
     expect(style).not.toMatch(/(^|[^-])color:#3b82f6/);
     expect(pinned.querySelector('[data-public-omni-clear-tag="blue"]')?.getAttribute('aria-label')).toBe('board.filters.clearTag');
