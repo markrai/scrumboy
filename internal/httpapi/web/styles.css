@@ -5601,6 +5601,9 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   gap: 6px;
   grid-column: 2;
   align-self: end;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .card__content {
@@ -5828,8 +5831,10 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     display: contents;
   }
 
+  /* Tags and badges each get a full-width row: side by side, the auto-width badge column
+     squeezed the tags column until tag names broke one character per line. */
   .card__tags-list {
-    grid-column: 1;
+    grid-column: 1 / -1;
     grid-row: 2;
     align-self: end;
     flex-wrap: wrap-reverse;
@@ -5844,10 +5849,16 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   }
 
   .card__badges {
-    grid-column: 2;
-    grid-row: 2;
-    justify-self: end;
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: start;
+    justify-content: flex-start;
     align-self: end;
+    margin-top: 6px;
+  }
+
+  .card__badges:empty {
+    display: none;
   }
 }
 
