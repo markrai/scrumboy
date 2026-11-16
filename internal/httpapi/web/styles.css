@@ -5574,19 +5574,17 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 }
 
 .card__tags {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  column-gap: 6px;
-  row-gap: 6px;
-  margin-top: var(--s-8);
-  align-items: end;
-}
-
-.card__tags-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  grid-column: 1;
+  margin-top: var(--s-8);
+  align-items: center;
+}
+
+/* Tags flow in the same wrapping row as the badges, so badges sit right after the last tag
+   instead of being pushed to the far edge with a wide gap. */
+.card__tags-list {
+  display: contents;
 }
 
 /* Long unbroken tag names wrap inside the pill instead of overflowing the card. */
@@ -5602,7 +5600,6 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   grid-column: 2;
   align-self: end;
   flex-wrap: wrap;
-  justify-content: flex-end;
   min-width: 0;
 }
 
@@ -5834,6 +5831,8 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   /* Tags and badges each get a full-width row: side by side, the auto-width badge column
      squeezed the tags column until tag names broke one character per line. */
   .card__tags-list {
+    display: flex;
+    gap: 6px;
     grid-column: 1 / -1;
     grid-row: 2;
     align-self: end;
