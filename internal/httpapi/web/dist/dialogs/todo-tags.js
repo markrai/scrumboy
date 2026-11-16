@@ -3,6 +3,7 @@ import { getAutocompleteSuggestion, getAvailableTags, getAvailableTagsMap, getTa
 import { setAutocompleteSuggestion } from '../state/mutations.js';
 import { hasI18nKey, t } from '../i18n/index.js';
 import { escapeHTML, sanitizeHexColor } from '../utils.js';
+import { readableTagTextColor } from '../tag-text-color.js';
 import { tagIdentityKey, tagLookupKey } from '../tag-names.js';
 import { getTodoFormPermissions } from './todo-permissions.js';
 const BOUND_FLAG = Symbol('bound');
@@ -47,7 +48,7 @@ export function renderTagsChips(tags, opts) {
         const tagColor = getTagColor(tagName);
         const safe = sanitizeHexColor(tagColor);
         const colorStyle = safe
-            ? `style="border-color: ${safe}; background: ${safe}20; color: ${safe};"`
+            ? `style="border-color: ${safe}; background: ${safe}20; color: ${readableTagTextColor(safe)};"`
             : "";
         const removeBtn = canRemove
             ? `<button type="button" class="tag-chip-remove" aria-label="${escapeHTML(todoTagText("todo.tags.remove", "Remove tag"))}">×</button>`

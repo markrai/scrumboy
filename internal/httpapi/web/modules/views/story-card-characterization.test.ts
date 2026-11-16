@@ -12,6 +12,7 @@ import { formatDueBadge, formatDueDateTooltip, isOverdue } from '../dialogs/todo
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { t } from '../i18n/index.js';
 import { escapeHTML, renderAvatarContent, sanitizeHexColor } from '../utils.js';
+import { readableTagTextColor } from '../tag-text-color.js';
 import type { BoardMember } from '../state/state.js';
 import type { Todo } from '../types.js';
 import type { PublicPriority, PublicTodo, PublicWorkflowColumn } from '../public-board-api.js';
@@ -33,7 +34,8 @@ function legacyRenderStoryCardContent(
     .map((tagName) => {
       const tagColor = tagColors ? (tagColors[tagName] ?? null) : null;
       const safe = sanitizeHexColor(tagColor);
-      const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${safe};"` : "";
+      // Intentional change (tag text contrast): member tag text now uses readableTagTextColor.
+      const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${readableTagTextColor(safe)};"` : "";
       return `<span class="tag" ${colorStyle}>${escapeHTML(tagName)}</span>`;
     })
     .join("");
@@ -279,7 +281,7 @@ describe('member story card characterization', () => {
     const html = renderTodoCard(todo({ id: 2, tags: ['ui', 'nocolor'], priorityKey: 'high', estimationPoints: 0, dueAt: past, assigneeUserId: 3 }), '#336699', members, fullOpts);
     expect(html).toContain('data-todo-id="2" data-todo-local-id="7" data-assignee-user-id="3" id="todo_2"');
     expect(html).toContain('card card--doing card--selected');
-    expect(html).toContain('<span class="tag" style="border-color: #00ff00; background: #00ff0020; color: #00ff00;">ui</span>');
+    expect(html).toContain(`<span class="tag" style="border-color: #00ff00; background: #00ff0020; color: ${readableTagTextColor('#00ff00')};">ui</span>`);
     expect(html).toContain('<span class="tag" >nocolor</span>');
     expect(html).toContain('style="border-color:#EF4444; background:#EF444420; color:#EF4444;" title="');
     expect(html).toContain('aria-label="Priority: High">High</span>');

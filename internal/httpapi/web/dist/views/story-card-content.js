@@ -11,9 +11,10 @@ import { formatDueBadge, isOverdue } from '../dialogs/todo-due.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { t } from '../i18n/index.js';
 import { escapeHTML, sanitizeHexColor } from '../utils.js';
+import { readableTagTextColor } from '../tag-text-color.js';
 function tagHtml(tag, tone) {
     const safe = sanitizeHexColor(tag.color ?? undefined);
-    const text = tone === 'accent' ? safe : 'var(--text)';
+    const text = tone === 'accent' && safe ? readableTagTextColor(safe) : 'var(--text)';
     const style = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${text};"` : "";
     return `<span class="tag" ${style}>${escapeHTML(tag.name)}</span>`;
 }

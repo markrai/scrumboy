@@ -10,6 +10,7 @@
  */
 
 import { escapeHTML, sanitizeHexColor } from '../utils.js';
+import { readableTagTextColor } from '../tag-text-color.js';
 import { compareTagNames, tagIdentityKey, tagLookupKey } from '../tag-names.js';
 
 /** At or below this width the Omni row shows mobile pills instead of the desktop rails. */
@@ -87,7 +88,7 @@ function pillStyle(color: string | null | undefined, subtle: boolean, tone: Omni
   const safe = sanitizeHexColor(color ?? undefined);
   if (!safe) return '';
   const c = escapeHTML(safe);
-  const text = tone === 'accent' ? c : 'var(--text)';
+  const text = tone === 'accent' ? readableTagTextColor(safe) : 'var(--text)';
   return subtle
     ? ` style="border-color:${c}66;background:${c}0d;color:${text}"`
     : ` style="border-color:${c};background:${c}20;color:${text}"`;

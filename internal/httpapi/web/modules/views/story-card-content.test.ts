@@ -68,7 +68,7 @@ describe('renderStoryCardContentHtml', () => {
     const tags = [{ name: 'ui', color: '#00ff00' }];
     const member = renderStoryCardContentHtml(input({ tags }), accent);
     const pub = renderStoryCardContentHtml(input({ tags }), theme);
-    expect(member).toContain('style="border-color: #00ff00; background: #00ff0020; color: #00ff00;"');
+    expect(member).toMatch(/style="border-color: #00ff00; background: #00ff0020; color: light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\);"/);
     expect(pub).toContain('style="border-color: #00ff00; background: #00ff0020; color: var(--text);"');
   });
 
@@ -190,6 +190,7 @@ describe('story card module boundaries', () => {
       '../dialogs/todo-due.js',
       '../field-tooltips.js',
       '../i18n/index.js',
+      '../tag-text-color.js',
       '../utils.js',
     ]);
   });

@@ -70,7 +70,7 @@ describe('shared Omni markup', () => {
     expect(root.querySelector('img')).toBeNull();
     expect(root.querySelector('[data-x-clear]')?.getAttribute('data-x-clear')).toBe(hostile);
     expect(root.querySelector('[data-x-clear]')?.getAttribute('aria-label')).toBe(`Remove ${hostile}`);
-    expect(root.querySelector('.omni-tag-pill--applied')?.getAttribute('style')).toBe('border-color:#123456;background:#12345620;color:#123456');
+    expect(root.querySelector('.omni-tag-pill--applied')?.getAttribute('style')).toMatch(/^border-color:#123456;background:#12345620;color:light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\)$/);
     expect(root.querySelector('[data-x-tag="ok"]')?.hasAttribute('style')).toBe(false);
 
     const theme = buildOmniRowContent({
@@ -190,7 +190,7 @@ describe('Omni module boundaries', () => {
   }
 
   it('the shared module stays dependency-light', () => {
-    expect(importsOf('omni-tags.ts')).toEqual(['../utils.js', '../tag-names.js']);
+    expect(importsOf('omni-tags.ts')).toEqual(['../utils.js', '../tag-text-color.js', '../tag-names.js']);
   });
 
   it('public modules import no member board controllers, URL state, or authenticated API plumbing', () => {
