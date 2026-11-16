@@ -2,9 +2,8 @@
 /**
  * Characterization of story-card rendering, frozen before the shared
  * story-card-content extraction. The legacy* functions below are verbatim
- * copies of the pre-extraction renderers. Member board and Wall output must
- * stay byte-identical; public cards must stay DOM-equivalent (whitespace and
- * style-string spacing may differ).
+ * copies of the pre-extraction renderers. Comparisons normalize only the
+ * intentional pill foreground change.
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import enCatalog from '../i18n/locales/en.json';
@@ -34,8 +33,7 @@ function legacyRenderStoryCardContent(
     .map((tagName) => {
       const tagColor = tagColors ? (tagColors[tagName] ?? null) : null;
       const safe = sanitizeHexColor(tagColor);
-      // Intentional change (tag text contrast): member tag text now uses readableTagTextColor.
-      const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${readableTagTextColor(safe)};"` : "";
+      const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${safe};"` : "";
       return `<span class="tag" ${colorStyle}>${escapeHTML(tagName)}</span>`;
     })
     .join("");
@@ -262,16 +260,27 @@ beforeAll(async () => {
   await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
 });
 
-// ---- Member board and Wall: byte-identical ---------------------------------
+function normalizePillForegrounds(html: string, classes: readonly ('tag' | 'card__priority')[]): string {
+  const openingTag = new RegExp(`<span class="(?:${classes.join('|')})"[^>]*>`, 'g');
+  return html.replace(openingTag, (tag) => tag.replace(/style="([^"]*)"/, (_attribute, style: string) => {
+    const normalized = style.replace(/(^|;\s*)color:\s*[^;"]+(?=;|$)/, '$1color:__pill_foreground__');
+    return `style="${normalized}"`;
+  }));
+}
+
+// ---- Member board and Wall --------------------------------------------------
 
 describe('member story card characterization', () => {
   for (const [todoName, value] of todoCases) {
     for (const [optName, opts] of optCases) {
       it(`renderStoryCardContent and renderTodoCard match legacy output: ${todoName} / ${optName}`, () => {
         for (const membersArg of [members, undefined]) {
-          expect(renderStoryCardContent(value, membersArg, opts)).toBe(legacyRenderStoryCardContent(value, membersArg, opts));
-          expect(renderTodoCard(value, '#336699', membersArg, opts)).toBe(legacyRenderTodoCard(value, '#336699', membersArg, opts));
-          expect(renderTodoCard(value, undefined, membersArg, opts)).toBe(legacyRenderTodoCard(value, undefined, membersArg, opts));
+          expect(normalizePillForegrounds(renderStoryCardContent(value, membersArg, opts), ['tag', 'card__priority']))
+            .toBe(normalizePillForegrounds(legacyRenderStoryCardContent(value, membersArg, opts), ['tag', 'card__priority']));
+          expect(normalizePillForegrounds(renderTodoCard(value, '#336699', membersArg, opts), ['tag', 'card__priority']))
+            .toBe(normalizePillForegrounds(legacyRenderTodoCard(value, '#336699', membersArg, opts), ['tag', 'card__priority']));
+          expect(normalizePillForegrounds(renderTodoCard(value, undefined, membersArg, opts), ['tag', 'card__priority']))
+            .toBe(normalizePillForegrounds(legacyRenderTodoCard(value, undefined, membersArg, opts), ['tag', 'card__priority']));
         }
       });
     }
@@ -283,7 +292,7 @@ describe('member story card characterization', () => {
     expect(html).toContain('card card--doing card--selected');
     expect(html).toContain(`<span class="tag" style="border-color: #00ff00; background: #00ff0020; color: ${readableTagTextColor('#00ff00')};">ui</span>`);
     expect(html).toContain('<span class="tag" >nocolor</span>');
-    expect(html).toContain('style="border-color:#EF4444; background:#EF444420; color:#EF4444;" title="');
+    expect(html).toContain(`style="border-color:#EF4444; background:#EF444420; color:${readableTagTextColor('#EF4444')};" title="`);
     expect(html).toContain('aria-label="Priority: High">High</span>');
     expect(html).toContain('data-i18n-aria-label="todo.fields.estimationPoints">0</span>');
     expect(html).toContain('<div class="todo-avatar" title="Ada Lovelace">');
@@ -306,7 +315,8 @@ describe('Wall story characterization', () => {
       const story = { localId: value.localId, x: 10.4, y: 20.6, version: 3, todo: value } as unknown as WallStory;
       for (const opts of [...wallOpts, undefined]) {
         for (const membersArg of [members, undefined]) {
-          expect(buildStoryElement(story, membersArg, opts).outerHTML).toBe(legacyBuildStoryElement(story, membersArg, opts).outerHTML);
+          expect(normalizePillForegrounds(buildStoryElement(story, membersArg, opts).outerHTML, ['tag', 'card__priority']))
+            .toBe(normalizePillForegrounds(legacyBuildStoryElement(story, membersArg, opts).outerHTML, ['tag', 'card__priority']));
         }
       }
     });
@@ -386,8 +396,8 @@ describe('public story card characterization', () => {
     it(`renderPublicTodoCard is DOM-equivalent to legacy output: ${name}`, () => {
       for (const showPoints of [true, false]) {
         for (const color of ['#336699', null, 'javascript:alert(1)']) {
-          expect(normalizedDom(renderPublicTodoCard(value, column(color), priorities, showPoints)))
-            .toEqual(normalizedDom(legacyRenderPublicTodoCard(value, column(color), priorities, showPoints)));
+          expect(normalizedDom(normalizePillForegrounds(renderPublicTodoCard(value, column(color), priorities, showPoints), ['card__priority'])))
+            .toEqual(normalizedDom(normalizePillForegrounds(legacyRenderPublicTodoCard(value, column(color), priorities, showPoints), ['card__priority'])));
         }
       }
     });
@@ -401,6 +411,7 @@ describe('public story card characterization', () => {
     expect(card.getAttribute('data-public-local-id')).toBe('7');
     expect(card.getAttribute('style')).toBe('border-color:#336699');
     expect(card.querySelector('.tag')?.getAttribute('style')).toContain('color: var(--text)');
+    expect(card.querySelector('.card__priority')?.getAttribute('style')).toContain(`color:${readableTagTextColor('#EF4444')}`);
     expect(card.querySelector('.card__priority')?.getAttribute('aria-label')).toBe('Priority: High');
     expect(card.querySelector('.card__priority')?.hasAttribute('title')).toBe(false);
     expect(card.querySelector('.card__points')?.textContent).toBe('0');

@@ -78,8 +78,8 @@ export function rankOmniBrowseCandidates<T extends OmniTagLike>(
 }
 
 /**
- * Pill text color: `accent` uses the tag color for text (member board);
- * `theme` keeps the theme foreground for contrast and uses the color only on
+ * Pill text color: `accent` derives readable text from the tag color (member
+ * board); `theme` keeps the theme foreground and uses the color only on the
  * border and tint (public board).
  */
 export type OmniPillTone = 'accent' | 'theme';
@@ -89,9 +89,9 @@ function pillStyle(color: string | null | undefined, subtle: boolean, tone: Omni
   if (!safe) return '';
   const c = escapeHTML(safe);
   const text = tone === 'accent' ? readableTagTextColor(safe) : 'var(--text)';
-  return subtle
-    ? ` style="border-color:${c}66;background:${c}0d;color:${text}"`
-    : ` style="border-color:${c};background:${c}20;color:${text}"`;
+  const tint = subtle ? `${c}0d` : `${c}20`;
+  const border = subtle ? `${c}66` : c;
+  return ` style="border-color:${border};background-color:var(--bg);background-image:linear-gradient(${tint},${tint});color:${text}"`;
 }
 
 export function buildOmniAppliedPillHtml(

@@ -70,7 +70,7 @@ describe('shared Omni markup', () => {
     expect(root.querySelector('img')).toBeNull();
     expect(root.querySelector('[data-x-clear]')?.getAttribute('data-x-clear')).toBe(hostile);
     expect(root.querySelector('[data-x-clear]')?.getAttribute('aria-label')).toBe(`Remove ${hostile}`);
-    expect(root.querySelector('.omni-tag-pill--applied')?.getAttribute('style')).toMatch(/^border-color:#123456;background:#12345620;color:light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\)$/);
+    expect(root.querySelector('.omni-tag-pill--applied')?.getAttribute('style')).toMatch(/^border-color:#123456;background-color:var\(--bg\);background-image:linear-gradient\(#12345620,#12345620\);color:light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\)$/);
     expect(root.querySelector('[data-x-tag="ok"]')?.hasAttribute('style')).toBe(false);
 
     const theme = buildOmniRowContent({
@@ -81,7 +81,7 @@ describe('shared Omni markup', () => {
       tone: 'theme',
       clearLabel: () => '',
     });
-    expect(theme.candidatesHtml).toContain('style="border-color:#12345666;background:#1234560d;color:var(--text)"');
+    expect(theme.candidatesHtml).toContain('style="border-color:#12345666;background-color:var(--bg);background-image:linear-gradient(#1234560d,#1234560d);color:var(--text)"');
     expect(theme.candidatesHtml).toContain('omni-tag-pill--browse');
     expect(theme.mobileHtml).toBe('');
     expect(theme.hasPins).toBe(false);

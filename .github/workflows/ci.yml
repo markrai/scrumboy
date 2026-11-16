@@ -112,9 +112,13 @@ jobs:
         working-directory: internal/httpapi/web
         run: npm test
 
-      - name: Install Chromium for Mermaid browser test
+      - name: Install Chromium for browser tests
         working-directory: internal/httpapi/web
         run: npx playwright install --with-deps chromium
+
+      - name: Test tag contrast in Chromium
+        working-directory: internal/httpapi/web
+        run: npm run test:tag-contrast
 
       - name: Test Mermaid browser vendor
         working-directory: internal/httpapi/web

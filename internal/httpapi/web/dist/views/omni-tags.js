@@ -55,9 +55,9 @@ function pillStyle(color, subtle, tone) {
         return '';
     const c = escapeHTML(safe);
     const text = tone === 'accent' ? readableTagTextColor(safe) : 'var(--text)';
-    return subtle
-        ? ` style="border-color:${c}66;background:${c}0d;color:${text}"`
-        : ` style="border-color:${c};background:${c}20;color:${text}"`;
+    const tint = subtle ? `${c}0d` : `${c}20`;
+    const border = subtle ? `${c}66` : c;
+    return ` style="border-color:${border};background-color:var(--bg);background-image:linear-gradient(${tint},${tint});color:${text}"`;
 }
 export function buildOmniAppliedPillHtml(tag, opts) {
     const clearAttr = tag.clearAttr ?? opts.clearAttr;

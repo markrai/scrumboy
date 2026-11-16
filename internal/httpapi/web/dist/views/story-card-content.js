@@ -58,7 +58,7 @@ function priorityHtml(priority, tooltips) {
     if (!priority)
         return "";
     const color = sanitizeHexColor(priority.color ?? undefined);
-    const style = color ? ` style="border-color:${color}; background:${color}20; color:${color};"` : "";
+    const style = color ? ` style="border-color:${color}; background:${color}20; color:${readableTagTextColor(color)};"` : "";
     const title = tooltips ? titleAttr(FIELD_TOOLTIPS.priority) : "";
     const name = escapeHTML(priority.name);
     return `<span class="card__priority"${style}${title} aria-label="${escapeHTML(t("todo.fields.priority"))}: ${name}">${name}</span>`;
