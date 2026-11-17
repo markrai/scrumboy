@@ -7,6 +7,8 @@ export default defineConfig({
   testMatch: [
     "scripts/landing-mobile-mascot.playwright.ts",
     "scripts/cards-per-lane.playwright.ts",
+    "scripts/card-footer-tags-badges.playwright.ts",
+    "scripts/wall-story-pin-footer.playwright.ts",
     "scripts/mermaid-vendor.playwright.ts",
     "scripts/public-board.playwright.ts",
     "scripts/public-board-phase5.playwright.ts",

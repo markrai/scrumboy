@@ -5574,17 +5574,20 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 }
 
 .card__tags {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 6px;
+  row-gap: 6px;
+  margin-top: var(--s-8);
+  align-items: end;
+}
+
+.card__tags-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: var(--s-8);
-  align-items: center;
-}
-
-/* Tags flow in the same wrapping row as the badges, so badges sit right after the last tag
-   instead of being pushed to the far edge with a wide gap. */
-.card__tags-list {
-  display: contents;
+  grid-column: 1;
+  min-width: 0;
 }
 
 /* Long unbroken tag names wrap inside the pill instead of overflowing the card. */
@@ -5600,7 +5603,16 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   grid-column: 2;
   align-self: end;
   flex-wrap: wrap;
+  justify-content: flex-end;
   min-width: 0;
+}
+
+/* When tags and badges share the footer, cap the badge column so badges wrap
+   onto their own lines instead of squeezing tags into unreadable columns.
+   The cap only binds when badges want more than their share; otherwise the
+   footer renders exactly as before. */
+.card__tags:has(> .card__tags-list > *):has(> .card__badges > *) {
+  grid-template-columns: minmax(0, 1fr) fit-content(65%);
 }
 
 .card__content {
@@ -5853,10 +5865,18 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     justify-self: start;
     justify-content: flex-start;
     align-self: end;
+    flex-wrap: wrap;
+    min-width: 0;
     margin-top: 6px;
   }
 
-  .card__badges:empty {
+  /* :empty never matches here: the template leaves whitespace text inside the
+     spans. :has(> *) hides containers with no actual element children. */
+  .card__badges:not(:has(> *)) {
+    display: none;
+  }
+
+  .card__tags-list:not(:has(> *)) {
     display: none;
   }
 }

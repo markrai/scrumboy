@@ -15,6 +15,8 @@
     "verify:landing": "node scripts/generate-landing.mjs --check",
     "test:landing-layout": "playwright test --config=playwright.config.ts scripts/landing-mobile-mascot.playwright.ts",
     "test:cards-per-lane": "playwright test --config=playwright.config.ts scripts/cards-per-lane.playwright.ts",
+    "test:card-footer": "playwright test --config=playwright.config.ts scripts/card-footer-tags-badges.playwright.ts",
+    "test:wall-pins": "playwright test --config=playwright.config.ts scripts/wall-story-pin-footer.playwright.ts",
     "test:mermaid-browser": "playwright test --config=playwright.config.ts scripts/mermaid-vendor.playwright.ts",
     "test:inline-images": "playwright test --config=playwright.config.ts scripts/inline-images.playwright.ts",
     "test:drawing": "playwright test --config=playwright.config.ts scripts/drawing.playwright.ts",
