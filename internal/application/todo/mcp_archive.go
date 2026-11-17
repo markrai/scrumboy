@@ -2,8 +2,14 @@ package todo
 
 import (
 	"context"
+	"errors"
+
 	"scrumboy/internal/store"
 )
+
+// ErrArchiveReadsNotConfigured is returned by List when Reads was not wired.
+// Archive/Restore do not need Reads; List does.
+var ErrArchiveReadsNotConfigured = errors.New("archive list reads are not configured")
 
 type MCPArchiveService struct {
 	access  MCPMoveAccessStore
@@ -13,7 +19,8 @@ type MCPArchiveService struct {
 type MCPArchiveServiceDependencies struct {
 	Access  MCPMoveAccessStore
 	Archive ArchiveStore
-	// Reads backs List; it may be nil when only Archive/Restore are used.
+	// Reads backs List. It may be nil when only Archive/Restore are used;
+	// List then returns ErrArchiveReadsNotConfigured instead of panicking.
 	Reads ArchiveReadStore
 }
 
@@ -60,6 +67,9 @@ type MCPArchivedListResult struct {
 // using the same store read as GET /api/board/{slug}/archive. cursor is the
 // opaque NextCursor of a previous page ("" for the first page).
 func (s *MCPArchiveService) List(ctx context.Context, target MCPArchiveTarget, limit int, cursor string) (MCPArchivedListResult, error) {
+	if s.reads == nil {
+		return MCPArchivedListResult{}, ErrArchiveReadsNotConfigured
+	}
 	pc, err := s.access.GetProjectContextBySlug(ctx, target.ProjectSlug, target.Mode)
 	if err != nil {
 		return MCPArchivedListResult{}, err

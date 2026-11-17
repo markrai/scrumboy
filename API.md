@@ -682,11 +682,13 @@ Direct reads still return archived stories (`todos_get`), while `board_get` and 
 timestamp string**, or JSON `null` for an active story. (The Unix-millisecond form of this
 field appears only in backup/export payloads, not in tool responses.)
 
-**Listing archived stories.** `todos_listArchived` returns the same cursor-paginated page as
-`GET /api/board/{slug}/archive`: archived stories newest-archived first, with `nextCursor` /
-`hasMore`; pass `nextCursor` back as `cursor` for the next page. It is read-only, requires
-sign-in and is unavailable in anonymous and pre-bootstrap modes. Individual stories are also
-reachable via `todos_get`.
+**Listing archived stories.** `todos_listArchived` reuses the same store read and opaque
+cursor format as `GET /api/board/{slug}/archive` (newest archived first; pass `nextCursor`
+back as `cursor`). The response envelopes differ on purpose: REST returns `{ todos, nextCursor,
+hasMore }` with query param `afterCursor`, while MCP returns `{ items, nextCursor, hasMore }`
+with input field `cursor` (MCP list tools use `items`). MCP also rejects `limit` outside 1-100
+instead of clamping. It is read-only, requires sign-in (viewer+), and is unavailable in
+anonymous and pre-bootstrap modes. Individual stories are also reachable via `todos_get`.
 
 **Realtime.** `todos_archive` and `todos_restore` publish **no** board refresh, matching every
 other MCP mutation in Scrumboy. Only the REST routes publish one. This asymmetry is

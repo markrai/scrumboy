@@ -889,8 +889,16 @@ func todoArchived(a *app, args []string) error {
 			raws = append(raws, it.raw)
 		}
 		next, hasMore = page.NextCursor, page.HasMore
-		if !all || !hasMore || next == "" {
+		if !all {
 			break
+		}
+		if !hasMore {
+			break
+		}
+		// hasMore without a usable cursor must not look like a successful --all drain.
+		// Treat whitespace-only as unusable without parsing or rewriting the opaque value.
+		if strings.TrimSpace(next) == "" {
+			return fmt.Errorf("server reported more archived todos without a usable nextCursor")
 		}
 		if seen[next] { // a revisited cursor would page forever
 			return fmt.Errorf("server returned a repeating cursor %q", next)

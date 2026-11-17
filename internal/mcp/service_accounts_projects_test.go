@@ -228,6 +228,14 @@ func TestMCP_ServiceBearerExplicitMembership(t *testing.T) {
 	if status, out := f.call(t, "board_get", map[string]any{"projectSlug": delegated.Slug}); status != http.StatusOK {
 		t.Errorf("viewer read: status=%d %#v", status, out)
 	}
+	if status, out := f.call(t, "todos_listArchived", map[string]any{"projectSlug": delegated.Slug}); status != http.StatusOK {
+		t.Errorf("viewer archive list: status=%d %#v", status, out)
+	} else if data, _ := out["data"].(map[string]any); data["items"] == nil || data["hasMore"] != false {
+		t.Errorf("viewer archive list envelope: %#v", out)
+	}
+	if status, out := f.call(t, "todos_listArchived", map[string]any{"projectSlug": other.Slug}); status != http.StatusNotFound {
+		t.Errorf("archive list on unrelated project: status=%d %#v, want 404", status, out)
+	}
 	if status, out := f.call(t, "todos_create", map[string]any{"projectSlug": delegated.Slug, "title": "As viewer"}); status == http.StatusOK {
 		t.Errorf("viewer wrote a todo: %#v", out)
 	}

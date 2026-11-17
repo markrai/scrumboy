@@ -127,12 +127,18 @@ Commands (run `scrumboy-cli <command> -h` for flags):
   clearing. `--field key=` clears a custom field and `--field key:=3` sends a
   JSON number.
 - `board`/`todo list` use `board_get`; `--all` follows per-column pagination.
-  `todo search` is a title lookup for link targets, not a filter.
+  `todo archived` lists archived stories via `todos_listArchived` (`--limit`,
+  `--cursor`, `--all`); `--all` fails if the server reports `hasMore` without a
+  usable `nextCursor`. `todo search` is a title lookup for link targets, not a
+  filter.
 - Destructive commands (anything named `delete`, `remove` or `revoke`) need
   `--yes` unless run interactively.
-- `--json` prints the tool's `data` payload (a JSON array for lists) for
-  scripting. Errors go to stderr; exit status is `0` ok, `1` failure
-  (including API errors), `2` usage.
+- `--json` prints JSON for scripting. Many list commands emit a JSON array of
+  rows; `todo archived --json` instead emits an object
+  `{ "items", "nextCursor", "hasMore" }` so single-page output keeps pagination
+  metadata and `--all` returns the full collection with the terminal
+  `nextCursor`/`hasMore` state. Errors go to stderr; exit status is `0` ok,
+  `1` failure (including API errors), `2` usage.
 - Every server tool is reachable, including any added later, with the raw
   escape hatch:
 

@@ -102,3 +102,16 @@ func TestMCPArchiveServiceResolvesAccessThenUsesSameBatchPrimitive(t *testing.T)
 		t.Fatalf("archive call=%+v", archive.calls[0])
 	}
 }
+
+func TestMCPArchiveServiceListRequiresReads(t *testing.T) {
+	ctx := context.Background()
+	access := &mcpDeleteAccessFake{projectContext: store.ProjectContext{Project: store.Project{ID: 9, Slug: "archive"}, Role: store.RoleViewer}}
+	svc := NewMCPArchiveService(MCPArchiveServiceDependencies{Access: access, Archive: &archiveStoreFake{}})
+	_, err := svc.List(ctx, MCPArchiveTarget{ProjectSlug: "archive", Mode: store.ModeFull}, 50, "")
+	if !errors.Is(err, ErrArchiveReadsNotConfigured) {
+		t.Fatalf("error=%v want %v", err, ErrArchiveReadsNotConfigured)
+	}
+	if len(access.calls) != 0 {
+		t.Fatalf("nil Reads must fail before access lookup, access=%+v", access.calls)
+	}
+}

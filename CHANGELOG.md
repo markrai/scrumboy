@@ -11,6 +11,19 @@
   (`--limit`, `--cursor`, `--all`), matching `GET /api/board/{slug}/archive`.
   Part of #357.
 
+## [3.42.1] - 2026-11-16
+
+### Fixed
+
+- **Tag pill text contrast** - Tag pills drew their text in the tag's own
+  colour on a 12.5% tint of the same colour, so light colours (yellow, pale
+  pink) were unreadable in the light theme and very dark colours in the
+  dark theme. Tag text now keeps the tag hue but steps it toward the theme
+  text colour until it reaches WCAG AA (4.5:1) on the pill background
+  (`readableTagTextColor()`), with border and tint unchanged. Applies to
+  member tag pills, omni-bar pills, archive rows, dashboard status pills,
+  the todo tag editor and bulk edit. Fixes #361.
+
 ## [3.42.0] - 2026-11-13
 
 ### Added
