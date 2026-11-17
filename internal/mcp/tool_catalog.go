@@ -181,6 +181,15 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"localIds":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "minItems": 1, "maxItems": store.MaxTodoArchiveBatch, "uniqueItems": true},
 			}, []string{"projectSlug", "localIds"}),
 		},
+		"todos_listArchived": {
+			Name:        "todos_listArchived",
+			Description: "List archived todos of a project, newest archived first, in cursor-paginated pages. Pass the returned nextCursor as cursor to fetch the next page.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"limit":       jsonProp("integer", "Page size, 1-100 (default 50)"),
+				"cursor":      jsonProp("string", "nextCursor from the previous page"),
+			}, []string{"projectSlug"}),
+		},
 		"todos_move": {
 			Name:        "todos_move",
 			Description: "Move a todo to another workflow column, optionally relative to a neighbor.",
