@@ -11,9 +11,10 @@ import { formatDueBadge, isOverdue } from '../dialogs/todo-due.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { t } from '../i18n/index.js';
 import { escapeHTML, sanitizeHexColor } from '../utils.js';
+import { readableTagTextColor } from '../tag-text-color.js';
 function tagHtml(tag, tone) {
     const safe = sanitizeHexColor(tag.color ?? undefined);
-    const text = tone === 'accent' ? safe : 'var(--text)';
+    const text = tone === 'accent' && safe ? readableTagTextColor(safe) : 'var(--text)';
     const style = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${text};"` : "";
     return `<span class="tag" ${style}>${escapeHTML(tag.name)}</span>`;
 }
@@ -57,7 +58,7 @@ function priorityHtml(priority, tooltips) {
     if (!priority)
         return "";
     const color = sanitizeHexColor(priority.color ?? undefined);
-    const style = color ? ` style="border-color:${color}; background:${color}20; color:${color};"` : "";
+    const style = color ? ` style="border-color:${color}; background:${color}20; color:${readableTagTextColor(color)};"` : "";
     const title = tooltips ? titleAttr(FIELD_TOOLTIPS.priority) : "";
     const name = escapeHTML(priority.name);
     return `<span class="card__priority"${style}${title} aria-label="${escapeHTML(t("todo.fields.priority"))}: ${name}">${name}</span>`;
