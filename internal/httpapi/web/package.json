@@ -1,4 +1,3 @@
-
 {
   "name": "scrumboy-web",
   "version": "1.0.0",
@@ -28,7 +27,8 @@
     "verify:capacitor-web": "node scripts/verify-capacitor-web.mjs",
     "build": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run generate:landing && tsc && npm run copy:i18n",
     "test": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run verify:landing && node scripts/run-vitest.mjs run",
-    "lint:delete-confirms": "node scripts/check-delete-confirms.mjs"
+    "lint:delete-confirms": "node scripts/check-delete-confirms.mjs",
+    "test:select-icon": "playwright test --config=playwright.config.ts scripts/board-select-icon.playwright.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

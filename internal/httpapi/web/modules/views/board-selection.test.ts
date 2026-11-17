@@ -46,7 +46,7 @@ describe("board selection i18n", () => {
       <button id="bulkSelectAllBtn" type="button" hidden></button>
       <button id="bulkClearBtn" type="button" hidden></button>
       <span id="bulkSelectHint" hidden></span>
-      <button id="boardSelectToggle" type="button"></button>
+      <button id="boardSelectToggle" type="button"><svg class="lucide lucide-copy-check" aria-hidden="true"></svg><span class="board-select-toggle__label"></span></button>
       <div class="board">
         <section class="col"><div class="col__list">
           <button data-todo-id="1" class="card"></button>
@@ -271,5 +271,54 @@ describe("board selection i18n", () => {
     selection.clearTodoMultiSelection({ keepSelectMode: true });
     expect(selection.isSelectMode()).toBe(true);
     expect(selection.getSelectedTodoIds().size).toBe(0);
+  });
+
+  it("select mode updates only the label, preserves the icon, and syncs aria-pressed", async () => {
+    const selection = await loadSelectionModule();
+    const toggle = document.getElementById("boardSelectToggle")!;
+
+    selection.setSelectMode(true);
+    expect(toggle.querySelector("svg.lucide-copy-check")).not.toBeNull();
+    expect(toggle.querySelector(".board-select-toggle__label")?.textContent).toBe("Done");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector(".board")?.classList.contains("board--select-mode")).toBe(true);
+
+    selection.setSelectMode(false);
+    expect(toggle.querySelector("svg.lucide-copy-check")).not.toBeNull();
+    expect(toggle.querySelector(".board-select-toggle__label")?.textContent).toBe("Select");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(document.querySelector(".board")?.classList.contains("board--select-mode")).toBe(false);
+  });
+
+  it("crossing to a desktop viewport exits select mode but keeps the selection", async () => {
+    const listeners: Array<(e: { matches: boolean }) => void> = [];
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: (_type: string, cb: (e: { matches: boolean }) => void) => { listeners.push(cb); },
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    try {
+      const selection = await loadSelectionModule();
+      selection.ensureBulkEditUi({ getRole: () => "member", syncSelectionClasses: () => {} });
+      selection.setSelectMode(true);
+      selection.toggleTodoSelection(1);
+      expect(listeners.length).toBe(1);
+
+      listeners.forEach((cb) => cb({ matches: true }));
+      expect(selection.isSelectMode()).toBe(false);
+      expect(document.getElementById("boardSelectToggle")?.getAttribute("aria-pressed")).toBe("false");
+      expect(document.querySelector(".board")?.classList.contains("board--select-mode")).toBe(false);
+      expect(Array.from(selection.getSelectedTodoIds())).toEqual([1]);
+
+      listeners.forEach((cb) => cb({ matches: false }));
+      expect(selection.isSelectMode()).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

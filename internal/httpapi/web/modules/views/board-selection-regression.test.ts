@@ -35,7 +35,7 @@ function boardFixture() {
     <button id="bulkSelectAllBtn" type="button" hidden></button>
     <button id="bulkClearBtn" type="button" hidden></button>
     <span id="bulkSelectHint" hidden></span>
-    <button id="boardSelectToggle" type="button"></button>
+    <button id="boardSelectToggle" type="button"><svg class="lucide lucide-copy-check" aria-hidden="true"></svg><span class="board-select-toggle__label"></span></button>
     <div class="board">
       <section class="col"><div class="col__list">
         <button data-todo-id="1" class="card"></button>

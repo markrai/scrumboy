@@ -11,6 +11,7 @@ export default defineConfig({
     "scripts/tag-text-color.playwright.ts",
     "scripts/card-footer-tags-badges.playwright.ts",
     "scripts/wall-story-pin-footer.playwright.ts",
+    "scripts/board-select-icon.playwright.ts",
     "scripts/mermaid-vendor.playwright.ts",
     "scripts/public-board.playwright.ts",
     "scripts/public-board-phase5.playwright.ts",

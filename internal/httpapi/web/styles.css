@@ -5226,6 +5226,38 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   margin-bottom: var(--s-8);
 }
 
+@media (min-width: 621px) {
+  .board-select-row {
+    display: none;
+  }
+}
+
+.board-select-toggle__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .board-select-toggle {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .board-select-toggle svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+}
+
 .bulk-edit-bar__btn,
 .bulk-edit-bar__hint {
   flex: 0 1 auto;
