@@ -22,6 +22,7 @@ const todoUsage = `todo <subcommand>
   search    find todos by title (a lightweight lookup, not a board filter)
   archive   archive todos (maintainer)
   restore   restore archived todos (maintainer)
+  archived  list archived todos, newest archived first (--limit --cursor --all)
   links     show a todo's links
   link      link two todos
   unlink    remove a link
@@ -54,6 +55,8 @@ func cmdTodo(a *app, args []string) error {
 		return todoArchive(a, "archive", "todos_archive", rest)
 	case "restore":
 		return todoArchive(a, "restore", "todos_restore", rest)
+	case "archived":
+		return todoArchived(a, rest)
 	case "links":
 		return todoLinks(a, rest)
 	case "link":
@@ -829,6 +832,91 @@ func todoArchive(a *app, verb, tool string, args []string) error {
 		return err
 	}
 	fmt.Fprintf(c.out, "%sd %d, unchanged %d\n", verb, out.Transitioned, out.Unchanged)
+	return nil
+}
+
+// todoArchived lists a project's archived todos, newest archived first.
+func todoArchived(a *app, args []string) error {
+	var (
+		limit  int
+		cursor string
+		all    bool
+	)
+	c, err := a.parse("todo archived", "todo archived [-p slug] [--limit N] [--cursor C] [--all]", args, func(fs *flag.FlagSet) {
+		fs.IntVar(&limit, "limit", 50, "page size (1-100)")
+		fs.StringVar(&cursor, "cursor", "", "nextCursor from a previous page")
+		fs.BoolVar(&all, "all", false, "follow cursors and list every archived todo")
+	})
+	if err != nil {
+		return err
+	}
+	if err := c.wantPos(0, ""); err != nil {
+		return err
+	}
+	if all && cursor != "" {
+		return usagef("--all and --cursor cannot be combined")
+	}
+	slug, err := c.requireProject()
+	if err != nil {
+		return err
+	}
+	var (
+		items   []todo
+		raws    []json.RawMessage
+		next    string
+		hasMore bool
+		seen    = map[string]bool{}
+	)
+	for {
+		in := map[string]any{"projectSlug": slug, "limit": limit}
+		if cursor != "" {
+			in["cursor"] = cursor
+		}
+		res, err := c.call("todos_listArchived", in)
+		if err != nil {
+			return err
+		}
+		var page struct {
+			Items      []todo `json:"items"`
+			NextCursor string `json:"nextCursor"`
+			HasMore    bool   `json:"hasMore"`
+		}
+		if err := res.Decode(&page); err != nil {
+			return err
+		}
+		items = append(items, page.Items...)
+		for _, it := range page.Items {
+			raws = append(raws, it.raw)
+		}
+		next, hasMore = page.NextCursor, page.HasMore
+		if !all {
+			break
+		}
+		if !hasMore {
+			break
+		}
+		// hasMore without a usable cursor must not look like a successful --all drain.
+		// Treat whitespace-only as unusable without parsing or rewriting the opaque value.
+		if strings.TrimSpace(next) == "" {
+			return fmt.Errorf("server reported more archived todos without a usable nextCursor")
+		}
+		if seen[next] { // a revisited cursor would page forever
+			return fmt.Errorf("server returned a repeating cursor %q", next)
+		}
+		seen[next] = true
+		cursor = next
+	}
+	if c.json {
+		return c.printJSON(map[string]any{"items": raws, "nextCursor": next, "hasMore": hasMore})
+	}
+	rows := make([][]string, 0, len(items))
+	for _, t := range items {
+		rows = append(rows, []string{fmt.Sprintf("#%d", t.LocalID), t.Title, t.ColumnKey, optStr(t.ArchivedAt)})
+	}
+	c.table([]string{"ID", "TITLE", "COLUMN", "ARCHIVED"}, rows)
+	if hasMore {
+		fmt.Fprintf(c.err, "more archived todos: rerun with --cursor %s (or --all)\n", next)
+	}
 	return nil
 }
 

@@ -68,7 +68,7 @@ describe('renderStoryCardContentHtml', () => {
     const tags = [{ name: 'ui', color: '#00ff00' }];
     const member = renderStoryCardContentHtml(input({ tags }), accent);
     const pub = renderStoryCardContentHtml(input({ tags }), theme);
-    expect(member).toContain('style="border-color: #00ff00; background: #00ff0020; color: #00ff00;"');
+    expect(member).toMatch(/style="border-color: #00ff00; background: #00ff0020; color: light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\);"/);
     expect(pub).toContain('style="border-color: #00ff00; background: #00ff0020; color: var(--text);"');
   });
 
@@ -86,7 +86,7 @@ describe('renderStoryCardContentHtml', () => {
     expect(mount(renderStoryCardContentHtml(input({ points: null }), theme)).querySelector('.card__points')).toBeNull();
   });
 
-  it('adds field tooltips to priority and points only when requested', () => {
+  it('adds field tooltips and readable priority text without changing its border or tint', () => {
     const value = input({ priority: { name: 'High', color: '#EF4444' }, points: 3 });
     const withTips = mount(renderStoryCardContentHtml(value, accent));
     expect(withTips.querySelector('.card__priority')?.getAttribute('title')).toBe('How urgent this ticket is, relative to others on this board.');
@@ -94,7 +94,7 @@ describe('renderStoryCardContentHtml', () => {
     const without = mount(renderStoryCardContentHtml(value, theme));
     expect(without.querySelector('.card__priority')?.hasAttribute('title')).toBe(false);
     expect(without.querySelector('.card__points')?.hasAttribute('title')).toBe(false);
-    expect(without.querySelector('.card__priority')?.getAttribute('style')).toBe('border-color:#EF4444; background:#EF444420; color:#EF4444;');
+    expect(without.querySelector('.card__priority')?.getAttribute('style')).toMatch(/^border-color:#EF4444; background:#EF444420; color:light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\);$/);
   });
 
   it('renders due dates, overdue only outside done columns, and nothing for invalid dates', () => {
@@ -190,6 +190,7 @@ describe('story card module boundaries', () => {
       '../dialogs/todo-due.js',
       '../field-tooltips.js',
       '../i18n/index.js',
+      '../tag-text-color.js',
       '../utils.js',
     ]);
   });

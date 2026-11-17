@@ -25,6 +25,7 @@ import { mountNotesInk, type NotesInkController } from '../drawing/notes-ink.js'
 import { createNotesEditor, notesEditorAvailable, type NotesEditor } from './todo-notes-editor.js';
 import type { PublicTodoDrawingPayload } from '../public-board-api.js';
 import { t } from '../i18n/index.js';
+import { readableTagTextColor } from '../tag-text-color.js';
 
 export const PUBLIC_TODO_DIALOG_ID = 'publicTodoDialog';
 
@@ -138,8 +139,7 @@ function chip(text: string, colorValue: string | null, className: string, accent
   if (safe) {
     el.style.borderColor = safe;
     el.style.background = `${safe}20`;
-    // Tags keep the theme foreground for contrast; priorities keep accent text.
-    el.style.color = accentText ? safe : 'var(--text)';
+    el.style.color = accentText ? readableTagTextColor(safe) : 'var(--text)';
   }
   return el;
 }

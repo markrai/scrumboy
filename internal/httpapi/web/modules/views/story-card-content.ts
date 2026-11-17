@@ -12,6 +12,7 @@ import { formatDueBadge, isOverdue } from '../dialogs/todo-due.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { t } from '../i18n/index.js';
 import { escapeHTML, sanitizeHexColor } from '../utils.js';
+import { readableTagTextColor } from '../tag-text-color.js';
 
 export type StoryCardTag = { readonly name: string; readonly color: string | null };
 export type StoryCardPriority = { readonly name: string; readonly color: string | null };
@@ -32,7 +33,7 @@ export interface StoryCardContentInput {
 }
 
 export interface StoryCardContentOptions {
-  /** 'accent' colors tag text with the tag color; 'theme' keeps the theme foreground. */
+  /** 'accent' derives readable tag text from the tag color; 'theme' keeps the theme foreground. */
   readonly tagTone: 'accent' | 'theme';
   /** Field tooltips on the priority and points badges. */
   readonly tooltips: boolean;
@@ -40,7 +41,7 @@ export interface StoryCardContentOptions {
 
 function tagHtml(tag: StoryCardTag, tone: StoryCardContentOptions['tagTone']): string {
   const safe = sanitizeHexColor(tag.color ?? undefined);
-  const text = tone === 'accent' ? safe : 'var(--text)';
+  const text = tone === 'accent' && safe ? readableTagTextColor(safe) : 'var(--text)';
   const style = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${text};"` : "";
   return `<span class="tag" ${style}>${escapeHTML(tag.name)}</span>`;
 }
@@ -81,7 +82,7 @@ function customFieldsHtml(values: StoryCardContentInput['customFields']): string
 function priorityHtml(priority: StoryCardPriority | null, tooltips: boolean): string {
   if (!priority) return "";
   const color = sanitizeHexColor(priority.color ?? undefined);
-  const style = color ? ` style="border-color:${color}; background:${color}20; color:${color};"` : "";
+  const style = color ? ` style="border-color:${color}; background:${color}20; color:${readableTagTextColor(color)};"` : "";
   const title = tooltips ? titleAttr(FIELD_TOOLTIPS.priority) : "";
   const name = escapeHTML(priority.name);
   return `<span class="card__priority"${style}${title} aria-label="${escapeHTML(t("todo.fields.priority"))}: ${name}">${name}</span>`;

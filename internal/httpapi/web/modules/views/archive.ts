@@ -18,6 +18,7 @@ import {
 import { setBoard, setBoardMembers, setOpenTodoSegment, setTagColors } from '../state/mutations.js';
 import type { Board, Tag, Todo } from '../types.js';
 import { escapeHTML, isTemporaryBoard, renderAvatarContent, renderUserAvatar, sanitizeHexColor, showToast } from '../utils.js';
+import { readableTagTextColor } from '../tag-text-color.js';
 import { navigate } from '../router.js';
 import { tagIdentityKey } from '../tag-names.js';
 import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
@@ -89,7 +90,7 @@ function installArchiveTagCatalog(catalog: readonly Tag[]): void {
 function archiveTagHtml(todo: Todo): string {
   return (todo.tags || []).map((name) => {
   const color = sanitizeHexColor(archiveTagColors.get(tagIdentityKey(name)));
-    const style = color ? ` style="border-color:${color};background:${color}20;color:${color}"` : '';
+    const style = color ? ` style="border-color:${color};background:${color}20;color:${readableTagTextColor(color)}"` : '';
     return `<span class="tag"${style}>${escapeHTML(name)}</span>`;
   }).join('');
 }
@@ -107,7 +108,7 @@ function archivePriorityHtml(todo: Todo): string {
   const tier = getBoard()?.priorityOrder?.find((item) => item.key === todo.priorityKey);
   if (!tier) return '';
   const color = sanitizeHexColor(tier.color);
-  const style = color ? ` style="border-color:${color};background:${color}20;color:${color}"` : '';
+  const style = color ? ` style="border-color:${color};background:${color}20;color:${readableTagTextColor(color)}"` : '';
   return `<span class="archive-row__badge"${style}>${escapeHTML(tier.name)}</span>`;
 }
 

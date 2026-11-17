@@ -1,3 +1,4 @@
+
 import os from "node:os";
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
@@ -7,6 +8,7 @@ export default defineConfig({
   testMatch: [
     "scripts/landing-mobile-mascot.playwright.ts",
     "scripts/cards-per-lane.playwright.ts",
+    "scripts/tag-text-color.playwright.ts",
     "scripts/card-footer-tags-badges.playwright.ts",
     "scripts/wall-story-pin-footer.playwright.ts",
     "scripts/mermaid-vendor.playwright.ts",

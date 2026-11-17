@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -458,4 +459,149 @@ func TestTodoArchivalMCPRejectsLinkAddAndMoveOnArchivedStories(t *testing.T) {
 	if err != nil || got.ArchivedAt == nil || got.ColumnKey != todos[0].ColumnKey {
 		t.Fatalf("rejected mutations still changed the archived story: %+v err=%v", got, err)
 	}
+}
+
+func TestTodoArchivalMCPListArchivedPagesNewestFirst(t *testing.T) {
+	ts, _, client, _, _, _, project, todos := newTodoArchiveMCPFixture(t)
+	list := func(input map[string]any) (*http.Response, map[string]any) {
+		input["projectSlug"] = project.Slug
+		return doMCP(t, client, ts.URL+"/mcp", map[string]any{"tool": "todos_listArchived", "input": input})
+	}
+
+	// Nothing archived yet.
+	resp, out := list(map[string]any{})
+	data := requireTodoArchiveMCPSuccess(t, resp, out)
+	if items, _ := data["items"].([]any); len(items) != 0 || data["hasMore"] != false {
+		t.Fatalf("empty archive data=%+v", data)
+	}
+	if _, hasTodos := data["todos"]; hasTodos {
+		t.Fatalf("MCP list must project items, not todos: %+v", data)
+	}
+
+	// Archive in separate calls so archived_at ordering is deterministic.
+	for _, td := range todos {
+		resp, out = callTodoArchiveMCP(t, client, ts.URL, "todos_archive", project.Slug, []int64{td.LocalID})
+		requireTodoArchiveMCPSuccess(t, resp, out)
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	resp, out = list(map[string]any{"limit": 2})
+	data = requireTodoArchiveMCPSuccess(t, resp, out)
+	items, _ := data["items"].([]any)
+	if len(items) != 2 || data["hasMore"] != true {
+		t.Fatalf("page 1 data=%+v", data)
+	}
+	first := items[0].(map[string]any)
+	if int64(first["localId"].(float64)) != todos[2].LocalID || first["archivedAt"] == nil || first["projectSlug"] != project.Slug {
+		t.Fatalf("expected newest archived first with archivedAt set, got %+v", first)
+	}
+	cursor, _ := data["nextCursor"].(string)
+	if cursor == "" {
+		t.Fatalf("missing nextCursor: %+v", data)
+	}
+
+	resp, out = list(map[string]any{"limit": 2, "cursor": cursor})
+	data = requireTodoArchiveMCPSuccess(t, resp, out)
+	items, _ = data["items"].([]any)
+	if len(items) != 1 || data["hasMore"] != false || data["nextCursor"] != "" ||
+		int64(items[0].(map[string]any)["localId"].(float64)) != todos[0].LocalID {
+		t.Fatalf("page 2 data=%+v", data)
+	}
+
+	for name, input := range map[string]map[string]any{
+		"zero limit": {"limit": 0},
+		"huge limit": {"limit": 101},
+		"bad cursor": {"cursor": "nope"},
+	} {
+		resp, out = list(input)
+		if resp.StatusCode != http.StatusBadRequest || out["error"].(map[string]any)["code"] != "VALIDATION_ERROR" {
+			t.Fatalf("%s: status=%d response=%+v", name, resp.StatusCode, out)
+		}
+	}
+}
+
+// TestTodoArchivalMCPListArchivedAccessAndGuards covers viewer access, non-disclosure for
+// outsiders, and the anonymous / pre-bootstrap / unauthenticated capability gates.
+func TestTodoArchivalMCPListArchivedAccessAndGuards(t *testing.T) {
+	ts, _, client, st, ownerCtx, ownerID, project, todos := newTodoArchiveMCPFixture(t)
+	baseURL := ts.URL
+
+	resp, out := callTodoArchiveMCP(t, client, baseURL, "todos_archive", project.Slug, []int64{todos[0].LocalID})
+	requireTodoArchiveMCPSuccess(t, resp, out)
+
+	t.Run("viewer can list", func(t *testing.T) {
+		viewer, err := st.CreateUser(context.Background(), "list-archive-viewer@example.com", "password123", "Viewer")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.AddProjectMember(ownerCtx, ownerID, project.ID, viewer.ID, store.RoleViewer); err != nil {
+			t.Fatal(err)
+		}
+		viewerClient := loginTodoUpdateMCPUser(t, ts, viewer.Email, "password123")
+		resp, out := doMCP(t, viewerClient, baseURL+"/mcp", map[string]any{
+			"tool":  "todos_listArchived",
+			"input": map[string]any{"projectSlug": project.Slug},
+		})
+		data := requireTodoArchiveMCPSuccess(t, resp, out)
+		items, _ := data["items"].([]any)
+		if len(items) != 1 || int64(items[0].(map[string]any)["localId"].(float64)) != todos[0].LocalID {
+			t.Fatalf("viewer list data=%+v", data)
+		}
+	})
+
+	t.Run("non-member and missing slug are indistinguishable not-found", func(t *testing.T) {
+		outsider, err := st.CreateUser(context.Background(), "list-archive-outsider@example.com", "password123", "Outsider")
+		if err != nil {
+			t.Fatal(err)
+		}
+		outsiderClient := loginTodoUpdateMCPUser(t, ts, outsider.Email, "password123")
+		for _, slug := range []string{project.Slug, "no-such-project-slug"} {
+			resp, out := doMCP(t, outsiderClient, baseURL+"/mcp", map[string]any{
+				"tool":  "todos_listArchived",
+				"input": map[string]any{"projectSlug": slug},
+			})
+			errObj, _ := out["error"].(map[string]any)
+			if resp.StatusCode != http.StatusNotFound || errObj["code"] != "NOT_FOUND" {
+				t.Fatalf("slug=%q status=%d response=%+v", slug, resp.StatusCode, out)
+			}
+			if msg, _ := errObj["message"].(string); strings.Contains(strings.ToLower(msg), project.Slug) {
+				t.Fatalf("not-found response disclosed project slug: %+v", out)
+			}
+		}
+	})
+
+	t.Run("unauthenticated is rejected", func(t *testing.T) {
+		anonymousClient := newCookieClient(t, ts)
+		resp, out := doMCP(t, anonymousClient, baseURL+"/mcp", map[string]any{
+			"tool":  "todos_listArchived",
+			"input": map[string]any{"projectSlug": project.Slug},
+		})
+		if resp.StatusCode != http.StatusUnauthorized || out["error"].(map[string]any)["code"] != "AUTH_REQUIRED" {
+			t.Fatalf("unauthenticated status=%d response=%+v", resp.StatusCode, out)
+		}
+	})
+
+	t.Run("anonymous mode reports capability unavailable", func(t *testing.T) {
+		anonymousServer, _, _, cleanup := newTodoUpdateMCPServer(t, "anonymous")
+		defer cleanup()
+		resp, out := doMCP(t, anonymousServer.Client(), anonymousServer.URL+"/mcp", map[string]any{
+			"tool":  "todos_listArchived",
+			"input": map[string]any{"projectSlug": "any"},
+		})
+		if resp.StatusCode != http.StatusForbidden || out["error"].(map[string]any)["code"] != "CAPABILITY_UNAVAILABLE" {
+			t.Fatalf("anonymous-mode status=%d response=%+v", resp.StatusCode, out)
+		}
+	})
+
+	t.Run("bootstrap mode reports capability unavailable", func(t *testing.T) {
+		bootstrapServer, _, _, cleanup := newTodoUpdateMCPServer(t, "full")
+		defer cleanup()
+		resp, out := doMCP(t, bootstrapServer.Client(), bootstrapServer.URL+"/mcp", map[string]any{
+			"tool":  "todos_listArchived",
+			"input": map[string]any{"projectSlug": "any"},
+		})
+		if resp.StatusCode != http.StatusForbidden || out["error"].(map[string]any)["code"] != "CAPABILITY_UNAVAILABLE" {
+			t.Fatalf("bootstrap status=%d response=%+v", resp.StatusCode, out)
+		}
+	})
 }

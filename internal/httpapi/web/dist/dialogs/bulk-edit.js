@@ -1,6 +1,7 @@
 import { bulkEditDialog, bulkEditForm } from "../dom/elements.js";
 import { apiFetch } from "../api.js";
 import { showToast, escapeHTML, isAnonymousBoard, sanitizeHexColor } from "../utils.js";
+import { readableTagTextColor } from '../tag-text-color.js';
 import { applyFieldTooltips, BULK_EDIT_TOOLTIPS } from "../field-tooltips.js";
 import { hasI18nKey, I18N_LOCALE_CHANGED, t } from "../i18n/index.js";
 import { getAssigneeFromUrl, getPriorityFromUrl, getSortFromUrl, getBoard, getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getBoardMembers, } from "../state/selectors.js";
@@ -79,7 +80,7 @@ function renderBulkTagChips() {
         .map((name) => {
         const c = colorByName[name];
         const safe = sanitizeHexColor(c || null);
-        const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${safe};"` : "";
+        const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${readableTagTextColor(safe)};"` : "";
         return `<span class="tag-chip" data-tag="${escapeHTML(name)}" ${colorStyle}>${escapeHTML(name)}<button type="button" class="tag-chip-remove" data-remove-bulk-tag="${escapeHTML(name)}" aria-label="${escapeHTML(t("board.bulkEdit.removeTag"))}">×</button></span>`;
     })
         .join("");
