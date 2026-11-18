@@ -61,12 +61,12 @@ describe('GitHub admin settings tab', () => {
         const controller = new AbortController();
         bindGitHubSettingsTab(el, 'alpha', controller.signal);
         await vi.waitFor(() => expect(Array.from(el.querySelectorAll('button')).some(button => button.textContent === 'Connect and sync')).toBe(true));
-        expect(el.querySelector('img')).toBeNull();
+        expect(el.querySelector('img[src="x"]')).toBeNull();
         const connect = Array.from(el.querySelectorAll('button')).find(button => button.textContent === 'Connect and sync');
         connect?.click();
         await vi.waitFor(() => expect(Array.from(el.querySelectorAll('button')).some(button => button.textContent === 'Sync repositories')).toBe(true));
         expect(requests).toHaveBeenCalledWith('/api/admin/integrations/github/installations/25/sync', expect.objectContaining({ method: 'POST' }));
-        expect(el.querySelector('img')).toBeNull();
+        expect(el.querySelector('img[src="x"]')).toBeNull();
         controller.abort();
     });
 });
@@ -127,5 +127,71 @@ describe('GitHub compact onboarding', () => {
             if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
             else Reflect.deleteProperty(navigator, 'clipboard');
         }
+    });
+});
+
+describe('GitHub integration management layout', () => {
+    beforeEach(() => {
+        document.body.replaceChildren();
+        requests.mockReset();
+        toast.mockReset();
+        confirm.mockReset().mockResolvedValue(true);
+    });
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
+    it('shows the supplied GitHub marks, a compact installation row, and no duplicate connected section', async () => {
+        requests.mockImplementation(async (path: string) => {
+            if (path.endsWith('/installations')) return [{ id: 25, account: 'markrai', kind: 'User' }];
+            return { configured: true, installUrl: 'https://github.com/apps/scrumboy-connect/installations/new', connections: [{ id: 7, installationId: '25', account: 'markrai', status: 'active' }] };
+        });
+        const el = root();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        const controller = new AbortController();
+        bindGitHubSettingsTab(el, null, controller.signal);
+        await vi.waitFor(() => expect(el.querySelectorAll('.github-integration__account')).toHaveLength(1));
+        expect(el.querySelector('.github-integration__header')?.textContent).toContain('App configured');
+        expect(el.querySelector('.github-integration__logo--white')?.getAttribute('src')).toBe('/assets/github/GitHub_Invertocat_White.svg');
+        expect(el.querySelector('.github-integration__logo--black')?.getAttribute('src')).toBe('/assets/github/GitHub_Invertocat_Black.svg');
+        expect(el.querySelector('.github-integration__account')?.textContent).toContain('Connected');
+        expect(el.textContent).not.toContain('Connected accounts');
+        expect(el.querySelector('.github-integration__more summary')).not.toBeNull();
+        expect(el.querySelector<HTMLInputElement>('input[aria-label="Project slug"]')).not.toBeNull();
+        controller.abort();
+    });
+
+    it('preserves confirmation when disconnecting an installation', async () => {
+        requests.mockImplementation(async (path: string, init?: RequestInit) => {
+            if (path.endsWith('/installations')) return [{ id: 25, account: 'markrai', kind: 'User' }];
+            if (init?.method === 'DELETE') return {};
+            return { configured: true, installUrl: '', connections: [{ id: 7, installationId: '25', account: 'markrai', status: 'active' }] };
+        });
+        const el = root();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        const controller = new AbortController();
+        bindGitHubSettingsTab(el, null, controller.signal);
+        await vi.waitFor(() => expect(el.querySelector('.github-integration__disconnect')).not.toBeNull());
+        (el.querySelector('.github-integration__disconnect') as HTMLButtonElement).click();
+        await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/admin/integrations/github/connections/7', expect.objectContaining({ method: 'DELETE' })));
+        expect(confirm).toHaveBeenCalledTimes(1);
+        controller.abort();
+    });
+
+    it('retains disconnected accounts even when GitHub no longer reports an installation', async () => {
+        requests.mockImplementation(async (path: string) => {
+            if (path.endsWith('/installations')) return [];
+            return { configured: true, installUrl: '', connections: [{ id: 7, installationId: '25', account: 'old-account', status: 'active' }] };
+        });
+        const el = root();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        const controller = new AbortController();
+        bindGitHubSettingsTab(el, null, controller.signal);
+        await vi.waitFor(() => expect(el.querySelectorAll('.github-integration__account')).toHaveLength(1));
+        expect(el.querySelector('.github-integration__account')?.textContent).toContain('old-account');
+        expect(el.querySelector('.github-integration__primary')).toBeNull();
+        expect(el.querySelector('.github-integration__disconnect')).not.toBeNull();
+        controller.abort();
     });
 });
