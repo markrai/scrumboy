@@ -1,0 +1,64 @@
+# GitHub inbound webhooks: M4 operator and safety guide
+
+M4 is a separate, **opt-in** inbound webhook capability. It does not replace M3's explicit **Connect and sync** / **Refresh repositories** actions, and does not create, edit, delete or publish Scrumboy cards.
+
+## Configuration and rollout
+
+The GitHub App must already be configured and the Scrumboy instance must run in Full Mode. With no webhook secret file configured, the inbound endpoint is **disabled** and returns 404.
+
+1. Generate a strong random secret, for example `openssl rand -hex 32`. Store the resulting printable value in a host file, outside both the source tree and Scrumboy data/backups. Restrict the host file permissions to the Scrumboy process.
+2. In GitHub App settings, enable **Webhook → Active** and paste **the exact same secret** into the Webhook Secret field. A trailing newline in the file is trimmed at startup; internal whitespace is significant.
+3. Configure a **publicly reachable HTTPS** endpoint: `https://YOUR-SCRUMBOY-HOST/api/integrations/github/webhook`. GitHub cannot deliver to a private Tailscale-only port or to Vega's localhost HTTP port 9447. Use a protected staging HTTPS host for initial live acceptance.
+4. Subscribe only to the **Installation**, **Installation repositories** and **Repository** events. This functionality requires no additional repository write permissions beyond the existing GitHub App's metadata-read access.
+5. Mount the secret file read-only inside Docker and set `SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE` to the **container path**. The private key is a different file, still controlled through `SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE`.
+6. Restart the isolated instance, then send a GitHub **ping** and an installation-repository event to verify delivery. Never deploy untested changes directly to a production database.
+
+Example Compose override, not to be committed with real paths or secrets:
+
+```yaml
+services:
+  scrumboy:
+    environment:
+      SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE: /run/secrets/github-webhook-secret
+    volumes:
+      - /secure/github-webhook-secret:/run/secrets/github-webhook-secret:ro
+```
+
+If only the App ID, App private key and slug are configured (M3 configuration), webhooks remain **off**. To disable webhook ingestion again, remove the webhook secret file environment variable and restart; disabling the GitHub webhook at the provider also stops new deliveries.
+
+## Security and privacy
+
+- The receiver reads **at most 256 KiB** and validates `X-Hub-Signature-256` with constant-time HMAC-SHA256 over the **raw bytes before JSON decoding**. POST requests missing a valid signature are rejected. Only the exact URL is exempt from the browser-oriented `X-Scrumboy` CSRF header; the secret authenticates it.
+- The event type is restricted to `installation`, `installation_repositories` and `repository`; a valid `ping` is acknowledged without storage. Unrelated event types are acknowledged and ignored.
+- The durable inbox (migration `092`) holds only event type/action, the connected GitHub installation ID, delivery identifier, SHA-256 payload digest, retry state and timestamps. **It never persists the raw GitHub JSON, webhook secret, installation access token, JWT or private key.**
+- Delivery IDs deduplicate resends; the same ID with a different body hash is rejected. Unknown or disconnected installation IDs are acknowledged but not queued. Installation ownership is checked again before reconciliation.
+- The inbox caps pending/leased records at **5,000**, processes up to **5** per poll, uses a **45-second lease**, exponential retries capped at **8 attempts** and **30 minutes**, and prunes completed/failed records after approximately **30 days**. Unfinished leases are reclaimable after expiry on restart.
+- Webhook processing obtains fresh provider data through the read-only GitHub App adapter. It can **add/update repository metadata**, but it does not delete repositories or card/project references automatically. A complete, user-triggered **Refresh repositories** may still remove inaccessible repository references as documented in M3.
+- Signed installation `deleted` or `suspend` events disable the local connection without deleting existing references. Re-enable explicitly through the GitHub App UI and a manual **Connect and sync** after restoration.
+- No GitHub webhook can authorize a Scrumboy card edit, create a public-board visibility rule or trigger M5 automation. Those actions are not implemented in M4.
+
+## Monitoring and failure handling
+
+Authenticated instance Owners/Admins can query:
+
+`GET /api/admin/integrations/github/webhooks`
+
+When enabled, the response has `configured: true` and four counters: `pending`, `leased`, `completed`, `dead`. With the feature disabled it returns `{"configured":false}`. No secret or inbound payload is returned.
+
+Transient GitHub API errors or incomplete discovery are retried. Exhausted deliveries become `dead` and remain visible in the counts until retention cleanup. A failed scan must never be converted into an empty repository list or a cascade deletion of existing card references. At present the operator must diagnose a persistent dead delivery manually; admin requeue controls and additional monitoring should be considered before enabling production traffic.
+
+## Acceptance checklist
+
+- [ ] Full Mode and App configured; secret absent means endpoint 404.
+- [ ] Valid signed delivery is accepted without session-cookie auth or `X-Scrumboy`; missing/forged signature is rejected.
+- [ ] Oversized, malformed and unrelated events fail safely; no secrets appear in logs or responses.
+- [ ] Duplicate delivery is idempotent; same ID with different verified payload is rejected.
+- [ ] Unknown installation is ignored; disconnected/suspended installation cannot update resources.
+- [ ] Durable records survive restart; abandoned leases are reclaimable; retry exhaustion is bounded.
+- [ ] Rename or newly authorized repository updates metadata without rewriting user card content.
+- [ ] Removed/revoked repository after webhook leaves card references intact for explicit operator review.
+- [ ] Owner/Admin monitoring endpoint is permission checked.
+- [ ] Docker and migration tests, Go and frontend suites, CodeQL and GitHub required checks pass.
+- [ ] GitHub staging HTTPS ping and repository event are received and verified with real GitHub delivery logs.
+
+See [M3 qualification](github-m3-qualification.md) for the earlier manual repository-to-card test gate.

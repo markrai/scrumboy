@@ -97,3 +97,7 @@ Project Maintainers can `POST /api/board/{slug}/integrations/resources` with `{"
 - Provider API access is deliberately fixed to GitHub's public API. GitHub Enterprise Server is not supported in M3.
 
 For provider API details see the [GitHub App REST API documentation](https://docs.github.com/en/rest/apps/apps), [installation API](https://docs.github.com/en/rest/apps/installations) and [installation-token guide](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
+
+## Optional GitHub webhook receiver (M4)
+
+M4 adds an independent, opt-in **inbound** webhook receiver. The M3 integration and its normal manual repository refresh work without this feature. For signed webhook setup, HTTPS staging, failure semantics and administration, see [GitHub inbound webhooks](github-m4-webhooks.md).
