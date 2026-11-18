@@ -105,6 +105,11 @@ func (s *Store) GitHubInboundInstallationConnected(ctx context.Context, installa
 func (s *Store) ClaimGitHubInbound(ctx context.Context, now time.Time, limit int, lease time.Duration) ([]GitHubInboundEvent,error) {
     if limit < 1 || limit > 20 || lease < time.Second || lease > time.Minute { return nil, ErrValidation }
     ts := now.UTC().UnixMilli()
+    _, err := s.db.ExecContext(ctx, `UPDATE integration_github_inbound_events
+        SET status='dead',error_class='lease_retries_exhausted',lease_token=NULL,lease_until=NULL,
+            completed_at=?,updated_at=?
+        WHERE status='leased' AND lease_until<=? AND attempts>=?`,ts,ts,ts,githubInboundMaxAttempts)
+    if err!=nil{return nil,err}
     rows, err := s.db.QueryContext(ctx, `SELECT id,delivery_id,installation_id,event_type,event_action,payload_sha256,attempts
         FROM integration_github_inbound_events WHERE
         (status='pending' AND next_attempt_at<=?) OR (status='leased' AND lease_until<=?)
@@ -230,4 +235,50 @@ func (s *Store) DisableGitHubInboundInstallation(ctx context.Context, installati
     if err!=nil{return err}
     if n==0{return ErrNotFound}
     return nil
+}
+
+type GitHubInboundDeadDelivery struct {
+    ID int64 `json:"id"`
+    DeliveryID string `json:"deliveryId"`
+    InstallationID string `json:"installationId"`
+    EventType string `json:"eventType"`
+    Action string `json:"action"`
+    Attempts int `json:"attempts"`
+    ErrorClass string `json:"errorClass"`
+    UpdatedAt int64 `json:"updatedAt"`
+}
+
+func (s *Store) ListDeadGitHubInbound(ctx context.Context, actorID int64, limit int) ([]GitHubInboundDeadDelivery,error) {
+    if err:=s.requireAdmin(ctx,actorID);err!=nil{return nil,err}
+    if limit<1 || limit>100{return nil,ErrValidation}
+    rows,err:=s.db.QueryContext(ctx,`SELECT id,delivery_id,installation_id,event_type,event_action,attempts,
+        COALESCE(error_class,''),updated_at FROM integration_github_inbound_events
+        WHERE status='dead' ORDER BY id DESC LIMIT ?`,limit)
+    if err!=nil{return nil,err}
+    defer rows.Close()
+    items:=make([]GitHubInboundDeadDelivery,0)
+    for rows.Next() {
+        var item GitHubInboundDeadDelivery
+        if err:=rows.Scan(&item.ID,&item.DeliveryID,&item.InstallationID,&item.EventType,&item.Action,&item.Attempts,&item.ErrorClass,&item.UpdatedAt);err!=nil{return nil,err}
+        items=append(items,item)
+    }
+    return items,rows.Err()
+}
+
+func (s *Store) RequeueGitHubInbound(ctx context.Context, actorID, eventID int64) error {
+    if eventID<=0{return ErrValidation}
+    tx,err:=s.db.BeginTx(ctx,nil)
+    if err!=nil{return err}
+    defer tx.Rollback()
+    if err:=requireAdminTx(ctx,tx,actorID);err!=nil{return err}
+    now:=time.Now().UTC().UnixMilli()
+    result,err:=tx.ExecContext(ctx,`UPDATE integration_github_inbound_events
+        SET status='pending',attempts=0,next_attempt_at=?,lease_token=NULL,lease_until=NULL,
+            error_class=NULL,completed_at=NULL,updated_at=?
+        WHERE id=? AND status='dead'`,now,now,eventID)
+    if err!=nil{return err}
+    affected,err:=result.RowsAffected()
+    if err!=nil{return err}
+    if affected!=1{return ErrNotFound}
+    return tx.Commit()
 }
