@@ -1,4 +1,4 @@
-# Integration foundation (M1)
+# Provider-neutral integration architecture (M1–M3)
 
 M1 introduces a provider-neutral, database-backed foundation for connecting external systems to Scrumboy projects. No new HTTP routes, web UI, credentials, GitHub App setup, inbound webhooks, synchronization, or card modifications ship in this milestone. The store methods are internal building blocks for later milestones.
 
@@ -33,3 +33,13 @@ Migration 091 creates `integration_todo_resources` with card-deletion and projec
 REST: `GET /api/board/{slug}/integrations/resources` lists a project's available resources. `GET/POST /api/board/{slug}/todos/{localId}/integrations` lists or links resources, where POST accepts `{"resourceId":123}`. `DELETE /api/board/{slug}/todos/{localId}/integrations/{resourceId}` unlinks a resource. MCP mirrors these operations with `integrations_resourcesList`, `todos_externalLinksList`, `todos_externalLinkAdd`, and `todos_externalLinkRemove`.
 
 Only authenticated project members with Viewer or higher can read external references. Contributors or higher can add and remove card references. Association of a resource to a project still requires Maintainer or higher; registration of new resources still requires instance Owner/Admin. Expiring boards are excluded. Public board publication does not grant integration access. Provider credentials and event processing are deferred to M3/M4.
+
+## M3: GitHub App adapter and installation lifecycle
+
+GitHub is the first provider adapter behind the generic `internal/integration.Provider` boundary. Only the operator holds the GitHub App ID and RSA private key, and the key remains outside the database and repository. The adapter signs short-lived app JWTs, mints least-privilege installation tokens, caches them only in memory, refreshes them before expiry and invalidates cached credentials on provider denial or local disconnect. Requests always target GitHub's fixed API origin and never use a URL supplied by a connected repository.
+
+In Full Mode, authenticated instance Owners/Admins can list GitHub App installations, connect one through a verified installation ID, synchronize its repositories and disconnect a locally managed connection. Discovery must complete successfully before an atomic SQLite reconciliation changes any registered repository. A repository's immutable GitHub ID is the stable identity. Rename updates the display name and URL without severing linked cards. Repositories removed from the App's authorized installation scope are deleted after a complete scan, cascading resource associations and card references. Failed, truncated, or unauthorized scans make no SQLite changes. A provider outage or revocation is not automatically interpreted as a zero-repository installation.
+
+The Settings > GitHub tab provides the admin workflow. Only project Maintainers can attach and detach registered resources to their project, and only Contributors and above can link them to cards. Owner/Admin system role does not imply project membership. Project and Scrumboy public-board visibility are independent of GitHub's repository visibility. M3 performs no issue sync, GitHub mutations, provider webhooks, or autonomous card updates.
+
+See [GitHub App operator setup](../github-app.md) for installation instructions, constraints and API reference.
