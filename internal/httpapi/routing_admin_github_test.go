@@ -30,8 +30,8 @@ func (f *githubFakeProvider) Invalidate(id int64){f.invalidated=id}
 
 func TestRESTGitHubAppInstallationAdminLifecycle(t *testing.T){
  provider:=&githubFakeProvider{
-  installs:[]integration.Installation{{ID:987,Account:"org",Kind:"Organization"}},
-  resources:[]integration.Resource{{ID:123,Name:"org/repo",URL:"https://github.com/org/repo"}},
+  installs:[]integration.Installation{{ID:"987",Account:"org",Kind:"Organization"}},
+  resources:[]integration.Resource{{ID:"123",Name:"org/repo",URL:"https://github.com/org/repo"}},
  }
  ts,db,cleanup:=newTestHTTPServerWithOptions(t,Options{ScrumboyMode:"full",GitHubProvider:provider,GitHubAppSlug:"scrumboy-example"})
  defer cleanup()
@@ -60,7 +60,7 @@ func TestRESTGitHubAppInstallationAdminLifecycle(t *testing.T){
  }
  var installs []integration.Installation
  resp,body=doJSON(t,ownerClient,http.MethodGet,base+"/installations",nil,&installs)
- if resp.StatusCode!=http.StatusOK || len(installs)!=1 || installs[0].ID!=987 {t.Fatalf("installations: %d %s",resp.StatusCode,body)}
+ if resp.StatusCode!=http.StatusOK || len(installs)!=1 || installs[0].ID!="987" {t.Fatalf("installations: %d %s",resp.StatusCode,body)}
  var synced struct{ConnectionID int64 `json:"connectionId"`;RepositoryCount int `json:"repositoryCount"`}
  resp,body=doJSON(t,ownerClient,http.MethodPost,base+"/installations/654/sync",nil,nil)
  if resp.StatusCode!=http.StatusNotFound{t.Fatalf("unknown installation: %d %s",resp.StatusCode,body)}

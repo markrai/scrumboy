@@ -86,7 +86,9 @@ func newClient(appID int64, pemBytes []byte, httpClient *http.Client, baseURL st
 	return &Client{appID:appID,key:key,http:httpClient,baseURL:strings.TrimSuffix(baseURL,"/"),now:time.Now,cache:map[int64]cacheEntry{}},nil
 }
 
-func (c *Client) Invalidate(id int64) {
+func (c *Client) Invalidate(raw string) {
+	id,err:=strconv.ParseInt(raw,10,64)
+	if err!=nil || id<=0{return}
 	c.mu.Lock()
 	delete(c.cache,id)
 	c.mu.Unlock()
@@ -179,14 +181,16 @@ func (c *Client) Installations(ctx context.Context) ([]integration.Installation,
 		for _,item:=range batch {
 			if item.ID<=0 || item.Account.Login=="" || seen[item.ID] {return nil,ErrIncomplete}
 			seen[item.ID]=true
-			result=append(result,integration.Installation{ID:item.ID,Account:item.Account.Login,Kind:item.TargetType})
+			result=append(result,integration.Installation{ID:strconv.FormatInt(item.ID,10),Account:item.Account.Login,Kind:item.TargetType})
 		}
 		if len(batch)<100{return result,nil}
 	}
 	return nil,ErrIncomplete
 }
 
-func (c *Client) Resources(ctx context.Context,installationID int64) ([]integration.Resource,error) {
+func (c *Client) Resources(ctx context.Context,rawID string) ([]integration.Resource,error) {
+	installationID,err:=strconv.ParseInt(rawID,10,64)
+	if err!=nil || installationID<=0{return nil,ErrRevoked}
 	token,err:=c.token(ctx,installationID)
 	if err!=nil{return nil,err}
 	result:=make([]integration.Resource,0)
@@ -202,7 +206,7 @@ func (c *Client) Resources(ctx context.Context,installationID int64) ([]integrat
 		}
 		path:=fmt.Sprintf("/installation/repositories?per_page=100&page=%d",page)
 		if err:=c.request(ctx,http.MethodGet,path,token,nil,&batch);err!=nil {
-			if errors.Is(err,ErrRevoked){c.Invalidate(installationID)}
+			if errors.Is(err,ErrRevoked){c.Invalidate(rawID)}
 			return nil,err
 		}
 		if len(batch.Repositories)>100 || batch.TotalCount<0 || batch.TotalCount>maxPages*100{return nil,ErrIncomplete}
@@ -212,7 +216,7 @@ func (c *Client) Resources(ctx context.Context,installationID int64) ([]integrat
 				return nil,ErrIncomplete
 			}
 			seen[item.ID]=true
-			result=append(result,integration.Resource{ID:item.ID,Name:item.FullName,URL:item.HTMLURL})
+			result=append(result,integration.Resource{ID:strconv.FormatInt(item.ID,10),Name:item.FullName,URL:item.HTMLURL})
 		}
 		if len(result)>batch.TotalCount{return nil,ErrIncomplete}
 		if len(result)==batch.TotalCount{return result,nil}

@@ -20,8 +20,8 @@ func TestGitHubInstallSyncResourceChurnAndIsolation(t *testing.T) {
  if err!=nil{t.Fatal(err)}
  todo,err:=st.CreateTodo(WithUserID(ctx,owner.ID),project.ID,CreateTodoInput{Title:"Card"},ModeFull)
  if err!=nil{t.Fatal(err)}
- inst:=integration.Installation{ID:123,Account:"test-org",Kind:"Organization"}
- repo:=integration.Resource{ID:100,Name:"test-org/repo",URL:"https://github.com/test-org/repo"}
+ inst:=integration.Installation{ID:"123",Account:"test-org",Kind:"Organization"}
+ repo:=integration.Resource{ID:"100",Name:"test-org/repo",URL:"https://github.com/test-org/repo"}
  if _,err:=st.SyncGitHubInstallation(ctx,viewer.ID,inst,[]integration.Resource{repo});!errors.Is(err,ErrUnauthorized){t.Fatalf("viewer sync %v",err)}
  conn,err:=st.SyncGitHubInstallation(ctx,owner.ID,inst,[]integration.Resource{repo})
  if err!=nil{t.Fatal(err)}
@@ -37,7 +37,7 @@ func TestGitHubInstallSyncResourceChurnAndIsolation(t *testing.T) {
  resources,err=st.ListIntegrationResources(ctx,owner.ID,conn.ID)
  if err!=nil || len(resources)!=1 || resources[0].ID!=resourceID || resources[0].Name!=repo.Name {t.Fatalf("rename %+v %v",resources,err)}
  if _,err:=st.SyncGitHubInstallation(ctx,owner.ID,inst,[]integration.Resource{repo,repo});!errors.Is(err,ErrValidation){t.Fatalf("duplicate accepted %v",err)}
- malicious:=integration.Resource{ID:99,Name:"evil/repo",URL:"https://evil.example/repo"}
+ malicious:=integration.Resource{ID:"99",Name:"evil/repo",URL:"https://evil.example/repo"}
  if _,err:=st.SyncGitHubInstallation(ctx,owner.ID,inst,[]integration.Resource{malicious});!errors.Is(err,ErrValidation){t.Fatalf("URL accepted %v",err)}
  links,err:=st.ListTodoIntegrationResources(ctx,owner.ID,project.ID,todo.LocalID)
  if err!=nil || len(links)!=1{t.Fatalf("failed sync removed link %+v %v",links,err)}

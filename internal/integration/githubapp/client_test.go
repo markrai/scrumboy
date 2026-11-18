@@ -53,18 +53,18 @@ func TestGitHubAppInstallationDiscoveryAndRefresh(t *testing.T) {
 	c:=testClient(t,server.URL)
 	c.now=func() time.Time{return now}
 	installations,err:=c.Installations(context.Background())
-	if err!=nil || len(installations)!=1 || installations[0].ID!=44 {t.Fatalf("installations: %+v %v",installations,err)}
+	if err!=nil || len(installations)!=1 || installations[0].ID!="44" {t.Fatalf("installations: %+v %v",installations,err)}
 	for i:=0;i<2;i++ {
-		resources,err:=c.Resources(context.Background(),44)
-		if err!=nil || len(resources)!=1 || resources[0].ID!=567 {t.Fatalf("resources: %+v %v",resources,err)}
+		resources,err:=c.Resources(context.Background(),"44")
+		if err!=nil || len(resources)!=1 || resources[0].ID!="567" {t.Fatalf("resources: %+v %v",resources,err)}
 	}
 	if tokenRequests!=1 || repoRequests!=2 {t.Fatalf("unexpected caching: tokens %d repositories %d",tokenRequests,repoRequests)}
 	now=now.Add(56*time.Minute)
-	_,err=c.Resources(context.Background(),44)
+	_,err=c.Resources(context.Background(),"44")
 	if err!=nil {t.Fatal(err)}
 	if tokenRequests!=2 {t.Fatalf("expired token not refreshed: %d",tokenRequests)}
-	c.Invalidate(44)
-	_,err=c.Resources(context.Background(),44)
+	c.Invalidate("44")
+	_,err=c.Resources(context.Background(),"44")
 	if err!=nil || tokenRequests!=3 {t.Fatalf("token not invalidated: %d %v",tokenRequests,err)}
 }
 
@@ -81,7 +81,7 @@ func TestGitHubAppIncompleteDiscoveryNeverReturnsPartialResources(t *testing.T) 
 	}))
 	defer server.Close()
 	c:=testClient(t,server.URL)
-	resources,err:=c.Resources(context.Background(),44)
+	resources,err:=c.Resources(context.Background(),"44")
 	if len(resources)!=0 || !errors.Is(err,ErrIncomplete) {t.Fatalf("incomplete discovery: %+v %v",resources,err)}
 }
 
@@ -101,7 +101,7 @@ func TestGitHubAppRevokedTokenInvalidatesCacheAndDoesNotExposeSecrets(t *testing
 	defer server.Close()
 	c:=testClient(t,server.URL)
 	for i:=0;i<2;i++{
-		_,err:=c.Resources(context.Background(),44)
+		_,err:=c.Resources(context.Background(),"44")
 		if !errors.Is(err,ErrRevoked) || strings.Contains(err.Error(),"gh-test-token-long-enough") {t.Fatalf("revocation: %v",err)}
 	}
 	if minted!=2 {t.Fatalf("revoked token reused: %d",minted)}

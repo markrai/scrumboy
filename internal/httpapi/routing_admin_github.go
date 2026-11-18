@@ -83,13 +83,13 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		if err!=nil{s.githubProviderError(w,err);return}
 		var installation integration.Installation
 		for _,item:=range installations {
-			if item.ID==id {installation=item;break}
+			if item.ID==strconv.FormatInt(id,10) {installation=item;break}
 		}
-		if installation.ID==0 {
+		if installation.ID=="" {
 			writeError(w,http.StatusNotFound,"NOT_FOUND","GitHub installation is not available to this App",nil)
 			return
 		}
-		repos,err:=s.githubProvider.Resources(ctx,id)
+		repos,err:=s.githubProvider.Resources(ctx,strconv.FormatInt(id,10))
 		if err!=nil{s.githubProviderError(w,err);return}
 		conn,err:=s.store.SyncGitHubInstallation(ctx,actorID,installation,repos)
 		if err!=nil{writeStoreErr(w,err,false);return}
@@ -120,7 +120,7 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		if len(rest)==2 && r.Method==http.MethodDelete {
 			if err:=s.store.DeleteGitHubInstallation(ctx,actorID,id);err!=nil{writeStoreErr(w,err,false);return}
 			installationID,_:=strconv.ParseInt(conn.ExternalAccountID,10,64)
-			s.githubProvider.Invalidate(installationID)
+			s.githubProvider.Invalidate(strconv.FormatInt(installationID,10))
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

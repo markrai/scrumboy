@@ -14,7 +14,8 @@ import (
 )
 
 func validateGitHubResource(resource integration.Resource) bool {
-	if resource.ID<=0 || !validIntegrationValue(resource.Name,200) || !validIntegrationURL(resource.URL) {
+	id,parseErr:=strconv.ParseInt(resource.ID,10,64)
+	if parseErr!=nil || id<=0 || !validIntegrationValue(resource.Name,200) || !validIntegrationURL(resource.URL) {
 		return false
 	}
 	u,err:=url.Parse(resource.URL)
@@ -23,12 +24,13 @@ func validateGitHubResource(resource integration.Resource) bool {
 }
 
 func (s *Store) SyncGitHubInstallation(ctx context.Context, actorID int64, installation integration.Installation, repositories []integration.Resource) (IntegrationConnection,error) {
-	if installation.ID<=0 || !validIntegrationValue(installation.Account,200) || len(repositories)>2000 {
+	id,parseErr:=strconv.ParseInt(installation.ID,10,64)
+	if parseErr!=nil || id<=0 || !validIntegrationValue(installation.Account,200) || len(repositories)>2000 {
 		return IntegrationConnection{},fmt.Errorf("%w: invalid installation",ErrValidation)
 	}
 	ids:=make(map[string]struct{},len(repositories))
 	for _,resource:=range repositories {
-		key:=strconv.FormatInt(resource.ID,10)
+		key:=resource.ID
 		if !validateGitHubResource(resource) {
 			return IntegrationConnection{},fmt.Errorf("%w: invalid repository",ErrValidation)
 		}
@@ -40,7 +42,7 @@ func (s *Store) SyncGitHubInstallation(ctx context.Context, actorID int64, insta
 	defer tx.Rollback()
 	if err:=requireAdminTx(ctx,tx,actorID);err!=nil{return IntegrationConnection{},err}
 	now:=time.Now().UTC().UnixMilli()
-	installationID:=strconv.FormatInt(installation.ID,10)
+	installationID:=installation.ID
 	_,err=tx.ExecContext(ctx,`INSERT INTO integration_connections(provider,external_account_id,name,status,created_at,updated_at)
 		VALUES ('github',?,?,'active',?,?)
 		ON CONFLICT(provider,external_account_id) DO UPDATE SET name=excluded.name,status='active',updated_at=excluded.updated_at`,
@@ -53,7 +55,7 @@ func (s *Store) SyncGitHubInstallation(ctx context.Context, actorID int64, insta
 		_,err=tx.ExecContext(ctx,`INSERT INTO integration_resources(connection_id,kind,external_id,name,url,created_at,updated_at)
 			VALUES (?,'repository',?,?,?,?,?)
 			ON CONFLICT(connection_id,kind,external_id) DO UPDATE SET name=excluded.name,url=excluded.url,updated_at=excluded.updated_at`,
-			connection.ID,strconv.FormatInt(resource.ID,10),resource.Name,resource.URL,now,now)
+			connection.ID,resource.ID,resource.Name,resource.URL,now,now)
 		if err!=nil{return IntegrationConnection{},err}
 	}
 	rows,err:=tx.QueryContext(ctx,
