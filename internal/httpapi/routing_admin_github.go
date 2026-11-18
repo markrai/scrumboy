@@ -54,7 +54,26 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		}
 		counts,err:=s.githubWebhook.Summary(s.requestContext(r))
 		if err!=nil {writeInternal(w,err);return}
-		writeJSON(w,http.StatusOK,map[string]any{"configured":true,"counts":counts})
+		dead,err:=s.githubWebhook.Dead(s.requestContext(r),actorID)
+		if err!=nil {writeStoreErr(w,err,false);return}
+		writeJSON(w,http.StatusOK,map[string]any{"configured":true,"counts":counts,"deadDeliveries":dead})
+		return
+	}
+	if len(rest)==3 && rest[0]=="webhooks" && rest[2]=="retry" && r.Method==http.MethodPost {
+		if s.githubWebhook==nil || s.mode!="full" {
+			writeError(w,http.StatusServiceUnavailable,"CAPABILITY_UNAVAILABLE","GitHub webhooks are not configured",nil)
+			return
+		}
+		id,err:=strconv.ParseInt(rest[1],10,64)
+		if err!=nil || id<=0 {
+			writeValidationError(w,"invalid delivery id","invalid_delivery_id",map[string]any{"field":"deliveryId"})
+			return
+		}
+		if err:=s.githubWebhook.Retry(s.requestContext(r),actorID,id);err!=nil {
+			writeStoreErr(w,err,false)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	if len(rest)==0 && r.Method==http.MethodGet {

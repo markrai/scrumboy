@@ -128,3 +128,37 @@ func TestGitHubInboundMetadataReconciliationIsNonDestructive(t *testing.T) {
     links,err=st.ListTodoIntegrationResources(ctx,owner.ID,project.ID,card.LocalID)
     if err!=nil||len(links)!=1{t.Fatalf("disabled installation removed references %+v %v",links,err)}
 }
+
+func TestGitHubInboundDeadDeliveryRequeueIsAdminGated(t *testing.T) {
+    st,cleanup:=newTestStore(t)
+    defer cleanup()
+    ctx:=context.Background()
+    owner,err:=st.BootstrapUser(ctx,"gh-inbound-operator@example.com","password123","Owner")
+    if err!=nil{t.Fatal(err)}
+    nonAdmin,err:=st.CreateUser(ctx,"gh-inbound-viewer@example.com","password123","Viewer")
+    if err!=nil{t.Fatal(err)}
+    inst:=integration.Installation{ID:"500",Account:"example",Kind:"User"}
+    if _,err:=st.SyncGitHubInstallation(ctx,owner.ID,inst,nil);err!=nil{t.Fatal(err)}
+    event:=GitHubInboundEvent{
+        DeliveryID:"d61e607d-2a44-4d9a-8e4f-109e055cfc2d",
+        InstallationID:"500",EventType:"repository",Action:"edited",
+        PayloadSHA256:"f1fa9facd8d2cfc79110b943e05c1b05aac3f8e84c49a4e7679d03d8ba9039c1",
+    }
+    if _,err:=st.AdmitGitHubInbound(ctx,event);err!=nil{t.Fatal(err)}
+    now:=time.Now().UTC().Add(time.Minute)
+    for attempt:=1;attempt<=githubInboundMaxAttempts;attempt++{
+        events,err:=st.ClaimGitHubInbound(ctx,now,1,10*time.Second)
+        if err!=nil||len(events)!=1{t.Fatalf("claim attempt %d: %+v %v",attempt,events,err)}
+        ok,err:=st.SettleGitHubInbound(ctx,events[0].ID,events[0].LeaseToken,false,"provider_unavailable",now)
+        if err!=nil||!ok{t.Fatalf("settle attempt %d: %v %v",attempt,ok,err)}
+        now=now.Add(time.Hour)
+    }
+    if _,err:=st.ListDeadGitHubInbound(ctx,nonAdmin.ID,20);!errors.Is(err,ErrUnauthorized){t.Fatalf("viewer listed dead deliveries: %v",err)}
+    dead,err:=st.ListDeadGitHubInbound(ctx,owner.ID,20)
+    if err!=nil||len(dead)!=1||dead[0].Attempts!=8{t.Fatalf("dead deliveries %+v %v",dead,err)}
+    if err:=st.RequeueGitHubInbound(ctx,nonAdmin.ID,dead[0].ID);!errors.Is(err,ErrUnauthorized){t.Fatalf("viewer requeued dead event: %v",err)}
+    if err:=st.RequeueGitHubInbound(ctx,owner.ID,dead[0].ID);err!=nil{t.Fatal(err)}
+    if err:=st.RequeueGitHubInbound(ctx,owner.ID,dead[0].ID);!errors.Is(err,ErrNotFound){t.Fatalf("twice requeued event: %v",err)}
+    summary,err:=st.GitHubInboundSummary(ctx)
+    if err!=nil||summary.Pending!=1||summary.Dead!=0{t.Fatalf("requeue state %+v %v",summary,err)}
+}

@@ -22,6 +22,7 @@ import (
 type routeGitHubInbox struct {
     githubwebhook.Inbox
     accepted []store.GitHubInboundEvent
+    retried int64
 }
 
 func (f *routeGitHubInbox) AdmitGitHubInbound(ctx context.Context,event store.GitHubInboundEvent) (bool,error) {
@@ -32,6 +33,13 @@ func (f *routeGitHubInbox) ClaimGitHubInbound(context.Context,time.Time,int,time
     return nil,nil
 }
 func (f *routeGitHubInbox) MaintainGitHubInbound(context.Context,time.Time) error {return nil}
+func (f *routeGitHubInbox) ListDeadGitHubInbound(context.Context,int64,int) ([]store.GitHubInboundDeadDelivery,error) {
+    return []store.GitHubInboundDeadDelivery{{ID:8,DeliveryID:"redacted-verified-delivery",InstallationID:"321",EventType:"repository",Action:"edited",Attempts:8,ErrorClass:"provider_or_store_unavailable"}},nil
+}
+func (f *routeGitHubInbox) RequeueGitHubInbound(ctx context.Context,actorID,eventID int64) error {
+    f.retried=eventID
+    return nil
+}
 func (f *routeGitHubInbox) GitHubInboundSummary(context.Context) (store.GitHubInboundCounts,error) {
     return store.GitHubInboundCounts{Pending:int64(len(f.accepted))},nil
 }
@@ -95,5 +103,10 @@ func TestGitHubInboundRouteRequiresOptInAndValidHMAC(t *testing.T) {
     adminResponse,bodyBytes=doJSON(t,ownerClient,http.MethodGet,ts.URL+"/api/admin/integrations/github/webhooks",nil,&status)
     if adminResponse.StatusCode!=http.StatusOK || !status.Configured || status.Counts.Pending!=1{
         t.Fatalf("admin status: %d %s %+v",adminResponse.StatusCode,bodyBytes,status)
+    }
+    if !bytes.Contains(bodyBytes,[]byte("deadDeliveries")) {t.Fatalf("missing dead delivery summaries: %s",bodyBytes)}
+    retryResp,retryBody:=doJSON(t,ownerClient,http.MethodPost,ts.URL+"/api/admin/integrations/github/webhooks/8/retry",nil,nil)
+    if retryResp.StatusCode!=http.StatusNoContent || inbox.retried!=8 {
+        t.Fatalf("retry status: %d %s id=%d",retryResp.StatusCode,retryBody,inbox.retried)
     }
 }

@@ -43,9 +43,11 @@ Authenticated instance Owners/Admins can query:
 
 `GET /api/admin/integrations/github/webhooks`
 
-When enabled, the response has `configured: true` and four counters: `pending`, `leased`, `completed`, `dead`. With the feature disabled it returns `{"configured":false}`. No secret or inbound payload is returned.
+When enabled, the response has `configured: true` and four counters: `pending`, `leased`, `completed`, `dead`, plus a maximum of 20 recent `deadDeliveries`. With the feature disabled it returns `{"configured":false}`. Each dead-delivery record contains the numerical internal ID, delivery ID, installation ID, event name/action, retry count and a generic error class. No secret or inbound payload is returned.
 
-Transient GitHub API errors or incomplete discovery are retried. Exhausted deliveries become `dead` and remain visible in the counts until retention cleanup. A failed scan must never be converted into an empty repository list or a cascade deletion of existing card references. At present the operator must diagnose a persistent dead delivery manually; admin requeue controls and additional monitoring should be considered before enabling production traffic.
+Authenticated Owners/Admins can manually requeue a dead delivery with `POST /api/admin/integrations/github/webhooks/{id}/retry` and the normal `X-Scrumboy: 1` header. This resets the retry budget and schedules a fresh read-only reconciliation. The mutation rechecks Owner/Admin permissions at the database transaction boundary; it does not let the operator fabricate or modify the original webhook payload.
+
+Transient GitHub API errors or incomplete discovery are retried. Exhausted deliveries become `dead` and remain visible in the counts until retention cleanup. A failed scan must never be converted into an empty repository list or a cascade deletion of existing card references. Investigate the provider and secret configuration before retrying; repeated manual requeues should not be used to mask permanent authorization failures.
 
 ## Acceptance checklist
 
@@ -57,7 +59,7 @@ Transient GitHub API errors or incomplete discovery are retried. Exhausted deliv
 - [ ] Durable records survive restart; abandoned leases are reclaimable; retry exhaustion is bounded.
 - [ ] Rename or newly authorized repository updates metadata without rewriting user card content.
 - [ ] Removed/revoked repository after webhook leaves card references intact for explicit operator review.
-- [ ] Owner/Admin monitoring endpoint is permission checked.
+- [ ] Owner/Admin monitoring and manual requeue endpoints are permission checked.
 - [ ] Docker and migration tests, Go and frontend suites, CodeQL and GitHub required checks pass.
 - [ ] GitHub staging HTTPS ping and repository event are received and verified with real GitHub delivery logs.
 

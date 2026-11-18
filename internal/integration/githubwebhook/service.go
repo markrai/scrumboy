@@ -27,6 +27,8 @@ type Inbox interface {
     ClaimGitHubInbound(context.Context,time.Time,int,time.Duration) ([]store.GitHubInboundEvent,error)
     SettleGitHubInbound(context.Context,int64,string,bool,string,time.Time) (bool,error)
     GitHubInboundSummary(context.Context) (store.GitHubInboundCounts,error)
+    ListDeadGitHubInbound(context.Context,int64,int) ([]store.GitHubInboundDeadDelivery,error)
+    RequeueGitHubInbound(context.Context,int64,int64) error
     MaintainGitHubInbound(context.Context,time.Time) error
     ReconcileGitHubInboundRepositories(context.Context,string,[]integration.Resource) error
     DisableGitHubInboundInstallation(context.Context,string) error
@@ -141,6 +143,14 @@ func (s *Service) ServeHTTP(w http.ResponseWriter,r *http.Request) {
 
 func (s *Service) Summary(ctx context.Context) (store.GitHubInboundCounts,error) {
     return s.inbox.GitHubInboundSummary(ctx)
+}
+
+func (s *Service) Dead(ctx context.Context,actorID int64) ([]store.GitHubInboundDeadDelivery,error) {
+    return s.inbox.ListDeadGitHubInbound(ctx,actorID,20)
+}
+
+func (s *Service) Retry(ctx context.Context,actorID,eventID int64) error {
+    return s.inbox.RequeueGitHubInbound(ctx,actorID,eventID)
 }
 
 func (s *Service) ProcessBatch(ctx context.Context) error {
