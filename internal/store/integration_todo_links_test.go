@@ -56,3 +56,26 @@ func TestIntegrationTodoLinksAuthorizationAndCleanup(t *testing.T) {
 	links, err = st.ListTodoIntegrationResources(ctx, owner.ID, project.ID, todo.LocalID)
 	if err != nil || len(links) != 0 { t.Fatalf("connection cascade: %+v %v",links,err) }
 }
+
+func TestIntegrationCardDeletionCascadesExternalLinks(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	owner, err := st.BootstrapUser(ctx, "card-delete-external@example.com", "password123", "Owner")
+	if err != nil { t.Fatal(err) }
+	ownerCtx := WithUserID(ctx, owner.ID)
+	project, err := st.CreateProject(ownerCtx, "Card cascade")
+	if err != nil { t.Fatal(err) }
+	todo, err := st.CreateTodo(ownerCtx, project.ID, CreateTodoInput{Title:"Delete card"}, ModeFull)
+	if err != nil { t.Fatal(err) }
+	connection, err := st.CreateIntegrationConnection(ctx, owner.ID, CreateIntegrationConnectionInput{Provider:"github",ExternalAccountID:"delete-test",Name:"GitHub"})
+	if err != nil { t.Fatal(err) }
+	resource, err := st.RegisterIntegrationResource(ctx, owner.ID, connection.ID, RegisterIntegrationResourceInput{Kind:"repository",ExternalID:"123",Name:"org/repo",URL:"https://github.com/org/repo"})
+	if err != nil { t.Fatal(err) }
+	if err := st.AttachIntegrationResource(ctx, owner.ID, project.ID, resource.ID); err != nil { t.Fatal(err) }
+	if err := st.LinkTodoIntegrationResource(ctx, owner.ID, project.ID, todo.LocalID, resource.ID); err != nil { t.Fatal(err) }
+	if err := st.DeleteTodoByLocalID(ownerCtx, project.ID, todo.LocalID, ModeFull); err != nil { t.Fatal(err) }
+	var count int
+	if err := st.db.QueryRowContext(ctx,"SELECT COUNT(*) FROM integration_todo_resources WHERE todo_id = ?",todo.ID).Scan(&count); err != nil { t.Fatal(err) }
+	if count != 0 { t.Fatalf("deleted card left %d external links",count) }
+}
