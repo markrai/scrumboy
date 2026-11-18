@@ -10,6 +10,7 @@ on:
       - go.sum
       - internal/httpapi/web/package.json
       - internal/httpapi/web/package-lock.json
+      - internal/httpapi/web/osv-scanner.toml
       - mobile/capacitor/package.json
       - mobile/capacitor/package-lock.json
       - .github/workflows/osv-scanner.yml
@@ -28,6 +29,7 @@ on:
       - go.sum
       - internal/httpapi/web/package.json
       - internal/httpapi/web/package-lock.json
+      - internal/httpapi/web/osv-scanner.toml
       - mobile/capacitor/package.json
       - mobile/capacitor/package-lock.json
       - .github/workflows/osv-scanner.yml
