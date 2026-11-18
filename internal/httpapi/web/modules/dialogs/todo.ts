@@ -865,12 +865,13 @@ export async function openTodoDialog(opts: {
     !isAnonymousBoard(board) && !!getUser() &&
     ["viewer", "contributor", "maintainer", "editor"].includes(String(opts.role ?? "").toLowerCase());
   if (canShowExternalLinks) {
-    try {
-      await initializeTodoExternalLinks(slug!, todo.localId, isArchived);
-    } catch (err: any) {
+    void initializeTodoExternalLinks(slug!, todo.localId, isArchived).catch((err: any) => {
+      if (openGeneration !== todoDialogOpenGeneration || getSlug() !== slug || !(todoDialog as HTMLDialogElement).open) {
+        return;
+      }
       resetTodoExternalLinks();
       showToast(apiErrorMessage(err, { fallbackKey: "todo.externalResources.failed" }));
-    }
+    });
   } else {
     resetTodoExternalLinks();
   }
