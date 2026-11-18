@@ -2,7 +2,6 @@ package httpapi
 
 import (
  "context"
- "errors"
  "net/http"
  "strconv"
  "testing"
