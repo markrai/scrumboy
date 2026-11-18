@@ -157,6 +157,9 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 	if s.handleBoardTodoRoutes(w, r, rest, &pc) {
 		return
 	}
+	if s.handleBoardIntegrationRoutes(w, r, rest, &pc) {
+		return
+	}
 	if s.handleBoardLinkRoutes(w, r, rest, &pc) {
 		return
 	}
