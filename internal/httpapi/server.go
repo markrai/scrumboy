@@ -35,6 +35,7 @@ import (
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
+	"scrumboy/internal/integration"
 	"scrumboy/internal/mailer"
 	"scrumboy/internal/oidc"
 	"scrumboy/internal/publicorigin"
@@ -79,6 +80,9 @@ type Options struct {
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
 	// Set from SCRUMBOY_ENCRYPTION_KEY (base64). If unset, password reset endpoints return 503.
 	EncryptionKey []byte
+
+	GitHubProvider integration.Provider
+	GitHubAppSlug string
 
 	OIDCService *oidc.Service // nil when OIDC is not configured
 
@@ -260,7 +264,9 @@ type Server struct {
 	publicStreamRevalidateInterval time.Duration
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
-	oidcService   *oidc.Service // nil when OIDC is not configured
+	oidcService   *oidc.Service
+	githubProvider integration.Provider
+	githubAppSlug string // nil when OIDC is not configured
 
 	passwordResetAdminLimiter   *ratelimit.Limiter // 10 resets/min per admin
 	passwordResetRequestLimiter *ratelimit.Limiter // 5/min per IP+email, self-service request
@@ -400,6 +406,12 @@ type storeAPI interface {
 	CountTodosByPriorityKey(ctx context.Context, projectID int64) (map[string]int, error)
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 	ListProjectCustomFields(ctx context.Context, projectID int64) ([]store.CustomField, error)
+	SyncGitHubInstallation(ctx context.Context, actorID int64, installation integration.Installation, resources []integration.Resource) (store.IntegrationConnection,error)
+	DeleteGitHubInstallation(ctx context.Context,actorID,connectionID int64) error
+	ListIntegrationConnections(ctx context.Context,actorID int64) ([]store.IntegrationConnection,error)
+	ListIntegrationResources(ctx context.Context,actorID,connectionID int64) ([]store.IntegrationResource,error)
+	AttachIntegrationResource(ctx context.Context,actorID,projectID,resourceID int64) error
+	DetachIntegrationResource(ctx context.Context,actorID,projectID,resourceID int64) error
 	ListProjectIntegrationResources(ctx context.Context, actorID, projectID int64) ([]store.IntegrationResource, error)
 	ListTodoIntegrationResources(ctx context.Context, actorID, projectID, localID int64) ([]store.IntegrationResource, error)
 	LinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
@@ -805,6 +817,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 		publicStreamRevalidateInterval: normalizedPublicStreamInterval(opts.PublicStreamRevalidateInterval, defaultPublicStreamRevalidateInterval),
 		encryptionKey:                  encKey,
 		oidcService:                    opts.OIDCService,
+		githubProvider: opts.GitHubProvider,
+		githubAppSlug: opts.GitHubAppSlug,
 		passwordResetAdminLimiter:      passwordResetAdminLimiter,
 		passwordResetRequestLimiter:    passwordResetRequestLimiter,
 		firstPasswordStartLimiter:      firstPasswordStartLimiter,

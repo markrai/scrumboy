@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -22,6 +23,8 @@ import (
 	"scrumboy/internal/config"
 	"scrumboy/internal/db"
 	"scrumboy/internal/httpapi"
+	"scrumboy/internal/integration"
+	"scrumboy/internal/integration/githubapp"
 	"scrumboy/internal/mcp"
 	"scrumboy/internal/migrate"
 	"scrumboy/internal/oidc"
@@ -186,6 +189,26 @@ func main() {
 		}
 	}
 
+
+	var githubProvider integration.Provider
+	if cfg.GitHubAppID != "" || cfg.GitHubAppPrivateKeyFile != "" {
+		if cfg.GitHubAppID == "" || cfg.GitHubAppPrivateKeyFile == "" {
+			logger.Fatal("GitHub App setup requires both SCRUMBOY_GITHUB_APP_ID and SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE")
+		}
+		appID, parseErr := strconv.ParseInt(cfg.GitHubAppID, 10, 64)
+		if parseErr != nil || appID <= 0 {
+			logger.Fatal("SCRUMBOY_GITHUB_APP_ID must be a positive integer")
+		}
+		keyBytes, readErr := os.ReadFile(cfg.GitHubAppPrivateKeyFile)
+		if readErr != nil {
+			logger.Fatal("cannot read GitHub App private key file")
+		}
+		client, clientErr := githubapp.New(appID, keyBytes, nil)
+		if clientErr != nil {
+			logger.Fatal("invalid GitHub App private key")
+		}
+		githubProvider = client
+	}
 	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicOrigin: publicOrigin, Logger: logger, AssetFiles: assetJanitor})
 	srv := httpapi.NewServer(st, httpapi.Options{
 		Logger:                logger,
@@ -199,6 +222,8 @@ func main() {
 		AgoraHandler:          agora.New(mcpH, agora.Options{MaxRequestBytes: maxB}),
 		EncryptionKey:         encKey,
 		OIDCService:           oidcSvc,
+		GitHubProvider: githubProvider,
+		GitHubAppSlug: cfg.GitHubAppSlug,
 		VAPIDPublicKey:        cfg.VAPIDPublicKey,
 		VAPIDPrivateKey:       cfg.VAPIDPrivateKey,
 		VAPIDSubscriber:       cfg.VAPIDSubscriber,
