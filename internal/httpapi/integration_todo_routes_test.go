@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"scrumboy/internal/store"
@@ -30,7 +31,7 @@ func TestCardExternalReferencesRESTAuthorization(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 
 	base := ts.URL + "/api/board/" + project.Slug
-	card := base + "/todos/" + "1" + "/integrations"
+	card := base + "/todos/" + strconv.FormatInt(todo.LocalID,10) + "/integrations"
 	var available []integrationResourceResponse
 	resp, body := doJSON(t, ownerClient, http.MethodGet, base+"/integrations/resources", nil, &available)
 	if resp.StatusCode != http.StatusOK || len(available) != 1 || available[0].ID != resource.ID {
@@ -52,7 +53,7 @@ func TestCardExternalReferencesRESTAuthorization(t *testing.T) {
 	loginUserClient(t, viewerClient, ts.URL, "external-rest-viewer@example.com","password123")
 	resp, body = doJSON(t, viewerClient, http.MethodGet, card, nil, &linked)
 	if resp.StatusCode != http.StatusOK { t.Fatalf("viewer read: status=%d body=%s",resp.StatusCode,body) }
-	resp, body = doJSON(t, viewerClient, http.MethodDelete, card+"/1", nil, nil)
+	resp, body = doJSON(t, viewerClient, http.MethodDelete, card+"/"+strconv.FormatInt(resource.ID,10), nil, nil)
 	if resp.StatusCode != http.StatusForbidden { t.Fatalf("viewer delete: status=%d body=%s",resp.StatusCode,body) }
 	stranger, err := st.CreateUser(ctx,"external-rest-stranger@example.com","password123","Stranger")
 	if err != nil { t.Fatal(err) }
@@ -65,5 +66,5 @@ func TestCardExternalReferencesRESTAuthorization(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent { t.Fatalf("unlink: status=%d body=%s",resp.StatusCode,body) }
 	resp, body = doJSON(t, ownerClient, http.MethodGet, card, nil, &linked)
 	if resp.StatusCode != http.StatusOK || len(linked) != 0 { t.Fatalf("empty links: status=%d body=%s %+v",resp.StatusCode,body,linked) }
-	if todo.LocalID != 1 { t.Fatalf("test assumed local id 1, got %d",todo.LocalID) }
+	
 }

@@ -400,6 +400,10 @@ type storeAPI interface {
 	CountTodosByPriorityKey(ctx context.Context, projectID int64) (map[string]int, error)
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 	ListProjectCustomFields(ctx context.Context, projectID int64) ([]store.CustomField, error)
+	ListProjectIntegrationResources(ctx context.Context, actorID, projectID int64) ([]store.IntegrationResource, error)
+	ListTodoIntegrationResources(ctx context.Context, actorID, projectID, localID int64) ([]store.IntegrationResource, error)
+	LinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
+	UnlinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)
