@@ -18,7 +18,7 @@ function action(parent, label, run) {
     return button;
 }
 
-export function bindGitHubSettingsTab(root, initialSlug, signal): void {
+export function bindGitHubSettingsTab(root, initialSlug, signal) {
     const base = '/api/admin/integrations/github';
 
     async function render() {
@@ -163,7 +163,7 @@ export function bindGitHubSettingsTab(root, initialSlug, signal): void {
         if (initialSlug) void loadProject();
     }
 
-    async function mutate(task: () => Promise<unknown>, reloadAll = true) {
+    async function mutate(task, reloadAll = true) {
         try {
             await task();
             if (reloadAll && !signal.aborted) await render();
