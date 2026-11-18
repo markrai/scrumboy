@@ -45,6 +45,7 @@ import {
   initializeTodoDialogLinks,
   resetTodoDialogLinks,
 } from './todo-links.js';
+import { initializeTodoExternalLinks, resetTodoExternalLinks, bindTodoExternalLinksLifecycle } from './todo-external-links.js';
 import {
   computeTodoDialogPermissions,
   setTodoFormPermissions,
@@ -721,6 +722,7 @@ export async function openTodoDialog(opts: {
   setEditingTodo(mode === "edit" ? todo : null);
   bindTodoDialogCloseGuards();
   bindTodoDialogLinkLifecycle();
+  bindTodoExternalLinksLifecycle();
   bindTodoNotesPreviewControls();
 
   const board = getBoard();
@@ -857,6 +859,20 @@ export async function openTodoDialog(opts: {
     }
   } else {
     resetTodoDialogLinks();
+  }
+
+  const canShowExternalLinks = editableWithLinks && !!board?.project && !board.project.expiresAt &&
+    !isAnonymousBoard(board) && !!getUser() &&
+    ["viewer", "contributor", "maintainer", "editor"].includes(String(opts.role ?? "").toLowerCase());
+  if (canShowExternalLinks) {
+    try {
+      await initializeTodoExternalLinks(slug!, todo.localId, isArchived);
+    } catch (err: any) {
+      resetTodoExternalLinks();
+      showToast(apiErrorMessage(err, { fallbackKey: "todo.externalResources.failed" }));
+    }
+  } else {
+    resetTodoExternalLinks();
   }
 
   const estimationField = todoEstimationField as HTMLElement | null;
