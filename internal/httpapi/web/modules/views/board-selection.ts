@@ -282,6 +282,7 @@ export function ensureBulkEditUi(opts: {
       if (e.matches && selectMode) setSelectMode(false);
     });
   }
+
   document.addEventListener("keydown", (e) => {
     if (!document.querySelector('.board:not([data-public-board])') || getCurrentRole?.() === "viewer") return;
     if (document.querySelector("dialog[open]")) return;

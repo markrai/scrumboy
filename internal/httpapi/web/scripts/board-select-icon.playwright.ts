@@ -118,8 +118,8 @@ for (const width of [375, 620]) {
 
     await expect(toggle).toBeVisible();
     const box = (await toggle.boundingBox())!;
-    expect(box.width).toBeGreaterThanOrEqual(40);
-    expect(box.height).toBeGreaterThanOrEqual(40);
+    expect(box.width).toBe(48);
+    expect(box.height).toBe(48);
     await expect(icon).toBeVisible();
     await expect(toggle).toHaveAccessibleName("Select");
     await expectSelectMode(page, false);
@@ -151,6 +151,84 @@ for (const width of [375, 620]) {
     await expect(page.locator("#todoDialog")).toBeHidden();
     await context.close();
   });
+}
+
+for (const width of [375, 620]) {
+test(`FAB stays anchored while selecting, scrolling, and showing dialogs at ${width}px`, async ({ browser }) => {
+  const height = 800;
+  const { context, page } = await openBoard(browser, width);
+  const row = page.locator(".board-select-row");
+  const toggle = page.locator("#boardSelectToggle");
+  const bar = page.locator("#bulkEditBar");
+
+  // Out of flow: fixed to the viewport corner with no residual row spacing.
+  expect(await row.evaluate((el) => getComputedStyle(el).position)).toBe("fixed");
+  expect(await row.evaluate((el) => getComputedStyle(el).marginBottom)).toBe("0px");
+  const base = (await toggle.boundingBox())!;
+  const sameBox = async () => {
+    const box = (await toggle.boundingBox())!;
+    expect(Math.abs(box.x - base.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(box.y - base.y)).toBeLessThanOrEqual(1);
+  };
+  expect(base.x + base.width).toBe(width - 16);
+  expect(base.y + base.height).toBe(height - 16);
+  expect(await toggle.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("50%");
+  expect(await toggle.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe("none");
+  expect(await toggle.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
+
+  // Fixed while the lane scrolls underneath.
+  const list = page.locator(".col--mobile-active .col__list");
+  await list.evaluate((el) => { el.scrollTop = 200; });
+  await sameBox();
+
+  // The FAB paints above cards: hit-testing its center reaches the toggle.
+  const hitIdAt = ([x, y]: number[]) => page.evaluate(([px, py]) => {
+    const el = document.elementFromPoint(px, py) as HTMLElement | null;
+    return el?.closest("button")?.id ?? el?.id ?? "";
+  }, [x, y]);
+  const fabCenter = () => toggle.boundingBox().then((b) => [b!.x + b!.width / 2, b!.y + b!.height / 2]);
+  expect(await hitIdAt(await fabCenter())).toBe("boardSelectToggle");
+
+  // Entering select mode and selecting two cards never moves the FAB, and the
+  // stationary toolbar leaves every visible bulk action reachable.
+  await toggle.click();
+  await sameBox();
+  await card(page, TITLES[0]).click();
+  await sameBox();
+  await card(page, TITLES[1]).click();
+  await sameBox();
+  await expect(page.locator("#todoDialog")).toBeHidden();
+  await expect(bar).toBeVisible();
+  const barBox = (await bar.boundingBox())!;
+  const fabBox = (await toggle.boundingBox())!;
+  expect(fabBox.x + fabBox.width <= barBox.x + 1 || barBox.x + barBox.width <= fabBox.x + 1
+    || fabBox.y + fabBox.height <= barBox.y + 1 || barBox.y + barBox.height <= fabBox.y + 1).toBe(true);
+  expect(await hitIdAt(await fabCenter())).toBe("boardSelectToggle");
+  for (const btn of await bar.locator("button:not([hidden])").all()) {
+    const box = (await btn.boundingBox())!;
+    expect(await hitIdAt([box.x + box.width / 2, box.y + box.height / 2])).toBe(await btn.getAttribute("id"));
+  }
+
+  // Clear removes the selection without moving the FAB; the FAB stays usable and exits select mode.
+  await page.locator("#bulkClearBtn").click();
+  await sameBox();
+  await expect(card(page, TITLES[0])).not.toHaveClass(/card--selected/);
+  await expect(toggle).toHaveAccessibleName("Done");
+  await toggle.click();
+  await expect(bar).toBeHidden();
+  await sameBox();
+
+  // A story dialog opens modally above the FAB's stacking level.
+  await card(page, TITLES[2]).click();
+  const dialog = page.locator("#todoDialog");
+  await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate((el) => el.matches(":modal"))).toBe(true);
+  expect(await row.evaluate((el) => getComputedStyle(el).zIndex)).toBe("40");
+  await sameBox();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await context.close();
+});
 }
 
 for (const width of [621, 768, 1280]) {
