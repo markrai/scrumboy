@@ -22,7 +22,7 @@ type githubFakeProvider struct {
 func (f *githubFakeProvider) Installations(ctx context.Context)([]integration.Installation,error){
  return f.installs,nil
 }
-func (f *githubFakeProvider) Resources(ctx context.Context,id int64)([]integration.Resource,error){
+func (f *githubFakeProvider) Resources(ctx context.Context,id string)([]integration.Resource,error){
  if f.unavailable {return nil,githubapp.ErrRevoked}
  return f.resources,nil
 }
@@ -90,7 +90,7 @@ func TestRESTGitHubAppInstallationAdminLifecycle(t *testing.T){
  if resp.StatusCode!=http.StatusNoContent{t.Fatalf("link resource: %d %s",resp.StatusCode,body)}
  provider.unavailable=true
  resp,body=doJSON(t,ownerClient,http.MethodPost,base+"/installations/987/sync",nil,nil)
- if resp.StatusCode!=http.StatusConflict || !errors.Is(githubapp.ErrRevoked,githubapp.ErrRevoked) {t.Fatalf("revoked sync: %d %s",resp.StatusCode,body)}
+ if resp.StatusCode!=http.StatusConflict {t.Fatalf("revoked sync: %d %s",resp.StatusCode,body)}
  var links []integrationResourceResponse
  resp,body=doJSON(t,ownerClient,http.MethodGet,cardURL,nil,&links)
  if resp.StatusCode!=http.StatusOK || len(links)!=1 {t.Fatalf("failed sync removed card link: %d %s",resp.StatusCode,body)}
