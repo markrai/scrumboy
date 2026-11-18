@@ -47,15 +47,32 @@ services:
 
 Keep the private key outside the repository and the `./data` backup export path; protect it with host filesystem permissions.
 
-## Connect and test
+## Connect and test (M3)
 
-1. Start in Full Mode, sign in as an instance Owner or Admin, and open **Settings > GitHub**.
-2. Install the GitHub App at GitHub (using the install link if the slug is configured), then choose **Refresh installations**.
-3. Select **Connect and sync** (or **Sync repositories**) for the installation. The server verifies that the installation belongs to the configured App, then requests a read-only installation token and enumerates all accessible repositories.
-4. In the same tab, choose a Scrumboy project for which you are a Maintainer, choose a discovered repository and click **Add to project**.
-5. Open a card in that project. The **External references** section can now link or unlink the project-associated repository. GitHub continues to control access to the repository's website.
+1. Start Scrumboy in Full Mode, sign in as Owner/Admin, and open **Settings > GitHub**.
+2. Install the App at GitHub with only the repositories you choose. Use **Install App** and **Refresh** in Scrumboy if the installation is not listed yet.
+3. Click **Connect and sync** once. A connected account appears with **Refresh repositories** and **Disconnect** controls. Use **Refresh repositories** only when GitHub installation access or repository metadata changes. Disconnect requires confirmation and removes local references; it does not uninstall the App on GitHub.
+4. Under **Project repositories**, choose a **Scrumboy project** by its human-readable name. Only durable projects where your current user is a **Maintainer** are shown. Opening Settings from a project automatically selects that project. You no longer need to enter a project URL slug or click **Load project**.
+5. If only one GitHub account is connected, its name is displayed without a dropdown. With multiple accounts, choose the GitHub account whose repositories you want to associate.
+6. Once a project is selected, its available repositories load automatically. Select a **GitHub repository** and click **Add to project**. This permits cards in that project to reference the repository; it does not modify GitHub.
+7. Open a card in the project. In **External references**, link the associated repository, verify the URL, then unlink it as an independent step. Test the card with a Viewer, Contributor and Maintainer to verify read/write boundaries.
 
-Repository names and links may be visible to authenticated members of your Scrumboy project, independently of their GitHub access. Deliberately published Scrumboy boards do not automatically expose this integration's private management endpoints or browser UI.
+Repository names and links may be visible to authenticated members of your Scrumboy project independently of their GitHub access. Deliberately published Scrumboy boards do not automatically expose integration management APIs or private card-reference UI.
+
+### Live M3 acceptance ledger
+
+| Scenario | Status | Evidence / action |
+| --- | --- | --- |
+| App configured using ID, private-key mount and slug | Verified on isolated Vega test instance | Settings shows **App configured** |
+| Installation discovery and connect/sync | Verified on isolated Vega test instance | Connected GitHub account `markrai` |
+| Project picker and repository association | **Not yet live-verified** | Select a maintained project and associate `markrai/scrumboy` |
+| Card reference link/unlink | **Not yet live-verified** | Link and unlink from a disposable Scrumboy card; verify no change to card content |
+| Role boundaries | Automated tests exist; **live check pending** | Viewer read, Contributor link/unlink, Maintainer project association |
+| Repository rename and removal | Automated tests exist; **live check pending** | Use disposable repository data; confirm stable IDs and reference cleanup for explicit manual sync |
+| Revoked App access, API interruption or incomplete discovery | Automated tests exist; **live check pending** | Verify failed refresh preserves existing links, then restore access |
+| Key rotation and app suspension | **Not yet live-verified** | Use a disposable App key/installation and verify safe failure and recovery |
+
+Do not mark live scenarios as passed without recording an actual result. The M3 code and CI can be complete while the live acceptance gate remains open.
 
 ## Administration API
 
