@@ -209,6 +209,10 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "todos_linksList",
     "todos_linkAdd",
     "todos_linkRemove",
+    "integrations_resourcesList",
+    "todos_externalLinksList",
+    "todos_externalLinkAdd",
+    "todos_externalLinkRemove",
     "sprints_list",
     "sprints_get",
     "sprints_getActive",
@@ -247,7 +251,16 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "admin_listUsers",
     "admin_updateUserRole",
     "admin_updateUser",
-    "admin_deleteUser"
+    "admin_deleteUser",
+    "admin_createServiceAccount",
+    "admin_listServiceAccounts",
+    "admin_deleteServiceAccount",
+    "admin_createServiceToken",
+    "admin_listServiceTokens",
+    "admin_revokeServiceToken",
+    "webhooks_create",
+    "webhooks_list",
+    "webhooks_delete"
   ]
 }
 ```
@@ -298,6 +311,15 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()`. For the cur
 - `todos_linksList`
 - `todos_linkAdd`
 - `todos_linkRemove`
+
+**External integration resources**
+
+- `integrations_resourcesList` lists resources associated with a project.
+- `todos_externalLinksList` lists the external resources linked to a card.
+- `todos_externalLinkAdd` links a project-associated resource to a card.
+- `todos_externalLinkRemove` unlinks a resource from a card.
+
+These tools are separate from `todos_linksList` and related story-to-story link tools. Project members with Viewer or higher may read external references; Contributors or higher may attach or remove card references. Resource registration and project association are separate administrative actions. Temporary or anonymous boards do not support this integration. See [integration architecture](architecture/integrations-foundation.md) and [GitHub App setup](github-app.md).
 
 Linked stories are **directed** from `localId` to `targetLocalId`, and `linkType` describes `localId` as
 the subject (`blocks` = localId blocks target; `parent` = localId is parent of target; `duplicates` =
@@ -627,6 +649,10 @@ todos_move
 todos_linksList
 todos_linkAdd
 todos_linkRemove
+integrations_resourcesList
+todos_externalLinksList
+todos_externalLinkAdd
+todos_externalLinkRemove
 sprints_list
 sprints_get
 sprints_getActive
