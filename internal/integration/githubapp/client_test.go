@@ -106,3 +106,29 @@ func TestGitHubAppRevokedTokenInvalidatesCacheAndDoesNotExposeSecrets(t *testing
 	}
 	if minted!=2 {t.Fatalf("revoked token reused: %d",minted)}
 }
+
+func TestGitHubAppRevokesProcessHeldInstallationToken(t *testing.T) {
+	var minted,revoked int
+	server:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request) {
+		switch {
+		case r.Method==http.MethodPost && strings.Contains(r.URL.Path,"access_tokens"):
+			minted++
+			json.NewEncoder(w).Encode(map[string]any{"token":"gh-test-token-long-enough","expires_at":time.Now().Add(time.Hour).Format(time.RFC3339)})
+		case r.Method==http.MethodGet && r.URL.Path=="/installation/repositories":
+			json.NewEncoder(w).Encode(map[string]any{"total_count":0,"repositories":[]any{}})
+		case r.Method==http.MethodDelete && r.URL.Path=="/installation/token":
+			revoked++
+			if r.Header.Get("Authorization")!="Bearer gh-test-token-long-enough"{t.Error("wrong token revoked")}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w,r)
+		}
+	}))
+	defer server.Close()
+	c:=testClient(t,server.URL)
+	if _,err:=c.Resources(context.Background(),"44");err!=nil{t.Fatal(err)}
+	if err:=c.Revoke(context.Background(),"44");err!=nil{t.Fatal(err)}
+	if revoked!=1{t.Fatalf("token not revoked: %d",revoked)}
+	if _,err:=c.Resources(context.Background(),"44");err!=nil{t.Fatal(err)}
+	if minted!=2{t.Fatalf("revoked token reused: %d",minted)}
+}
