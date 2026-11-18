@@ -72,6 +72,17 @@ describe('GitHub admin settings tab', () => {
 });
 
 describe('GitHub compact onboarding', () => {
+    beforeEach(() => {
+        document.body.replaceChildren();
+        requests.mockReset();
+        toast.mockReset();
+        confirm.mockReset().mockResolvedValue(true);
+    });
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
     it('shows concise setup guidance and points to the main-branch Markdown guide', async () => {
         requests.mockResolvedValue({ configured: false, connections: [], installUrl: '' });
         const el = root();
