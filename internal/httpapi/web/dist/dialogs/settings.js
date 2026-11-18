@@ -9,6 +9,7 @@ import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
 import { getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers, getBoardAccess, getPublicProjectsEnabled, getInlineImagesEnabled } from '../state/selectors.js';
 import { bindSharingTab, renderSharingTabShell } from './settings-sharing.js';
+import { bindGitHubSettingsTab } from './settings-github.js';
 import { isPublicBoardAccess } from '../state/board-access.js';
 import { setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview, setTrelloImportBtn, setTrelloImportData, setTrelloImportPreview, setTrelloImportResult, setUser, setBoardMembers, } from '../state/mutations.js';
 import { renderRealBurndownChart, destroyBurndownChart, mountBurndownChart } from '../charts/burndown.js';
@@ -1918,13 +1919,14 @@ export async function renderSettingsModal(options) {
       <div class="settings-tabs settings-tabs--personal">
         ${showProfileTab ? `<button class="settings-tab ${activeSettingsTab === "profile" ? "settings-tab--active" : ""}" data-tab="profile" data-i18n-text="settings.tabs.profile">Profile</button>` : ``}
         ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
+        ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "integrations" ? "settings-tab--active" : ""}" data-tab="integrations">GitHub</button>` : ``}
         <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
         ${publicBoardView ? `` : `<button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
         <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup / Delete</button>`}
       </div>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
-      ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "customFields" && showCustomFieldsTab ? renderCustomFieldsTabShell() : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : activeSettingsTab === "sharing" && showSharingTab ? renderSharingTabShell() : ""}
+      ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "integrations" && showUsersTab ? `<div id="githubSettingsRoot"></div>` : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "customFields" && showCustomFieldsTab ? renderCustomFieldsTabShell() : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : activeSettingsTab === "sharing" && showSharingTab ? renderSharingTabShell() : ""}
     </div>
   `;
     if (!dialogWasOpen) {
@@ -1942,6 +1944,11 @@ export async function renderSettingsModal(options) {
     settingsAbortController?.abort();
     settingsAbortController = new AbortController();
     const signal = settingsAbortController.signal;
+    if (getSettingsActiveTab() === 'integrations' && showUsersTab) {
+        const target = document.getElementById('githubSettingsRoot');
+        if (target)
+            bindGitHubSettingsTab(target, getSlug(), signal);
+    }
     // Charts tab: burndown sprint navigation, mount uPlot chart, scrollbar behavior
     if (getSettingsActiveTab() === "charts") {
         bindBurndownNav(signal);
