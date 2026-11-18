@@ -156,9 +156,9 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
         if (status.installUrl) {
             const link = textNode(tools, 'a', 'Install App');
             link.className = 'github-integration__link';
-            link.href = status.installUrl;
-            link.rel = 'noopener noreferrer';
-            link.target = '_blank';
+            link.setAttribute('href', status.installUrl);
+            link.setAttribute('rel', 'noopener noreferrer');
+            link.setAttribute('target', '_blank');
         }
         const refresh = action(tools, 'Refresh', () => { void reload(); });
         refresh.classList.add('github-integration__refresh');
@@ -255,9 +255,9 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
         note.className = 'github-integration__note';
         textNode(note, 'span', 'Sync imports repository references only. GitHub issues and card content are not changed.');
         const guide = textNode(note, 'a', 'Setup guide');
-        guide.href = 'https://github.com/markrai/scrumboy/blob/main/docs/github-app.md';
-        guide.target = '_blank';
-        guide.rel = 'noopener noreferrer';
+        guide.setAttribute('href', 'https://github.com/markrai/scrumboy/blob/main/docs/github-app.md');
+        guide.setAttribute('target', '_blank');
+        guide.setAttribute('rel', 'noopener noreferrer');
         panel.append(note);
         if (!connections.length) return;
         const section = document.createElement('section');
