@@ -19,6 +19,7 @@ import { apiErrorMessage, formatDate as formatLocalizedDate, hasI18nKey, I18N_LO
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { tagIdentityKey } from '../tag-names.js';
 import { bindShareTodoButton, bindTodoDialogLinkLifecycle, initializeTodoDialogLinks, resetTodoDialogLinks, } from './todo-links.js';
+import { initializeTodoExternalLinks, resetTodoExternalLinks, bindTodoExternalLinksLifecycle } from './todo-external-links.js';
 import { computeTodoDialogPermissions, setTodoFormPermissions, } from './todo-permissions.js';
 import { getTagsFromChips, renderTagsChips, resetTodoTagAutocompleteBindings, setupTagAutocomplete, } from './todo-tags.js';
 import { defaultTodoTagSuggestions, loadAllProjectTagSuggestions, mergeTodoTagSuggestions, } from './todo-tag-suggestions.js';
@@ -599,6 +600,7 @@ export async function openTodoDialog(opts) {
     setEditingTodo(mode === "edit" ? todo : null);
     bindTodoDialogCloseGuards();
     bindTodoDialogLinkLifecycle();
+    bindTodoExternalLinksLifecycle();
     bindTodoNotesPreviewControls();
     const board = getBoard();
     const permissions = computeTodoDialogPermissions({
@@ -732,6 +734,21 @@ export async function openTodoDialog(opts) {
     }
     else {
         resetTodoDialogLinks();
+    }
+    const canShowExternalLinks = editableWithLinks && !!board?.project && !board.project.expiresAt &&
+        !isAnonymousBoard(board) && !!getUser() &&
+        ["viewer", "contributor", "maintainer", "editor"].includes(String(opts.role ?? "").toLowerCase());
+    if (canShowExternalLinks) {
+        void initializeTodoExternalLinks(slug, todo.localId, isArchived).catch((err) => {
+            if (openGeneration !== todoDialogOpenGeneration || getSlug() !== slug || !todoDialog.open) {
+                return;
+            }
+            resetTodoExternalLinks();
+            showToast(apiErrorMessage(err, { fallbackKey: "todo.externalResources.failed" }));
+        });
+    }
+    else {
+        resetTodoExternalLinks();
     }
     const estimationField = todoEstimationField;
     const estimationSelect = todoEstimationPoints;
