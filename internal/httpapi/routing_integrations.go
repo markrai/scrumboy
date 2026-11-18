@@ -32,21 +32,32 @@ func (s *Server) handleBoardIntegrationRoutes(w http.ResponseWriter, r *http.Req
 	}
 	ctx := s.requestContext(r)
 	actorID, ok := store.UserIDFromContext(ctx)
-	if rest[1] == "integrations" && len(rest) == 3 && rest[2] == "resources" {
-		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
-			return true
-		}
+	if rest[1] == "integrations" && rest[2] == "resources" && (len(rest)==3 || len(rest)==4) {
 		if !ok {
-			writeStoreErr(w, store.ErrUnauthorized, true)
+			writeStoreErr(w,store.ErrUnauthorized,true)
 			return true
 		}
-		resources, err := s.store.ListProjectIntegrationResources(ctx, actorID, pc.Project.ID)
-		if err != nil {
-			writeStoreErr(w, err, true)
-			return true
+		switch {
+		case len(rest)==3 && r.Method==http.MethodGet:
+			resources,err:=s.store.ListProjectIntegrationResources(ctx,actorID,pc.Project.ID)
+			if err!=nil{writeStoreErr(w,err,true);return true}
+			writeJSON(w,http.StatusOK,integrationResourcesJSON(resources))
+		case len(rest)==3 && r.Method==http.MethodPost:
+			var in struct {ResourceID int64 `json:"resourceId"`}
+			if err:=readJSON(w,r,s.maxBody,&in);err!=nil{return true}
+			if err:=s.store.AttachIntegrationResource(ctx,actorID,pc.Project.ID,in.ResourceID);err!=nil{writeStoreErr(w,err,true);return true}
+			w.WriteHeader(http.StatusNoContent)
+		case len(rest)==4 && r.Method==http.MethodDelete:
+			id,valid:=parseInt64(rest[3])
+			if !valid || id<=0 {
+				writeValidationError(w,"invalid resourceId","invalid_resource_id",map[string]any{"field":"resourceId"})
+				return true
+			}
+			if err:=s.store.DetachIntegrationResource(ctx,actorID,pc.Project.ID,id);err!=nil{writeStoreErr(w,err,true);return true}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			writeError(w,http.StatusMethodNotAllowed,"METHOD_NOT_ALLOWED","method not allowed",nil)
 		}
-		writeJSON(w, http.StatusOK, integrationResourcesJSON(resources))
 		return true
 	}
 	if rest[1] != "todos" || len(rest) < 4 || rest[3] != "integrations" {
