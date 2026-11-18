@@ -70,3 +70,51 @@ describe('GitHub admin settings tab', () => {
         controller.abort();
     });
 });
+
+describe('GitHub compact onboarding', () => {
+    it('shows concise setup guidance and points to the main-branch Markdown guide', async () => {
+        requests.mockResolvedValue({ configured: false, connections: [], installUrl: '' });
+        const el = root();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        const controller = new AbortController();
+        bindGitHubSettingsTab(el, 'alpha', controller.signal);
+        await vi.waitFor(() => expect(el.querySelector('.github-onboarding__columns')).not.toBeNull());
+        const guide = el.querySelector<HTMLAnchorElement>('.github-onboarding__guide');
+        expect(guide?.href).toBe('https://github.com/markrai/scrumboy/blob/main/docs/github-app.md');
+        expect(guide?.target).toBe('_blank');
+        expect(guide?.rel).toContain('noopener');
+        expect(el.textContent).toContain('Create a GitHub App');
+        expect(el.textContent).toContain('Restart Scrumboy');
+        expect(el.textContent).not.toContain('Your credentials stay on your server');
+        const variables = el.querySelectorAll('.github-onboarding__variable-name');
+        expect(Array.from(variables).map(variable => variable.textContent)).toEqual([
+            'SCRUMBOY_GITHUB_APP_ID',
+            'SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE',
+            'SCRUMBOY_GITHUB_APP_SLUG',
+        ]);
+        expect(requests).toHaveBeenCalledTimes(1);
+        controller.abort();
+    });
+
+    it('copies the GitHub App variable name on click', async () => {
+        const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+        try {
+            requests.mockResolvedValue({ configured: false, connections: [], installUrl: '' });
+            const el = root();
+            const { bindGitHubSettingsTab } = await import('./settings-github.js');
+            const controller = new AbortController();
+            bindGitHubSettingsTab(el, 'alpha', controller.signal);
+            await vi.waitFor(() => expect(el.querySelector('.github-onboarding__copy')).not.toBeNull());
+            const copy = el.querySelector<HTMLButtonElement>('.github-onboarding__copy');
+            copy?.click();
+            await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('SCRUMBOY_GITHUB_APP_ID'));
+            await vi.waitFor(() => expect(copy?.getAttribute('aria-label')).toBe('Copied SCRUMBOY_GITHUB_APP_ID'));
+            controller.abort();
+        } finally {
+            if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+            else Reflect.deleteProperty(navigator, 'clipboard');
+        }
+    });
+});

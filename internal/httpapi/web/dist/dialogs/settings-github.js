@@ -28,7 +28,86 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
         const status = await apiFetch(base, { signal });
         if (signal.aborted || !root.isConnected) return;
         if (!status.configured) {
-            textNode(root, 'p', 'GitHub App is not configured. The operator must set SCRUMBOY_GITHUB_APP_ID and SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE and restart Scrumboy.');
+            const onboarding = document.createElement('section');
+            onboarding.className = 'github-onboarding';
+
+            const header = document.createElement('div');
+            header.className = 'github-onboarding__header';
+            textNode(header, 'h3', 'GitHub Integration').className = 'github-onboarding__title';
+            const badge = textNode(header, 'span', 'Setup required');
+            badge.className = 'github-onboarding__badge';
+            badge.setAttribute('role', 'status');
+            onboarding.append(header);
+
+            const columns = document.createElement('div');
+            columns.className = 'github-onboarding__columns';
+            const overview = document.createElement('div');
+            overview.className = 'github-onboarding__overview';
+            textNode(overview, 'p', 'Connect GitHub repositories to Scrumboy projects and reference them from individual cards.').className = 'github-onboarding__summary';
+
+            const steps = document.createElement('div');
+            steps.className = 'github-onboarding__steps';
+            for (const [number, heading, description] of [
+                ['1', 'Create a GitHub App', 'Install it on selected repositories with read-only metadata access.'],
+                ['2', 'Restart Scrumboy', 'After configuring the variables, return here to connect your installation.'],
+            ]) {
+                const step = document.createElement('div');
+                step.className = 'github-onboarding__step';
+                textNode(step, 'span', number).className = 'github-onboarding__step-number';
+                const details = document.createElement('div');
+                textNode(details, 'strong', heading).className = 'github-onboarding__step-heading';
+                textNode(details, 'p', description).className = 'github-onboarding__step-description';
+                step.append(details);
+                steps.append(step);
+            }
+            overview.append(steps);
+
+            const guide = textNode(overview, 'a', 'Setup instructions');
+            guide.className = 'github-onboarding__guide';
+            guide.setAttribute('href', 'https://github.com/markrai/scrumboy/blob/main/docs/github-app.md');
+            guide.setAttribute('target', '_blank');
+            guide.setAttribute('rel', 'noopener noreferrer');
+            columns.append(overview);
+
+            const configuration = document.createElement('div');
+            configuration.className = 'github-onboarding__config';
+            textNode(configuration, 'h4', 'Server configuration').className = 'github-onboarding__config-title';
+            for (const item of [
+                { name: 'SCRUMBOY_GITHUB_APP_ID', description: 'GitHub App ID' },
+                { name: 'SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE', description: 'Server-side path to the private key' },
+                { name: 'SCRUMBOY_GITHUB_APP_SLUG', description: 'Optional app slug' },
+            ]) {
+                const card = document.createElement('div');
+                card.className = 'github-onboarding__variable';
+                const row = document.createElement('div');
+                row.className = 'github-onboarding__variable-row';
+                textNode(row, 'code', item.name).className = 'github-onboarding__variable-name';
+
+                const copy = document.createElement('button');
+                copy.type = 'button';
+                copy.className = 'github-onboarding__copy';
+                copy.textContent = '⧉';
+                copy.title = 'Copy ' + item.name;
+                copy.setAttribute('aria-label', copy.title);
+                copy.addEventListener('click', async () => {
+                    try {
+                        if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+                        await navigator.clipboard.writeText(item.name);
+                        copy.textContent = '✓';
+                        copy.title = 'Copied ' + item.name;
+                        copy.setAttribute('aria-label', copy.title);
+                    } catch {
+                        showToast('Clipboard unavailable. Select and copy the variable name manually.');
+                    }
+                });
+                row.append(copy);
+                card.append(row);
+                textNode(card, 'p', item.description).className = 'github-onboarding__variable-description';
+                configuration.append(card);
+            }
+            columns.append(configuration);
+            onboarding.append(columns);
+            root.append(onboarding);
             return;
         }
         if (status.installUrl) {
