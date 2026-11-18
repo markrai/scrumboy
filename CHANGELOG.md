@@ -2,6 +2,29 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## [3.42.3] - 2026-11-17
+
+### Fixed
+
+- **Card footer layout on narrow cards** - The desktop footer is a
+  two-column grid again (`1fr auto` with a `fit-content(65%)` badge cap),
+  so badges wrap instead of squeezing tags into one-character columns or
+  overflowing the card. On mobile (≤767px) tags and badges use separate
+  full-width rows, and empty tag/badge containers are hidden with `:has()`
+  (the template leaves whitespace that defeats `:empty`). Part of #360.
+- **Mobile-only Select control** - The board's text Select button is now a
+  Lucide `copy-check` floating action button, pinned to the viewport
+  bottom-right on viewports ≤620px and hidden on desktop. It keeps the
+  existing `aria-pressed` selection highlight, exits select mode when
+  crossing to desktop widths, and stays clear of the bulk-selection
+  toolbar. Part of #360.
+- **Responsive regression coverage** - New Playwright suites:
+  `board-select-icon` (select icon, FAB anchoring and toolbar
+  coexistence, viewport crossing, desktop modifier clicks),
+  `card-footer-tags-badges` (12 width/audience footer geometry cases)
+  and `wall-story-pin-footer` (Wall pin footers at fixed 280px width).
+  Part of #360.
+
 ## [3.42.2] - 2026-11-16
 
 ### Added

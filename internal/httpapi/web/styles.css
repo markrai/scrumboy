@@ -5226,6 +5226,54 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   margin-bottom: var(--s-8);
 }
 
+@media (min-width: 621px) {
+  .board-select-row {
+    display: none;
+  }
+}
+
+.board-select-toggle__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .board-select-row {
+    position: fixed;
+    right: max(16px, env(safe-area-inset-right, 0px));
+    bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    margin-bottom: 0;
+  }
+
+  .board-select-toggle {
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .board-select-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .board-select-toggle svg {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+}
+
 .bulk-edit-bar__btn,
 .bulk-edit-bar__hint {
   flex: 0 1 auto;
@@ -5505,6 +5553,9 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 
   .bulk-edit-bar {
     bottom: 8px;
+    left: 12px;
+    transform: none;
+    right: calc(16px + 48px + 12px);
     padding: var(--s-6);
   }
 
@@ -5575,7 +5626,7 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 
 .card__tags {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   column-gap: 6px;
   row-gap: 6px;
   margin-top: var(--s-8);
@@ -5587,6 +5638,7 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   flex-wrap: wrap;
   gap: 6px;
   grid-column: 1;
+  min-width: 0;
 }
 
 /* Long unbroken tag names wrap inside the pill instead of overflowing the card. */
@@ -5601,6 +5653,17 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   gap: 6px;
   grid-column: 2;
   align-self: end;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+/* When tags and badges share the footer, cap the badge column so badges wrap
+   onto their own lines instead of squeezing tags into unreadable columns.
+   The cap only binds when badges want more than their share; otherwise the
+   footer renders exactly as before. */
+.card__tags:has(> .card__tags-list > *):has(> .card__badges > *) {
+  grid-template-columns: minmax(0, 1fr) fit-content(65%);
 }
 
 .card__content {
@@ -5828,8 +5891,12 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     display: contents;
   }
 
+  /* Tags and badges each get a full-width row: side by side, the auto-width badge column
+     squeezed the tags column until tag names broke one character per line. */
   .card__tags-list {
-    grid-column: 1;
+    display: flex;
+    gap: 6px;
+    grid-column: 1 / -1;
     grid-row: 2;
     align-self: end;
     flex-wrap: wrap-reverse;
@@ -5844,10 +5911,24 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   }
 
   .card__badges {
-    grid-column: 2;
-    grid-row: 2;
-    justify-self: end;
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: start;
+    justify-content: flex-start;
     align-self: end;
+    flex-wrap: wrap;
+    min-width: 0;
+    margin-top: 6px;
+  }
+
+  /* :empty never matches here: the template leaves whitespace text inside the
+     spans. :has(> *) hides containers with no actual element children. */
+  .card__badges:not(:has(> *)) {
+    display: none;
+  }
+
+  .card__tags-list:not(:has(> *)) {
+    display: none;
   }
 }
 

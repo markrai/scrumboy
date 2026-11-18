@@ -16,6 +16,8 @@
     "test:landing-layout": "playwright test --config=playwright.config.ts scripts/landing-mobile-mascot.playwright.ts",
     "test:cards-per-lane": "playwright test --config=playwright.config.ts scripts/cards-per-lane.playwright.ts",
     "test:tag-contrast": "playwright test --config=playwright.config.ts scripts/tag-text-color.playwright.ts",
+    "test:card-footer": "playwright test --config=playwright.config.ts scripts/card-footer-tags-badges.playwright.ts",
+    "test:wall-pins": "playwright test --config=playwright.config.ts scripts/wall-story-pin-footer.playwright.ts",
     "test:mermaid-browser": "playwright test --config=playwright.config.ts scripts/mermaid-vendor.playwright.ts",
     "test:inline-images": "playwright test --config=playwright.config.ts scripts/inline-images.playwright.ts",
     "test:drawing": "playwright test --config=playwright.config.ts scripts/drawing.playwright.ts",
@@ -25,7 +27,8 @@
     "verify:capacitor-web": "node scripts/verify-capacitor-web.mjs",
     "build": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run generate:landing && tsc && npm run copy:i18n",
     "test": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run verify:landing && node scripts/run-vitest.mjs run",
-    "lint:delete-confirms": "node scripts/check-delete-confirms.mjs"
+    "lint:delete-confirms": "node scripts/check-delete-confirms.mjs",
+    "test:select-icon": "playwright test --config=playwright.config.ts scripts/board-select-icon.playwright.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

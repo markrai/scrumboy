@@ -40,7 +40,9 @@ export function setSelectMode(on) {
     document.querySelector(".board")?.classList.toggle("board--select-mode", on);
     const toggle = document.getElementById("boardSelectToggle");
     if (toggle) {
-        toggle.textContent = on ? t("board.select.done") : t("board.select.toggle");
+        const label = toggle.querySelector(".board-select-toggle__label");
+        if (label)
+            label.textContent = on ? t("board.select.done") : t("board.select.toggle");
         toggle.setAttribute("aria-pressed", on ? "true" : "false");
     }
     updateBulkEditBar();
@@ -279,6 +281,12 @@ export function ensureBulkEditUi(opts) {
         else
             setSelectMode(true);
     });
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+        window.matchMedia("(min-width: 621px)").addEventListener("change", (e) => {
+            if (e.matches && selectMode)
+                setSelectMode(false);
+        });
+    }
     document.addEventListener("keydown", (e) => {
         if (!document.querySelector('.board:not([data-public-board])') || getCurrentRole?.() === "viewer")
             return;
