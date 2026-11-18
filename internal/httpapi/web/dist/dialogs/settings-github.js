@@ -183,7 +183,7 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
             const controls = document.createElement('div');
             controls.className = 'github-integration__account-actions';
             if (discoverable) {
-                const button = action(controls, connection ? 'Sync repositories' : 'Connect and sync', () => {
+                const button = action(controls, connection ? 'Refresh repositories' : 'Connect and sync', () => {
                     button.disabled = true;
                     button.setAttribute('aria-busy', 'true');
                     void mutate(() => apiFetch(base + '/installations/' + installationId + '/sync', { method: 'POST', signal })).finally(() => {
@@ -193,26 +193,22 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
                         }
                     });
                 });
-                button.classList.add('github-integration__primary');
+                button.classList.add(connection ? 'github-integration__refresh-repos' : 'github-integration__primary');
+                button.title = connection ? 'Refresh access after changing GitHub App repositories' : 'Connect and import repository references';
             }
             if (connection) {
-                const more = document.createElement('details');
-                more.className = 'github-integration__more';
-                const summary = textNode(more, 'summary', 'More');
-                summary.setAttribute('aria-label', 'More actions for ' + String(account || 'GitHub account'));
-                const menu = document.createElement('div');
-                menu.className = 'github-integration__menu';
-                const disconnect = action(menu, 'Disconnect', () => {
-                    more.open = false;
+                const disconnect = action(controls, 'Disconnect', () => {
                     void (async () => {
-                        const confirmed = await showConfirmDialog('Disconnecting removes all linked GitHub resource references from Scrumboy. It does not uninstall the GitHub App.', 'Disconnect GitHub App', 'Disconnect');
-                        if (confirmed)
-                            await mutate(() => apiFetch(base + '/connections/' + connection.id, { method: 'DELETE', signal }));
+                        const confirmed = await showConfirmDialog(
+                            'Disconnecting removes all linked GitHub resource references from Scrumboy. It does not uninstall the GitHub App.',
+                            'Disconnect GitHub App',
+                            'Disconnect'
+                        );
+                        if (confirmed) await mutate(() => apiFetch(base + '/connections/' + connection.id, { method: 'DELETE', signal }));
                     })();
                 });
                 disconnect.classList.add('github-integration__disconnect');
-                more.append(menu);
-                controls.append(more);
+                disconnect.setAttribute('aria-label', 'Disconnect ' + String(account || 'GitHub account'));
             }
             row.append(controls);
             list.append(row);
@@ -246,97 +242,161 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
         panel.append(note);
         if (!connections.length)
             return;
+
         const section = document.createElement('section');
         section.className = 'github-integration__project';
         root.append(section);
-        textNode(section, 'h4', 'Associate repositories with a project');
-        textNode(section, 'p', 'Choose a project you maintain. Repository associations are separate from card references.');
-        const slugInput = document.createElement('input');
-        slugInput.className = 'input';
-        slugInput.placeholder = 'Project slug';
-        slugInput.setAttribute('aria-label', 'Project slug');
-        slugInput.value = initialSlug ?? '';
-        section.append(slugInput);
-        const select = document.createElement('select');
-        select.className = 'select';
-        select.setAttribute('aria-label', 'GitHub account');
+        textNode(section, 'h4', 'Project repositories');
+        textNode(section, 'p', 'Select a Scrumboy project to make GitHub repositories available as references on its cards.');
+        const fields = document.createElement('div');
+        fields.className = 'github-integration__project-fields';
+        section.append(fields);
+        const projectField = document.createElement('div');
+        projectField.className = 'github-integration__field';
+        textNode(projectField, 'label', 'Scrumboy project').setAttribute('for', 'githubProjectPicker');
+        const projectSelect = document.createElement('select');
+        projectSelect.id = 'githubProjectPicker';
+        projectSelect.className = 'select';
+        projectSelect.setAttribute('aria-label', 'Scrumboy project');
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select a project…';
+        projectSelect.append(placeholder);
+        projectField.append(projectSelect);
+        fields.append(projectField);
+        const accountField = document.createElement('div');
+        accountField.className = 'github-integration__field';
+        fields.append(accountField);
+        const accountSelect = document.createElement('select');
+        accountSelect.className = 'select';
+        accountSelect.setAttribute('aria-label', 'GitHub account');
         for (const connection of connections) {
-            const opt = document.createElement('option');
-            opt.value = String(connection.id);
-            opt.textContent = connection.account;
-            select.append(opt);
+            const option = document.createElement('option');
+            option.value = String(connection.id);
+            option.textContent = String(connection.account);
+            accountSelect.append(option);
         }
-        section.append(select);
+        if (connections.length === 1) {
+            textNode(accountField, 'span', 'GitHub account').className = 'github-integration__field-label';
+            textNode(accountField, 'strong', String(connections[0].account)).className = 'github-integration__account-context';
+        } else {
+            textNode(accountField, 'label', 'GitHub account').setAttribute('for', 'githubAccountPicker');
+            accountSelect.id = 'githubAccountPicker';
+            accountField.append(accountSelect);
+        }
         const projectBody = document.createElement('div');
+        projectBody.className = 'github-integration__project-body';
+        projectBody.setAttribute('aria-live', 'polite');
         section.append(projectBody);
         let sequence = 0;
         async function loadProject() {
             const stamp = ++sequence;
-            const slug = slugInput.value.trim();
-            const id = Number(select.value);
+            const slug = projectSelect.value;
+            const accountId = Number(accountSelect.value);
             projectBody.replaceChildren();
-            if (!slug || !id)
+            if (!slug || !accountId) {
+                textNode(projectBody, 'p', 'Select a project to manage its GitHub repositories.').className = 'github-integration__hint';
                 return;
+            }
+            textNode(projectBody, 'p', 'Loading repositories…').className = 'github-integration__hint';
             try {
-                const [resources, associated] = await Promise.all([
-                    apiFetch(base + '/connections/' + id + '/resources', { signal }),
+                const [available, linked] = await Promise.all([
+                    apiFetch(base + '/connections/' + accountId + '/resources', { signal }),
                     apiFetch('/api/board/' + encodeURIComponent(slug) + '/integrations/resources', { signal }),
                 ]);
-                if (signal.aborted || stamp !== sequence || !root.isConnected)
-                    return;
-                const connectedIDs = new Set(associated.map((item) => item.id));
-                const picker = document.createElement('select');
-                picker.className = 'select';
-                picker.setAttribute('aria-label', 'Repository');
-                for (const resource of resources) {
-                    if (connectedIDs.has(resource.id))
-                        continue;
-                    const opt = document.createElement('option');
-                    opt.value = String(resource.id);
-                    opt.textContent = resource.name;
-                    picker.append(opt);
+                if (signal.aborted || !root.isConnected || stamp !== sequence) return;
+                projectBody.replaceChildren();
+                const resources = Array.isArray(available) ? available : [];
+                const associated = Array.isArray(linked) ? linked : [];
+                const linkedIds = new Set(associated.map(resource => Number(resource.id)));
+                const choices = resources.filter(resource => !linkedIds.has(Number(resource.id)));
+                const addFields = document.createElement('div');
+                addFields.className = 'github-integration__repository-fields';
+                const repositoryField = document.createElement('div');
+                repositoryField.className = 'github-integration__field';
+                textNode(repositoryField, 'label', 'GitHub repository').setAttribute('for', 'githubRepositoryPicker');
+                const repositorySelect = document.createElement('select');
+                repositorySelect.className = 'select';
+                repositorySelect.id = 'githubRepositoryPicker';
+                repositorySelect.setAttribute('aria-label', 'GitHub repository');
+                for (const resource of choices) {
+                    const option = document.createElement('option');
+                    option.value = String(resource.id);
+                    option.textContent = String(resource.name);
+                    repositorySelect.append(option);
                 }
-                projectBody.append(picker);
-                const attach = action(projectBody, 'Add to project', () => {
-                    const resourceID = Number(picker.value);
-                    if (!resourceID)
-                        return;
+                repositorySelect.disabled = choices.length === 0;
+                repositoryField.append(repositorySelect);
+                addFields.append(repositoryField);
+                const add = action(addFields, 'Add to project', () => {
+                    const resourceId = Number(repositorySelect.value);
+                    if (!resourceId) return;
+                    add.disabled = true;
                     void mutate(async () => {
                         await apiFetch('/api/board/' + encodeURIComponent(slug) + '/integrations/resources', {
-                            method: 'POST', signal, body: JSON.stringify({ resourceId: resourceID }),
+                            method: 'POST', signal, body: JSON.stringify({ resourceId }),
                         });
                         await loadProject();
-                    }, false);
+                    }, false).finally(() => { if (add.isConnected) add.disabled = false; });
                 });
-                attach.disabled = !picker.options.length;
-                textNode(projectBody, 'h4', 'Project repositories');
-                if (!associated.length)
-                    textNode(projectBody, 'p', 'No repositories associated with this project.');
+                add.classList.add('github-integration__add-repo');
+                add.disabled = choices.length === 0;
+                projectBody.append(addFields);
+                if (!choices.length) textNode(projectBody, 'p', resources.length ? 'All available repositories are linked to this project.' : 'No repositories available. Try Refresh repositories if GitHub access has changed.').className = 'github-integration__hint';
+                const list = document.createElement('div');
+                list.className = 'github-integration__linked-list';
+                textNode(list, 'h5', 'Linked repositories');
+                if (!associated.length) textNode(list, 'p', 'No repositories linked to this project yet.').className = 'github-integration__hint';
                 for (const resource of associated) {
                     const row = document.createElement('div');
-                    row.className = 'settings-section';
-                    projectBody.append(row);
-                    textNode(row, 'span', resource.name + ' ');
-                    action(row, 'Remove from project', () => {
+                    row.className = 'github-integration__linked-row';
+                    textNode(row, 'span', String(resource.name));
+                    const remove = action(row, 'Remove', () => {
+                        remove.disabled = true;
                         void mutate(async () => {
-                            await apiFetch('/api/board/' + encodeURIComponent(slug) + '/integrations/resources/' + resource.id, {
-                                method: 'DELETE', signal,
-                            });
+                            await apiFetch('/api/board/' + encodeURIComponent(slug) + '/integrations/resources/' + resource.id, { method: 'DELETE', signal });
                             await loadProject();
-                        }, false);
+                        }, false).finally(() => { if (remove.isConnected) remove.disabled = false; });
                     });
+                    remove.classList.add('github-integration__remove-repo');
+                    list.append(row);
                 }
-            }
-            catch (error) {
-                if (!signal.aborted && stamp === sequence) {
-                    textNode(projectBody, 'p', 'This project may be unavailable or you may lack Maintainer access.');
+                projectBody.append(list);
+                textNode(projectBody, 'p', 'Linked repositories can be referenced from cards in this project.').className = 'github-integration__hint';
+            } catch (error) {
+                if (!signal.aborted && root.isConnected && stamp === sequence) {
+                    projectBody.replaceChildren();
+                    textNode(projectBody, 'p', 'Unable to load repositories. Check Maintainer access and try again.').className = 'github-integration__project-error';
                 }
             }
         }
-        select.addEventListener('change', () => { void loadProject(); });
-        action(section, 'Load project', () => { void loadProject(); });
-        if (initialSlug)
-            void loadProject();
+        projectSelect.addEventListener('change', () => { void loadProject(); });
+        accountSelect.addEventListener('change', () => { void loadProject(); });
+        try {
+            const projectsResponse = await apiFetch('/api/projects', { signal });
+            if (signal.aborted || !root.isConnected) return;
+            const projects = Array.isArray(projectsResponse) ? projectsResponse : [];
+            const eligible = projects.filter(project => project && String(project.role || '').toLowerCase() === 'maintainer' && !project.expiresAt && typeof project.slug === 'string' && project.slug);
+            eligible.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+            for (const project of eligible) {
+                const option = document.createElement('option');
+                option.value = project.slug;
+                option.textContent = String(project.name);
+                projectSelect.append(option);
+            }
+            if (!eligible.length) {
+                projectSelect.disabled = true;
+                textNode(projectBody, 'p', 'No projects you maintain are available. Create a Scrumboy project or ask for Maintainer access.').className = 'github-integration__hint';
+                return;
+            }
+            if (initialSlug && eligible.some(project => project.slug === initialSlug)) projectSelect.value = initialSlug;
+            await loadProject();
+        } catch (error) {
+            if (!signal.aborted && root.isConnected) {
+                projectBody.replaceChildren();
+                textNode(projectBody, 'p', 'Could not load projects. Reopen Settings to try again.').className = 'github-integration__project-error';
+            }
+        }
     }
     async function mutate(task, reloadAll = true) {
         try {

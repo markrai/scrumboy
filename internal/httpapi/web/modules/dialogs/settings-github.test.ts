@@ -64,7 +64,7 @@ describe('GitHub admin settings tab', () => {
         expect(el.querySelector('img[src="x"]')).toBeNull();
         const connect = Array.from(el.querySelectorAll('button')).find(button => button.textContent === 'Connect and sync');
         connect?.click();
-        await vi.waitFor(() => expect(Array.from(el.querySelectorAll('button')).some(button => button.textContent === 'Sync repositories')).toBe(true));
+        await vi.waitFor(() => expect(Array.from(el.querySelectorAll('button')).some(button => button.textContent === 'Refresh repositories')).toBe(true));
         expect(requests).toHaveBeenCalledWith('/api/admin/integrations/github/installations/25/sync', expect.objectContaining({ method: 'POST' }));
         expect(el.querySelector('img[src="x"]')).toBeNull();
         controller.abort();
@@ -157,8 +157,9 @@ describe('GitHub integration management layout', () => {
         expect(el.querySelector('.github-integration__logo--black')?.getAttribute('src')).toBe('/assets/github/GitHub_Invertocat_Black.svg');
         expect(el.querySelector('.github-integration__account')?.textContent).toContain('Connected');
         expect(el.textContent).not.toContain('Connected accounts');
-        expect(el.querySelector('.github-integration__more summary')).not.toBeNull();
-        expect(el.querySelector<HTMLInputElement>('input[aria-label="Project slug"]')).not.toBeNull();
+        expect(el.querySelector('.github-integration__disconnect')).not.toBeNull();
+        expect(el.querySelector('.github-integration__more')).toBeNull();
+        expect(el.querySelector('input[aria-label="Project slug"]')).toBeNull();
         controller.abort();
     });
 
@@ -192,6 +193,104 @@ describe('GitHub integration management layout', () => {
         expect(el.querySelector('.github-integration__account')?.textContent).toContain('old-account');
         expect(el.querySelector('.github-integration__primary')).toBeNull();
         expect(el.querySelector('.github-integration__disconnect')).not.toBeNull();
+        controller.abort();
+    });
+});
+
+describe('GitHub project picker flow', () => {
+    beforeEach(() => {
+        document.body.replaceChildren();
+        requests.mockReset();
+        toast.mockReset();
+        confirm.mockReset().mockResolvedValue(true);
+    });
+    afterEach(() => { document.body.replaceChildren(); });
+
+    it('lists maintainable projects by name, selects the current project and loads repositories', async () => {
+        requests.mockImplementation(async (path: string) => {
+            if (path === '/api/admin/integrations/github') return { configured: true, connections: [{ id: 7, installationId: '25', account: 'markrai', status: 'active' }] };
+            if (path.endsWith('/installations')) return [{ id: 25, account: 'markrai', kind: 'User' }];
+            if (path === '/api/projects') return [
+                { name: 'Engineering', slug: 'engineering', role: 'Maintainer' },
+                { name: '<img src=x onerror=alert(1)>', slug: 'viewer', role: 'Viewer' },
+                { name: 'Temporary', slug: 'temporary', role: 'Maintainer', expiresAt: '2027-01-01' },
+                { name: 'Product', slug: 'product', role: 'maintainer' },
+            ];
+            if (path.endsWith('/connections/7/resources')) return [{ id: 40, name: 'markrai/scrumboy' }];
+            if (path.endsWith('/integrations/resources')) return [];
+            return [];
+        });
+        const el = root(), controller = new AbortController();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        bindGitHubSettingsTab(el, 'engineering', controller.signal);
+        await vi.waitFor(() => expect(el.querySelector<HTMLSelectElement>('#githubProjectPicker')?.value).toBe('engineering'));
+        const picker = el.querySelector<HTMLSelectElement>('#githubProjectPicker')!;
+        expect(Array.from(picker.options).map(option => option.textContent)).toEqual(['Select a project…', 'Engineering', 'Product']);
+        expect(el.querySelector('#githubAccountPicker')).toBeNull();
+        expect(el.querySelector('.github-integration__account-context')?.textContent).toBe('markrai');
+        await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/board/engineering/integrations/resources', expect.anything()));
+        await vi.waitFor(() => expect(el.querySelector<HTMLSelectElement>('#githubRepositoryPicker')?.value).toBe('40'));
+        expect(el.querySelector('img[src="x"]')).toBeNull();
+        picker.value = 'product';
+        picker.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/board/product/integrations/resources', expect.anything()));
+        controller.abort();
+    });
+
+    it('associates a repository with the selected project through existing authorized API', async () => {
+        let added = false;
+        requests.mockImplementation(async (path: string, init?: RequestInit) => {
+            if (path === '/api/admin/integrations/github') return { configured: true, connections: [{ id: 7, installationId: '25', account: 'markrai', status: 'active' }] };
+            if (path.endsWith('/installations')) return [{ id: 25, account: 'markrai', kind: 'User' }];
+            if (path === '/api/projects') return [{ name: 'Engineering', slug: 'engineering', role: 'Maintainer' }];
+            if (path.endsWith('/connections/7/resources')) return [{ id: 40, name: 'markrai/scrumboy' }];
+            if (path === '/api/board/engineering/integrations/resources' && init?.method === 'POST') { added = true; return {}; }
+            if (path === '/api/board/engineering/integrations/resources') return added ? [{ id: 40, name: 'markrai/scrumboy' }] : [];
+            return [];
+        });
+        const el = root(), controller = new AbortController();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        bindGitHubSettingsTab(el, 'engineering', controller.signal);
+        await vi.waitFor(() => expect(el.querySelector<HTMLButtonElement>('.github-integration__add-repo')?.disabled).toBe(false));
+        el.querySelector<HTMLButtonElement>('.github-integration__add-repo')!.click();
+        await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/board/engineering/integrations/resources', expect.objectContaining({ method: 'POST', body: JSON.stringify({ resourceId: 40 }) })));
+        await vi.waitFor(() => expect(el.querySelector('.github-integration__linked-row')?.textContent).toContain('markrai/scrumboy'));
+        controller.abort();
+    });
+
+    it('shows GitHub account selector only when multiple accounts are connected', async () => {
+        requests.mockImplementation(async (path: string) => {
+            if (path === '/api/admin/integrations/github') return { configured: true, connections: [{ id: 7, installationId: '25', account: 'markrai', status: 'active' }, { id: 8, installationId: '26', account: 'team', status: 'active' }] };
+            if (path.endsWith('/installations')) return [];
+            if (path === '/api/projects') return [{ name: 'Engineering', slug: 'engineering', role: 'Maintainer' }];
+            if (path.endsWith('/connections/8/resources')) return [{ id: 41, name: 'team/repo' }];
+            if (path.endsWith('/connections/7/resources') || path.endsWith('/integrations/resources')) return [];
+            return [];
+        });
+        const el = root(), controller = new AbortController();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        bindGitHubSettingsTab(el, 'engineering', controller.signal);
+        await vi.waitFor(() => expect(el.querySelector<HTMLSelectElement>('#githubAccountPicker')).not.toBeNull());
+        const account = el.querySelector<HTMLSelectElement>('#githubAccountPicker')!;
+        expect(account.options.length).toBe(2);
+        account.value = '8';
+        account.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/admin/integrations/github/connections/8/resources', expect.anything()));
+        controller.abort();
+    });
+
+    it('explains when no maintainable projects exist', async () => {
+        requests.mockImplementation(async (path: string) => {
+            if (path === '/api/admin/integrations/github') return { configured: true, connections: [{ id: 7, installationId: '25', account: 'markrai', status: 'active' }] };
+            if (path.endsWith('/installations')) return [];
+            if (path === '/api/projects') return [{ name: 'Viewer', slug: 'viewer', role: 'Viewer' }];
+            return [];
+        });
+        const el = root(), controller = new AbortController();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        bindGitHubSettingsTab(el, null, controller.signal);
+        await vi.waitFor(() => expect(el.textContent).toContain('No projects you maintain are available'));
+        expect(el.querySelector<HTMLSelectElement>('#githubProjectPicker')?.disabled).toBe(true);
         controller.abort();
     });
 });

@@ -8312,6 +8312,7 @@ button.omni-tag-pill:focus-visible {
 }
 
 .github-integration__project {
+  container-type: inline-size;
   margin-top: 18px;
   padding-top: 15px;
   border-top: 1px solid var(--border);
@@ -8320,41 +8321,127 @@ button.omni-tag-pill:focus-visible {
 
 .github-integration__project h4 {
   margin: 0 0 8px;
+  font-size: var(--fs-15);
 }
 
 .github-integration__project > p {
-  margin: 0 0 12px;
-  font-size: var(--fs-13);
+  margin: 0 0 14px;
   color: var(--muted);
+  font-size: var(--fs-13);
+  line-height: 1.45;
 }
 
-.github-integration__project > .input,
-.github-integration__project > .select {
-  width: min(100%, 220px);
-  max-width: 100%;
-  margin-right: 8px;
-  margin-bottom: 10px;
-}
-
-.github-integration__project .settings-section {
+.github-integration__project-fields,
+.github-integration__repository-fields {
   display: flex;
+  align-items: end;
   flex-wrap: wrap;
+  gap: 12px;
+}
+
+.github-integration__field {
+  display: flex;
+  flex: 1 1 205px;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+}
+
+.github-integration__field label,
+.github-integration__field-label {
+  color: var(--muted);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+
+.github-integration__field .select {
+  width: 100%;
+  max-width: 100%;
+  min-height: 40px;
+}
+
+.github-integration__account-context {
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 9px 0;
-  margin: 0;
-  border-bottom: 1px solid var(--border);
+  min-height: 40px;
+  font-size: var(--fs-13);
   overflow-wrap: anywhere;
 }
 
-.github-integration__project .settings-section .btn {
+.github-integration__project-body {
+  min-width: 0;
+  padding-top: 14px;
+}
+
+.github-integration__repository-fields {
+  margin-bottom: 12px;
+}
+
+.github-integration__add-repo {
+  min-height: 40px;
   flex: 0 0 auto;
+}
+
+.github-integration__linked-list {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.github-integration__linked-list h5 {
+  margin: 0 0 10px;
+  font-size: var(--fs-13);
+}
+
+.github-integration__linked-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-13);
+  overflow-wrap: anywhere;
+}
+
+.github-integration__hint,
+.github-integration__project-error {
+  margin: 0 0 10px;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.github-integration__project-error {
+  color: var(--danger);
+}
+
+.github-integration__refresh-repos {
+  font-size: var(--fs-12);
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.github-integration__disconnect,
+.github-integration__remove-repo {
+  font-size: var(--fs-12);
+  background: transparent;
+  color: var(--muted);
+  border-color: transparent;
+}
+
+.github-integration__disconnect:hover,
+.github-integration__remove-repo:hover {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
 }
 
 .github-integration__refresh:focus-visible,
 .github-integration__link:focus-visible,
-.github-integration__more summary:focus-visible,
+.github-integration__disconnect:focus-visible,
+.github-integration__refresh-repos:focus-visible,
+.github-integration__remove-repo:focus-visible,
 .github-integration__note a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -8372,15 +8459,27 @@ button.omni-tag-pill:focus-visible {
     padding-left: 51px;
   }
 
-  .github-integration__primary {
+  .github-integration__primary,
+  .github-integration__refresh-repos {
     min-height: 40px;
   }
+}
 
-  .github-integration__project > .input,
-  .github-integration__project > .select {
-    display: block;
+@container (max-width: 440px) {
+  .github-integration__project-fields,
+  .github-integration__repository-fields {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .github-integration__field {
+    flex: 0 0 auto;
     width: 100%;
-    margin-right: 0;
+  }
+
+  .github-integration__add-repo {
+    width: 100%;
   }
 }
 
@@ -8403,7 +8502,7 @@ button.omni-tag-pill:focus-visible {
   }
 
   .github-integration__account-actions > .btn {
-    flex: 1;
+    flex: 1 1 auto;
   }
 }
 
