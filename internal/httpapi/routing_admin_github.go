@@ -47,6 +47,16 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		return
 	}
 	rest=rest[1:]
+	if len(rest)==1 && rest[0]=="webhooks" && r.Method==http.MethodGet {
+		if s.githubWebhook==nil || s.mode!="full" {
+			writeJSON(w,http.StatusOK,map[string]any{"configured":false})
+			return
+		}
+		counts,err:=s.githubWebhook.Summary(s.requestContext(r))
+		if err!=nil {writeInternal(w,err);return}
+		writeJSON(w,http.StatusOK,map[string]any{"configured":true,"counts":counts})
+		return
+	}
 	if len(rest)==0 && r.Method==http.MethodGet {
 		installed,err:=s.store.ListIntegrationConnections(s.requestContext(r),actorID)
 		if err!=nil {writeStoreErr(w,err,false);return}

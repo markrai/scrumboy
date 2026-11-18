@@ -47,6 +47,7 @@ type Config struct {
 	GitHubAppID string
 	GitHubAppPrivateKeyFile string
 	GitHubAppSlug string
+	GitHubWebhookSecretFile string
 
 	OIDCIssuer            string // Raw issuer URL from SCRUMBOY_OIDC_ISSUER
 	OIDCIssuerCanonical   string // Normalized once: trimmed, no trailing slash
@@ -173,6 +174,7 @@ func FromEnv() Config {
 		GitHubAppID: strings.TrimSpace(os.Getenv("SCRUMBOY_GITHUB_APP_ID")),
 		GitHubAppPrivateKeyFile: strings.TrimSpace(os.Getenv("SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE")),
 		GitHubAppSlug: strings.TrimSpace(os.Getenv("SCRUMBOY_GITHUB_APP_SLUG")),
+		GitHubWebhookSecretFile: strings.TrimSpace(os.Getenv("SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE")),
 		OIDCIssuer:              strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
 		OIDCIssuerCanonical:     normalizeIssuer(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
 		OIDCClientID:            strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_CLIENT_ID")),

@@ -25,6 +25,7 @@ import (
 	"scrumboy/internal/httpapi"
 	"scrumboy/internal/integration"
 	"scrumboy/internal/integration/githubapp"
+	"scrumboy/internal/integration/githubwebhook"
 	"scrumboy/internal/mcp"
 	"scrumboy/internal/migrate"
 	"scrumboy/internal/oidc"
@@ -209,6 +210,18 @@ func main() {
 		}
 		githubProvider = client
 	}
+	var inboundGitHub *githubwebhook.Service
+	if cfg.GitHubWebhookSecretFile != "" {
+		if cfg.ScrumboyMode != "full" || githubProvider == nil {
+			logger.Fatal("GitHub webhook secret requires configured GitHub App and Full Mode")
+		}
+		secretFile,readErr:=os.ReadFile(cfg.GitHubWebhookSecretFile)
+		if readErr!=nil {logger.Fatal("cannot read GitHub webhook secret file")}
+		secret:=[]byte(strings.TrimSpace(string(secretFile)))
+		var configureErr error
+		inboundGitHub,configureErr=githubwebhook.New(secret,st,githubProvider,logger)
+		if configureErr!=nil {logger.Fatal("invalid GitHub webhook secret configuration")}
+	}
 	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicOrigin: publicOrigin, Logger: logger, AssetFiles: assetJanitor})
 	srv := httpapi.NewServer(st, httpapi.Options{
 		Logger:                logger,
@@ -224,6 +237,7 @@ func main() {
 		OIDCService:           oidcSvc,
 		GitHubProvider: githubProvider,
 		GitHubAppSlug: cfg.GitHubAppSlug,
+		GitHubWebhook: inboundGitHub,
 		VAPIDPublicKey:        cfg.VAPIDPublicKey,
 		VAPIDPrivateKey:       cfg.VAPIDPrivateKey,
 		VAPIDSubscriber:       cfg.VAPIDSubscriber,

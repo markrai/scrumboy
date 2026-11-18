@@ -36,6 +36,7 @@ import (
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
 	"scrumboy/internal/integration"
+	"scrumboy/internal/integration/githubwebhook"
 	"scrumboy/internal/mailer"
 	"scrumboy/internal/oidc"
 	"scrumboy/internal/publicorigin"
@@ -83,6 +84,7 @@ type Options struct {
 
 	GitHubProvider integration.Provider
 	GitHubAppSlug string
+	GitHubWebhook *githubwebhook.Service
 
 	OIDCService *oidc.Service // nil when OIDC is not configured
 
@@ -266,7 +268,9 @@ type Server struct {
 	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service
 	githubProvider integration.Provider
-	githubAppSlug string // nil when OIDC is not configured
+	githubAppSlug string
+	githubWebhook *githubwebhook.Service
+	githubWebhookCancel context.CancelFunc
 
 	passwordResetAdminLimiter   *ratelimit.Limiter // 10 resets/min per admin
 	passwordResetRequestLimiter *ratelimit.Limiter // 5/min per IP+email, self-service request
@@ -819,6 +823,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		oidcService:                    opts.OIDCService,
 		githubProvider: opts.GitHubProvider,
 		githubAppSlug: opts.GitHubAppSlug,
+		githubWebhook: opts.GitHubWebhook,
 		passwordResetAdminLimiter:      passwordResetAdminLimiter,
 		passwordResetRequestLimiter:    passwordResetRequestLimiter,
 		firstPasswordStartLimiter:      firstPasswordStartLimiter,
@@ -1125,6 +1130,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 	if opts.MCPHandler != nil {
 		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)
 	}
+	if mode == "full" && server.githubWebhook != nil {
+		webhookCtx, webhookCancel := context.WithCancel(context.Background())
+		server.githubWebhookCancel = webhookCancel
+		go server.githubWebhook.Run(webhookCtx)
+	}
 	return server
 }
 
@@ -1179,6 +1189,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/oauth/") {
 		s.handleOAuth(w, r)
+		return
+	}
+
+	if r.URL.Path == "/api/integrations/github/webhook" {
+		if s.mode != "full" || s.githubWebhook == nil {
+			http.NotFound(w, r)
+			return
+		}
+		s.githubWebhook.ServeHTTP(w, r)
 		return
 	}
 
@@ -1293,6 +1312,9 @@ func (s *Server) Close(ctx context.Context) {
 	if s.durableWebhookCancel != nil {
 		s.durableWebhookCancel()
 	}
+	if s.githubWebhookCancel != nil {
+		s.githubWebhookCancel()
+	}
 	if s.transactionalMailCancel != nil {
 		s.transactionalMailCancel()
 	}
@@ -1306,6 +1328,7 @@ func (s *Server) Close(ctx context.Context) {
 	}{
 		{"webhook", s.webhookDone},
 		{"durable webhook", s.durableWebhookDone},
+		{"github inbound", func() <-chan struct{} { if s.githubWebhook != nil && s.githubWebhookCancel != nil { return s.githubWebhook.Done() }; return nil }()},
 		{"transactional mail", s.transactionalMailDone},
 		{"notification mail", s.notificationMailDone},
 	} {
