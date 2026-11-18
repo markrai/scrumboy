@@ -18,4 +18,5 @@ type Provider interface {
 	Installations(context.Context) ([]Installation, error)
 	Resources(context.Context, string) ([]Resource, error)
 	Invalidate(string)
+	Revoke(context.Context,string) error
 }

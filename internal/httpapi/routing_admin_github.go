@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"context"
+	"time"
 	"strings"
 
 	"scrumboy/internal/integration"
@@ -120,7 +122,12 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		if len(rest)==2 && r.Method==http.MethodDelete {
 			if err:=s.store.DeleteGitHubInstallation(ctx,actorID,id);err!=nil{writeStoreErr(w,err,false);return}
 			installationID,_:=strconv.ParseInt(conn.ExternalAccountID,10,64)
-			s.githubProvider.Invalidate(strconv.FormatInt(installationID,10))
+			revokeCtx,cancel:=context.WithTimeout(ctx,3*time.Second)
+			revokeErr:=s.githubProvider.Revoke(revokeCtx,strconv.FormatInt(installationID,10))
+			cancel()
+			if revokeErr!=nil {
+				s.logger.Printf("warning: could not revoke cached GitHub installation token after local disconnect")
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

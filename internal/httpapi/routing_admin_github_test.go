@@ -26,7 +26,14 @@ func (f *githubFakeProvider) Resources(ctx context.Context,id int64)([]integrati
  if f.unavailable {return nil,githubapp.ErrRevoked}
  return f.resources,nil
 }
-func (f *githubFakeProvider) Invalidate(id int64){f.invalidated=id}
+func (f *githubFakeProvider) Invalidate(id string){
+	n,_:=strconv.ParseInt(id,10,64)
+	f.invalidated=n
+}
+func (f *githubFakeProvider) Revoke(ctx context.Context,id string) error {
+	f.Invalidate(id)
+	return nil
+}
 
 func TestRESTGitHubAppInstallationAdminLifecycle(t *testing.T){
  provider:=&githubFakeProvider{

@@ -76,7 +76,7 @@ Project Maintainers can `POST /api/board/{slug}/integrations/resources` with `{"
 - GitHub App private keys exist only in the operator's PEM file and the application process. GitHub App installation tokens exist only in memory, with expiry-aware refresh and cache invalidation. Tokens, PEM data and JWTs are never persisted in the integration database.
 - On GitHub denial or revocation, Scrumboy invalidates the cached token and reports the failure; it does not delete synchronized references based on an unsuccessful fetch.
 - On a **successful complete synchronization**, removed or unselected repositories disappear from the connection and their Scrumboy references are cleaned up. Repository renames retain the same stable ID.
-- Disconnecting locally deletes associated Scrumboy references, but does not uninstall the App on GitHub. To revoke GitHub-side access, uninstall the App or change its permissions in GitHub settings.
+- Disconnecting locally deletes associated Scrumboy references and attempts to revoke the installation token currently cached by the process. It does not uninstall the App on GitHub or revoke other tokens issued elsewhere. To remove GitHub-side access altogether, uninstall the App or change its permissions in GitHub settings.
 - Provider API access is deliberately fixed to GitHub's public API. GitHub Enterprise Server is not supported in M3.
 
 For provider API details see the [GitHub App REST API documentation](https://docs.github.com/en/rest/apps/apps), [installation API](https://docs.github.com/en/rest/apps/installations) and [installation-token guide](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).

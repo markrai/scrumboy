@@ -224,3 +224,18 @@ func (c *Client) Resources(ctx context.Context,rawID string) ([]integration.Reso
 	}
 	return nil,ErrIncomplete
 }
+
+func (c *Client) Revoke(ctx context.Context,rawID string) error {
+	id,err:=strconv.ParseInt(rawID,10,64)
+	if err!=nil || id<=0{return ErrRevoked}
+	c.mu.Lock()
+	cached,ok:=c.cache[id]
+	delete(c.cache,id)
+	c.mu.Unlock()
+	if !ok || !c.now().Before(cached.expires) {
+		return nil
+	}
+	err=c.request(ctx,http.MethodDelete,"/installation/token",cached.token,nil,nil)
+	if errors.Is(err,ErrRevoked) {return nil}
+	return err
+}
