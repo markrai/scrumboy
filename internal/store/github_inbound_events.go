@@ -14,6 +14,8 @@ import (
     "scrumboy/internal/integration"
 )
 
+var ErrGitHubInboundFull = errors.New("github inbound inbox is full")
+
 const githubInboundMaxOutstanding = 5000
 const githubInboundMaxAttempts = 8
 const githubInboundRetention = 30 * 24 * time.Hour
@@ -81,7 +83,7 @@ func (s *Store) AdmitGitHubInbound(ctx context.Context, event GitHubInboundEvent
     var outstanding int
     err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM integration_github_inbound_events WHERE status IN ('pending','leased')").Scan(&outstanding)
     if err != nil { return false, err }
-    if outstanding >= githubInboundMaxOutstanding { return false, ErrConflict }
+    if outstanding >= githubInboundMaxOutstanding { return false, ErrGitHubInboundFull }
 
     now := time.Now().UTC().UnixMilli()
     _, err = tx.ExecContext(ctx, `INSERT INTO integration_github_inbound_events

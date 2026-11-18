@@ -1,0 +1,220 @@
+package githubwebhook
+
+import (
+    "context"
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+    "encoding/json"
+    "errors"
+    "io"
+    "log"
+    "mime"
+    "net/http"
+    "strconv"
+    "strings"
+    "time"
+
+    "scrumboy/internal/integration"
+    "scrumboy/internal/store"
+)
+
+const maxGitHubPayload = 256 << 10
+
+type Inbox interface {
+    AdmitGitHubInbound(context.Context, store.GitHubInboundEvent) (bool,error)
+    GitHubInboundInstallationConnected(context.Context,string) (bool,error)
+    ClaimGitHubInbound(context.Context,time.Time,int,time.Duration) ([]store.GitHubInboundEvent,error)
+    SettleGitHubInbound(context.Context,int64,string,bool,string,time.Time) (bool,error)
+    GitHubInboundSummary(context.Context) (store.GitHubInboundCounts,error)
+    MaintainGitHubInbound(context.Context,time.Time) error
+    ReconcileGitHubInboundRepositories(context.Context,string,[]integration.Resource) error
+    DisableGitHubInboundInstallation(context.Context,string) error
+}
+
+type Service struct {
+    secret []byte
+    inbox Inbox
+    provider integration.Provider
+    logger *log.Logger
+    done chan struct{}
+}
+
+func New(secret []byte, inbox Inbox, provider integration.Provider, logger *log.Logger) (*Service,error) {
+    if len(secret)<32 || len(secret)>4096 || inbox==nil || provider==nil {
+        return nil,errors.New("invalid GitHub webhook configuration")
+    }
+    if logger==nil {logger=log.New(io.Discard,"",0)}
+    return &Service{secret:append([]byte(nil),secret...),inbox:inbox,provider:provider,logger:logger,done:make(chan struct{})},nil
+}
+
+func (s *Service) Done() <-chan struct{} {return s.done}
+
+func (s *Service) ServeHTTP(w http.ResponseWriter,r *http.Request) {
+    w.Header().Set("Cache-Control","no-store")
+    w.Header().Set("X-Content-Type-Options","nosniff")
+    if r.Method!=http.MethodPost {
+        w.Header().Set("Allow",http.MethodPost)
+        http.Error(w,"method not allowed",http.StatusMethodNotAllowed)
+        return
+    }
+    contentType,_,err:=mime.ParseMediaType(r.Header.Get("Content-Type"))
+    if err!=nil || contentType!="application/json" {
+        http.Error(w,"application/json required",http.StatusUnsupportedMediaType)
+        return
+    }
+    signature:=r.Header.Get("X-Hub-Signature-256")
+    if len(signature)!=71 || !strings.HasPrefix(signature,"sha256=") {
+        http.Error(w,"invalid webhook signature",http.StatusUnauthorized)
+        return
+    }
+    signatureBytes,err:=hex.DecodeString(signature[len("sha256="):])
+    if err!=nil || len(signatureBytes)!=sha256.Size {
+        http.Error(w,"invalid webhook signature",http.StatusUnauthorized)
+        return
+    }
+    r.Body=http.MaxBytesReader(w,r.Body,maxGitHubPayload)
+    payload,err:=io.ReadAll(r.Body)
+    if err!=nil {
+        var tooLarge *http.MaxBytesError
+        if errors.As(err,&tooLarge) {
+            http.Error(w,"webhook payload too large",http.StatusRequestEntityTooLarge)
+        } else {
+            http.Error(w,"invalid webhook payload",http.StatusBadRequest)
+        }
+        return
+    }
+    mac:=hmac.New(sha256.New,s.secret)
+    _,_ = mac.Write(payload)
+    if !hmac.Equal(signatureBytes,mac.Sum(nil)) {
+        http.Error(w,"invalid webhook signature",http.StatusUnauthorized)
+        return
+    }
+    var envelope struct {
+        Action string `json:"action"`
+        Installation struct {
+            ID int64 `json:"id"`
+        } `json:"installation"`
+    }
+    if err:=json.Unmarshal(payload,&envelope);err!=nil {
+        http.Error(w,"invalid webhook payload",http.StatusBadRequest)
+        return
+    }
+    eventType:=r.Header.Get("X-GitHub-Event")
+    if eventType=="ping" {
+        w.WriteHeader(http.StatusAccepted)
+        return
+    }
+    switch eventType {
+    case "installation","installation_repositories","repository":
+    default:
+        w.WriteHeader(http.StatusAccepted)
+        return
+    }
+    if envelope.Installation.ID<=0 || len(envelope.Action)==0 || len(envelope.Action)>64 {
+        http.Error(w,"missing installation or action",http.StatusBadRequest)
+        return
+    }
+    digest:=sha256.Sum256(payload)
+    event:=store.GitHubInboundEvent{
+        InstallationID:strconv.FormatInt(envelope.Installation.ID,10),
+        DeliveryID:r.Header.Get("X-GitHub-Delivery"),
+        EventType:eventType,
+        Action:envelope.Action,
+        PayloadSHA256:hex.EncodeToString(digest[:]),
+    }
+    _,err=s.inbox.AdmitGitHubInbound(r.Context(),event)
+    switch {
+    case err==nil,errors.Is(err,store.ErrNotFound):
+        w.WriteHeader(http.StatusAccepted)
+    case errors.Is(err,store.ErrGitHubInboundFull):
+        http.Error(w,"webhook inbox full",http.StatusServiceUnavailable)
+    case errors.Is(err,store.ErrConflict):
+        http.Error(w,"conflicting webhook delivery",http.StatusConflict)
+    case errors.Is(err,store.ErrValidation):
+        http.Error(w,"invalid delivery metadata",http.StatusBadRequest)
+    default:
+        s.logger.Printf("github inbound: could not admit delivery")
+        http.Error(w,"webhook temporarily unavailable",http.StatusServiceUnavailable)
+    }
+}
+
+func (s *Service) Summary(ctx context.Context) (store.GitHubInboundCounts,error) {
+    return s.inbox.GitHubInboundSummary(ctx)
+}
+
+func (s *Service) ProcessBatch(ctx context.Context) error {
+    events,err:=s.inbox.ClaimGitHubInbound(ctx,time.Now().UTC(),5,45*time.Second)
+    if err!=nil{return err}
+    for _,event:=range events {
+        if ctx.Err()!=nil{return ctx.Err()}
+        attemptCtx,cancel:=context.WithTimeout(ctx,30*time.Second)
+        err:=s.processEvent(attemptCtx,event)
+        cancel()
+        class:=""
+        if err!=nil {
+            class="provider_or_store_unavailable"
+            if errors.Is(err,store.ErrNotFound){class="installation_disconnected"}
+            if errors.Is(err,store.ErrValidation){class="invalid_provider_data"}
+        }
+        _,settleErr:=s.inbox.SettleGitHubInbound(ctx,event.ID,event.LeaseToken,err==nil,class,time.Now().UTC())
+        if settleErr!=nil {return settleErr}
+    }
+    return nil
+}
+
+func (s *Service) processEvent(ctx context.Context,event store.GitHubInboundEvent) error {
+    connected,err:=s.inbox.GitHubInboundInstallationConnected(ctx,event.InstallationID)
+    if err!=nil{return err}
+    if !connected{return nil}
+    if event.EventType=="installation" {
+        switch event.Action {
+        case "deleted","suspend":
+            err:=s.inbox.DisableGitHubInboundInstallation(ctx,event.InstallationID)
+            if errors.Is(err,store.ErrNotFound){return nil}
+            return err
+        case "unsuspend","created","new_permissions_accepted":
+            return nil
+        }
+    }
+    if event.EventType!="repository" && event.EventType!="installation_repositories" {
+        return nil
+    }
+    installations,err:=s.provider.Installations(ctx)
+    if err!=nil{return err}
+    owned:=false
+    for _,installation:=range installations {
+        if installation.ID==event.InstallationID {owned=true;break}
+    }
+    if !owned {return errors.New("github installation is no longer discoverable")}
+    resources,err:=s.provider.Resources(ctx,event.InstallationID)
+    if err!=nil{return err}
+    err=s.inbox.ReconcileGitHubInboundRepositories(ctx,event.InstallationID,resources)
+    if errors.Is(err,store.ErrNotFound){return nil}
+    return err
+}
+
+func (s *Service) Run(ctx context.Context) {
+    defer close(s.done)
+    ticker:=time.NewTicker(3*time.Second)
+    defer ticker.Stop()
+    maintenance:=time.NewTicker(time.Hour)
+    defer maintenance.Stop()
+    for {
+        select {
+        case <-ctx.Done():return
+        default:
+        }
+        if err:=s.ProcessBatch(ctx);err!=nil && ctx.Err()==nil {
+            s.logger.Printf("github inbound: processing batch failed")
+        }
+        select {
+        case <-ctx.Done():return
+        case <-ticker.C:
+        case <-maintenance.C:
+            if err:=s.inbox.MaintainGitHubInbound(ctx,time.Now().UTC());err!=nil && ctx.Err()==nil {
+                s.logger.Printf("github inbound: maintenance failed")
+            }
+        }
+    }
+}
