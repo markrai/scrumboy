@@ -15,7 +15,6 @@ function action(parent, label, run) {
     parent.append(button);
     return button;
 }
-
 function appendGitHubMark(parent) {
     const mark = document.createElement('span');
     mark.className = 'github-integration__mark';
@@ -29,7 +28,6 @@ function appendGitHubMark(parent) {
     }
     parent.append(mark);
 }
-
 export function bindGitHubSettingsTab(root, initialSlug, signal) {
     const base = '/api/admin/integrations/github';
     async function render() {
@@ -122,7 +120,6 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
             root.append(onboarding);
             return;
         }
-
         const panel = document.createElement('section');
         panel.className = 'github-integration';
         root.append(panel);
@@ -141,7 +138,6 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
         badge.className = 'github-integration__status github-integration__status--ready';
         badge.setAttribute('role', 'status');
         panel.append(header);
-
         const toolbar = document.createElement('div');
         toolbar.className = 'github-integration__toolbar';
         textNode(toolbar, 'h4', 'Installations').className = 'github-integration__section-title';
@@ -159,15 +155,14 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
         refresh.setAttribute('aria-label', 'Refresh GitHub App installations');
         toolbar.append(tools);
         panel.append(toolbar);
-
         const fetchedInstallations = await apiFetch(base + '/installations', { signal });
-        if (signal.aborted || !root.isConnected) return;
+        if (signal.aborted || !root.isConnected)
+            return;
         const installations = Array.isArray(fetchedInstallations) ? fetchedInstallations : [];
         const connections = Array.isArray(status.connections) ? status.connections : [];
         const list = document.createElement('div');
         list.className = 'github-integration__accounts';
         panel.append(list);
-
         function renderConnection(account, kind, installationId, connection, discoverable) {
             const row = document.createElement('div');
             row.className = 'github-integration__account';
@@ -210,12 +205,9 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
                 const disconnect = action(menu, 'Disconnect', () => {
                     more.open = false;
                     void (async () => {
-                        const confirmed = await showConfirmDialog(
-                            'Disconnecting removes all linked GitHub resource references from Scrumboy. It does not uninstall the GitHub App.',
-                            'Disconnect GitHub App',
-                            'Disconnect'
-                        );
-                        if (confirmed) await mutate(() => apiFetch(base + '/connections/' + connection.id, { method: 'DELETE', signal }));
+                        const confirmed = await showConfirmDialog('Disconnecting removes all linked GitHub resource references from Scrumboy. It does not uninstall the GitHub App.', 'Disconnect GitHub App', 'Disconnect');
+                        if (confirmed)
+                            await mutate(() => apiFetch(base + '/connections/' + connection.id, { method: 'DELETE', signal }));
                     })();
                 });
                 disconnect.classList.add('github-integration__disconnect');
@@ -225,7 +217,6 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
             row.append(controls);
             list.append(row);
         }
-
         if (!installations.length && !connections.length) {
             const empty = document.createElement('div');
             empty.className = 'github-integration__empty';
@@ -241,10 +232,10 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
             renderConnection(installation.account, installation.kind, installationId, connection, true);
         }
         for (const connection of connections) {
-            if (visibleInstallations.has(String(connection.installationId))) continue;
+            if (visibleInstallations.has(String(connection.installationId)))
+                continue;
             renderConnection(connection.account, '', String(connection.installationId), connection, false);
         }
-
         const note = document.createElement('div');
         note.className = 'github-integration__note';
         textNode(note, 'span', 'Sync imports repository references only. GitHub issues and card content are not changed.');
@@ -253,7 +244,8 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
         guide.setAttribute('target', '_blank');
         guide.setAttribute('rel', 'noopener noreferrer');
         panel.append(note);
-        if (!connections.length) return;
+        if (!connections.length)
+            return;
         const section = document.createElement('section');
         section.className = 'github-integration__project';
         root.append(section);
