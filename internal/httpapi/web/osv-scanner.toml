@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+reason = "Non-production exposure: picomatch 4.0.5 is transitive and dev-only (Vite, Vitest, tinyglobby). Scrumboy's production Docker image runs a Go binary, without Node.js or npm dependencies, so production HTTP requests cannot reach this vulnerable glob matcher. Developer/CI tooling can still be affected if it processes hostile glob patterns; re-evaluate on expiry or when a patched version is available."
+ignoreUntil = 2026-12-17
