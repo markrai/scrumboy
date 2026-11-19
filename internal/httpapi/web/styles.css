@@ -8611,3 +8611,11 @@ button.omni-tag-pill:focus-visible {
     display: none;
   }
 }
+
+.github-items { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.github-items__row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+.github-items__row .input, .github-items__row .select { flex: 1 1 140px; min-width: 0; }
+.github-items__item { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-6); margin: 5px 0; }
+.github-items__item a { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.github-items__item .btn { flex: 0 0 auto; }
+.github-items__state { color: var(--muted); font-size: var(--fs-12); }

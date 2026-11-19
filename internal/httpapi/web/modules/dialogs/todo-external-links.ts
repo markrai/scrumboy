@@ -1,4 +1,5 @@
 import { apiFetch } from '../api.js';
+import { initializeTodoGitHubItems, resetTodoGitHubItems } from './todo-github-items.js';
 import { recordLocalMutation } from '../realtime/guard.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
 import { showToast } from '../utils.js';
@@ -117,9 +118,11 @@ export async function initializeTodoExternalLinks(slug: string, localId: number,
   if (!field) return;
   field.style.display = '';
   await loadExternalResources(slug, localId, !archived && getTodoFormPermissions().canEditLinks);
+  await initializeTodoGitHubItems(slug, localId, !archived && getTodoFormPermissions().canEditLinks);
 }
 
 export function resetTodoExternalLinks(): void {
+  resetTodoGitHubItems();
   ++generation;
   const field = document.getElementById('todoExternalResourcesField');
   if (field) field.style.display = 'none';
