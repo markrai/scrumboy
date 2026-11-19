@@ -46,6 +46,7 @@ type Verification struct {
     AccountID int64
     AccountLogin string
     AccountType string
+    AuthorizedRepositoryIDs []int64
 }
 
 type challenge struct {
@@ -164,10 +165,13 @@ func (s *Service) Complete(ctx context.Context, subject, state, code string, ins
     if err != nil { return result, err }
     installation, err := s.findInstallation(ctx, token, installationID)
     if err != nil { return result, err }
+    repositories, err := s.userRepositories(ctx, token, installationID)
+    if err != nil { return result, err }
     return Verification{
         Subject: subject, GitHubUserID: identity.ID, GitHubLogin: identity.Login,
         InstallationID: installation.ID, AccountID: installation.Account.ID,
         AccountLogin: installation.Account.Login, AccountType: installation.TargetType,
+        AuthorizedRepositoryIDs: repositories,
     }, nil
 }
 
