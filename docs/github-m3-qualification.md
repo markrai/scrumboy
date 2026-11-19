@@ -85,6 +85,18 @@ This is the release gate for the live GitHub App integration before automatic Gi
 
 **Status:** The core persistence/authorization service is implemented; this is **not** live M3.3.B or public user connection acceptance. See [broker modes](github-broker.md).
 
+## Scenario H: M3.3.D self-hosted transport (implemented; live acceptance pending)
+
+- [x] Self-hosted instance client with TLS 1.3, registered client certificate, verified server CA, no redirects, bounded responses and fixed read-only issue/PR/OAuth broker endpoints.
+- [x] Broker-side SQLite registry of approved client certificate fingerprints with immediate per-certificate revocation and persistent restart-safe isolation.
+- [x] Operator-only register, rotate (maximum two active certificates), revoke and atomic instance-disconnect operations. The shared GitHub App PEM and installation tokens never leave the central broker.
+- [x] Separate `-dynamic-clients` user-bound mode, with no fallback to legacy operator grants or client-identity snapshots.
+- [ ] Complete authenticated Scrumboy user/session and project authorization integration before exposing client operations to ordinary users (**M3.3.C deferred, not passed**).
+- [ ] Qualify self-hosted instance registration, private repository authorization, certificate rotation/revocation and cross-account failures against two unrelated GitHub installations.
+- [ ] Design safe self-service instance enrollment, distributed rate budgets and broker rate-limit/revocation handling before production rollout.
+
+**Status:** M3.3.D foundational code implemented, with live and public-release acceptance still pending. See [self-hosted setup](github-self-hosted.md).
+
 ## Automated tests and CI
 - `go test ./internal/integration/... ./internal/store/... ./internal/httpapi/... ./internal/mcp/... ./internal/migrate/...`
 - Frontend `npm test` in `internal/httpapi/web`, the generated-code parity check and browser checks.

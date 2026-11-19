@@ -98,6 +98,14 @@ The user-bound executable additionally requires `-github-client-id`, `-github-cl
 
 The temporary bindings expire after 24 hours because no GitHub refresh token is retained in this slice. Continuous private-repository access and automatic reauthorization require a separately reviewed token lifecycle and live revocation strategy.
 
+## M3.3.D self-hosted transport and online instance revocation
+
+An internal self-hosted-to-broker mTLS client library (`internal/integration/githubclient`) now supports fixed read-only issue/PR lookup/search and verified OAuth begin/complete/revoke operations. The broker's **user-bound** mode can select `-dynamic-clients` instead of `-client-identities`. It uses the *existing broker SQLite database* to identify registered client certificate fingerprints on every request, allowing immediate revocation without restart.
+
+An **operator-only** command, `cmd/scrumboy-connect-instances`, registers active client-auth certificates (at most two per instance), revokes one certificate, or atomically disconnects an instance and all its GitHub user bindings. It does not register arbitrary users or enable browser callbacks. See [M3.3.D self-hosted transport and instance credentials](github-self-hosted.md) for deployment constraints.
+
+The shared-App **public release remains blocked** by M3.3.C's unimplemented session-bound browser integration and the later two-tenant live qualification. No shared GitHub App PEM is deployed to user-operated servers.
+
 ## Security tests
 
 ```bash

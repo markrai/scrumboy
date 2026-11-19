@@ -36,6 +36,12 @@ Records bind **Scrumboy instance ID + local Scrumboy user ID + GitHub installati
 
 **Not yet a usable public connection flow:** The coordinator is reachable through controlled **mTLS-only** begin/complete endpoints that consume one-time GitHub OAuth state and authorization codes, but **no public browser callback, Scrumboy browser-session proof, broker-issued instance identity enrollment, automated credential refresh or end-to-end Scrumboy project integration exists**. An mTLS certificate proves the instance, **not which human is using it**. The caller's `userId` must be taken from an authenticated Scrumboy session in the next slice. An ordinary user's installation ID is never accepted as ownership evidence on its own. New user-bound databases begin with zero grants and deny all access until a verified coordinator flow provisions them. See [broker enrollment](github-broker.md).
 
+## M3.3.D progress and intentionally deferred M3.3.C acceptance
+
+**M3.3.D infrastructure is implemented:** a fixed-operation mTLS client for self-hosted instances, plus a revocable broker-managed SQLite registry of short-lived public client-certificate fingerprints. An operator can register, rotate or revoke a certificate and completely disconnect an instance without a broker restart. See [self-hosted broker access](github-self-hosted.md).
+
+**M3.3.C remains incomplete and its live testing has been deferred at maintainer request**, not passed or waived. Session-bound browser callbacks, authenticated-user identity propagation, and project-level authorization must be built and verified before public access. The new library is not yet wired to Scrumboy's authenticated routes, and the broker is not a publicly usable connection service.
+
 ## Required components before launch
 
 1. **Central App credential service.** Operate the App ID/slug, private-key rotation, GitHub installation-token minting, per-request rate limits, audit logs and revocation in a trusted Scrumboy-managed service. Keep installation tokens server-side and restrict GitHub API access to the exact authorized repository ID and read permissions. Do not embed the PEM in the Scrumboy binary, Docker image, GitHub repository or browser.
