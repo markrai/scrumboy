@@ -82,7 +82,18 @@ The user-bound identities file contains **only** the `clients` array from the op
 
 A user-bound resolve request supplies `{"userId":42,"installationId":111,"repositoryId":222,"kind":"issue","number":357}`; search uses the same `userId` and `query` instead of `number`. The broker validates the pinned mTLS instance identity, then checks the exact user/install/repo tuple against the SQLite store. User, installation, instance or individual repository revocation is enforced immediately by that store. No static operator-grant fallback is permitted.
 
-Bindings are written only by the **internal** `BindingCoordinator` after `githubconnect.Service.Complete` verifies GitHub identity and installation access and lists user-accessible repositories. It then validates and intersects metadata reported by the Scrumboy Connect App. Authentication and callback wiring to a browser session are not implemented. Merely knowing a local user ID, installation ID or repository URL cannot create a binding. This service **must not be advertised as active** or exposed for ordinary users until the subject/session verification and callback design are qualified.
+Bindings are written only by the **internal** `BindingCoordinator` after `githubconnect.Service.Complete` verifies GitHub identity and installation access and lists user-accessible repositories. The coordinator intersects them with the App's repository metadata. Merely knowing a local user ID, installation ID or repository URL cannot create a binding.
+
+For controlled operator qualification, **user-bound mode only** exposes two additional mTLS-protected endpoints:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/v1/github/connections/begin` | Body `{"userId":42}`; returns a GitHub authorization URL with one-time state and PKCE |
+| `POST` | `/v1/github/connections/complete` | Body `{"userId":42,"installationId":111,"state":"<43-character-state>","code":"<GitHub-code>"}`; validates the OAuth code and persists the verified binding |
+
+These are **not browser endpoints**. A calling Scrumboy instance must be authenticated with a pinned mTLS client certificate. The local `userId` must come from an authenticated Scrumboy session, which is **not yet wired**. They are disabled in the legacy operator-snapshot mode. The broker refuses unknown JSON fields and does not return OAuth secrets or GitHub access tokens.
+
+The user-bound executable additionally requires `-github-client-id`, `-github-client-secret-file` and `-github-redirect-uri`. The secret file must stay on the broker host, and the registered redirect URI must match the GitHub App. OAuth state is currently held only in broker memory; restart cancels unfinished connections. GitHub's **public browser callback**, secure cookie/session correlation, automatic code delivery and per-project user identity enforcement are not implemented. Do not advertise Scrumboy Connect to ordinary users until those gates are qualified.
 
 The temporary bindings expire after 24 hours because no GitHub refresh token is retained in this slice. Continuous private-repository access and automatic reauthorization require a separately reviewed token lifecycle and live revocation strategy.
 

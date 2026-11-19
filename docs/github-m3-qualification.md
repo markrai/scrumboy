@@ -76,7 +76,8 @@ This is the release gate for the live GitHub App integration before automatic Gi
 - [x] Enforce instance, local user, installation and repository identity on every lookup. Reject forged subjects, wrong providers, duplicate IDs, missing metadata and unverified calls.
 - [x] Replace removed repositories atomically, retain per-instance/user isolation, persist across process restarts, and support live user/installation/instance/repository revocation.
 - [x] Provisional 24-hour expiration and deny-by-default startup; zero user-owned grants when configured but not enrolled.
-- [ ] Implement verified Scrumboy session/authenticated-user initiation and browser-bound OAuth callback, then invoke the coordinator on the trusted broker.
+- [x] Add bounded, mTLS-only OAuth begin/complete endpoints to the user-bound broker for operator qualification, with secret-bearing code exchange only on the central broker.
+- [ ] Implement verified Scrumboy session/authenticated-user initiation and browser-bound OAuth callback; operator mTLS endpoints alone are not proof of the end user's session.
 - [ ] Wire verified self-hosted instances to the user-bound broker, enforce project membership at the instance boundary, and prevent fabricated `userId` access.
 - [ ] Qualify real GitHub installation revocation, user membership loss and reauthorization; determine secure automatic refresh behavior.
 - [ ] Complete a two-tenant end-to-end staging test before enabling any public Connect GitHub button.
