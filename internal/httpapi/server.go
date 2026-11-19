@@ -411,7 +411,8 @@ type storeAPI interface {
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 	ListProjectCustomFields(ctx context.Context, projectID int64) ([]store.CustomField, error)
 	SyncGitHubInstallation(ctx context.Context, actorID int64, installation integration.Installation, resources []integration.Resource) (store.IntegrationConnection,error)
-	DeleteGitHubInstallation(ctx context.Context,actorID,connectionID int64) error
+	GetGitHubDisconnectImpact(ctx context.Context,actorID,connectionID int64) (store.GitHubDisconnectImpact,error)
+	DeleteGitHubInstallation(ctx context.Context,actorID,connectionID int64,expected store.GitHubDisconnectImpact) error
 	ListIntegrationConnections(ctx context.Context,actorID int64) ([]store.IntegrationConnection,error)
 	ListIntegrationResources(ctx context.Context,actorID,connectionID int64) ([]store.IntegrationResource,error)
 	AttachIntegrationResource(ctx context.Context,actorID,projectID,resourceID int64) error

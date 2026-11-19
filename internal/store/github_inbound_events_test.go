@@ -49,7 +49,9 @@ func TestGitHubInboundAdmissionDedupeAndLeases(t *testing.T) {
     if err!=nil||!ok{t.Fatalf("complete %v %v",ok,err)}
     counts,err=st.GitHubInboundSummary(ctx)
     if err!=nil||counts.Completed!=1||counts.Pending!=0{t.Fatalf("completed summary %+v %v",counts,err)}
-    if err:=st.DeleteGitHubInstallation(ctx,owner.ID,connection.ID);err!=nil{t.Fatal(err)}
+    impact,err:=st.GetGitHubDisconnectImpact(ctx,owner.ID,connection.ID)
+    if err!=nil{t.Fatal(err)}
+    if err:=st.DeleteGitHubInstallation(ctx,owner.ID,connection.ID,impact);err!=nil{t.Fatal(err)}
     if _,err:=st.AdmitGitHubInbound(ctx,GitHubInboundEvent{
         DeliveryID:"e61e607d-2a44-4d9a-8e4f-109e055cfc2d",
         InstallationID:"42",EventType:"repository",Action:"edited",
