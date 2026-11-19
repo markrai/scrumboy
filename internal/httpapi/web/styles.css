@@ -3364,6 +3364,10 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   }
 }
 
+#externalResourceControls > #addExternalResourceBtn {
+  display: inline-flex;
+}
+
 @media (max-width: 767px) {
   .tags-add-btn {
     display: inline-flex;
