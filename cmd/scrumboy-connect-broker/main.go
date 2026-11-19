@@ -10,15 +10,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+    "strings"
 	"syscall"
 	"time"
 
 	"scrumboy/internal/integration/githubapp"
 	"scrumboy/internal/integration/githubbroker"
+    "scrumboy/internal/integration/githubconnect"
 )
 
 func run() error {
 	var address, certFile, keyFile, clientCAFile, grantsFile, identitiesFile, bindingsFile, appKeyFile string
+    var clientID,clientSecretFile,redirectURI string
 	var appID int64
 	flag.StringVar(&address, "listen", "127.0.0.1:9448", "broker HTTPS listen address")
 	flag.StringVar(&certFile, "tls-cert", "", "broker TLS certificate file")
@@ -27,14 +30,19 @@ func run() error {
 	flag.StringVar(&grantsFile, "grants", "", "operator-provisioned qualification grant snapshot")
     flag.StringVar(&identitiesFile,"client-identities","","mTLS client identities without operator grants")
     flag.StringVar(&bindingsFile,"binding-db","","absolute path to durable verified ownership SQLite database")
+    flag.StringVar(&clientID,"github-client-id","","Scrumboy Connect OAuth client ID for user-bound mode")
+    flag.StringVar(&clientSecretFile,"github-client-secret-file","","server-only GitHub App OAuth client secret file")
+    flag.StringVar(&redirectURI,"github-redirect-uri","","configured GitHub App OAuth redirect URL")
 	flag.StringVar(&appKeyFile, "github-key", "", "server-only GitHub App RSA PEM file")
 	flag.Int64Var(&appID, "github-app-id", 0, "Scrumboy Connect GitHub App numeric ID")
 	flag.Parse()
 
 	if address == "" || certFile == "" || keyFile == "" || clientCAFile == "" ||
 		appKeyFile == "" || appID <= 0 || 
-        !((grantsFile!="" && identitiesFile=="" && bindingsFile=="") ||
-          (grantsFile=="" && identitiesFile!="" && bindingsFile!="")) {
+        !((grantsFile!="" && identitiesFile=="" && bindingsFile=="" &&
+             clientID=="" && clientSecretFile=="" && redirectURI=="") ||
+          (grantsFile=="" && identitiesFile!="" && bindingsFile!="" &&
+             clientID!="" && clientSecretFile!="" && redirectURI!="")) {
 		return errors.New("broker configuration incomplete")
 	}
 	serverCertificate, err := tls.LoadX509KeyPair(certFile, keyFile)
@@ -67,8 +75,20 @@ func run() error {
         defer bindings.Close()
         broker,err:=githubbroker.NewUserBound(identities,bindings,provider)
         if err!=nil{return errors.New("could not construct user-bound broker")}
+        secret,err:=os.ReadFile(clientSecretFile)
+        if err!=nil{return errors.New("cannot read GitHub OAuth client secret file")}
+        verifier,err:=githubconnect.New(githubconnect.Config{
+            AppID:appID,ClientID:clientID,ClientSecret:strings.TrimSpace(string(secret)),
+            RedirectURI:redirectURI,
+        },nil)
+        if err!=nil{return errors.New("invalid GitHub OAuth broker configuration")}
+        coordinator,err:=githubbroker.NewBindingCoordinator(verifier,provider,bindings)
+        if err!=nil{return errors.New("could not construct verified binding coordinator")}
+        if err:=broker.EnableEnrollment(coordinator);err!=nil{
+            return errors.New("could not enable internal OAuth enrollment")
+        }
         handler=broker
-        mode="user-bound (connection enrollment not yet exposed)"
+        mode="user-bound (mTLS-only OAuth enrollment; browser callback not enabled)"
     } else {
         snapshot,err:=githubbroker.LoadSnapshot(grantsFile)
         if err!=nil{return errors.New("invalid or expired broker grants")}
