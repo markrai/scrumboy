@@ -128,7 +128,8 @@ func TestGitHubInboundMetadataReconciliationIsNonDestructive(t *testing.T) {
     connected,err:=st.GitHubInboundInstallationConnected(ctx,"101")
     if err!=nil||connected{t.Fatalf("disabled installation still connected %v %v",connected,err)}
     links,err=st.ListTodoIntegrationResources(ctx,owner.ID,project.ID,card.LocalID)
-    if err!=nil||len(links)!=1{t.Fatalf("disabled installation removed references %+v %v",links,err)}
+    if err!=nil||len(links)!=1||links[0].Availability!="unavailable"{t.Fatalf("disabled installation lost unavailable references %+v %v",links,err)}
+    if err:=st.LinkTodoIntegrationResource(ctx,owner.ID,project.ID,card.LocalID,resourceID);!errors.Is(err,ErrNotFound){t.Fatalf("disabled installation allowed new card link: %v",err)}
 }
 
 func TestGitHubInboundDeadDeliveryRequeueIsAdminGated(t *testing.T) {

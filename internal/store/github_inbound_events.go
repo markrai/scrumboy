@@ -228,13 +228,21 @@ func (s *Store) ReconcileGitHubInboundRepositories(ctx context.Context, installa
 }
 
 func (s *Store) DisableGitHubInboundInstallation(ctx context.Context, installationID string) error {
-    result,err:=s.db.ExecContext(ctx,`UPDATE integration_connections SET status='disabled',updated_at=?
-        WHERE provider='github' AND external_account_id=? AND status='active'`,time.Now().UTC().UnixMilli(),installationID)
+    tx,err:=s.db.BeginTx(ctx,nil)
     if err!=nil{return err}
-    n,err:=result.RowsAffected()
+    defer tx.Rollback()
+    var connectionID int64
+    err=tx.QueryRowContext(ctx,`SELECT id FROM integration_connections
+        WHERE provider='github' AND external_account_id=? AND status='active'`,installationID).Scan(&connectionID)
+    if errors.Is(err,sql.ErrNoRows){return ErrNotFound}
     if err!=nil{return err}
-    if n==0{return ErrNotFound}
-    return nil
+    now:=time.Now().UTC().UnixMilli()
+    _,err=tx.ExecContext(ctx,`UPDATE integration_connections SET status='disabled',updated_at=? WHERE id=?`,now,connectionID)
+    if err!=nil{return err}
+    _,err=tx.ExecContext(ctx,`UPDATE integration_resources SET availability='unavailable',updated_at=?
+        WHERE connection_id=? AND availability='available'`,now,connectionID)
+    if err!=nil{return err}
+    return tx.Commit()
 }
 
 type GitHubInboundDeadDelivery struct {

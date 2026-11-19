@@ -34,7 +34,7 @@ If only the App ID, App private key and slug are configured (M3 configuration), 
 - Delivery IDs deduplicate resends; the same ID with a different body hash is rejected. Unknown or disconnected installation IDs are acknowledged but not queued. Installation ownership is checked again before reconciliation.
 - The inbox caps pending/leased records at **5,000**, processes up to **5** per poll, uses a **45-second lease**, exponential retries capped at **8 attempts** and **30 minutes**, and prunes completed/failed records after approximately **30 days**. Unfinished leases are reclaimable after expiry on restart.
 - Webhook processing obtains fresh provider data through the read-only GitHub App adapter. It can **add/update repository metadata**, but it does not delete repositories or card/project references automatically. A complete, user-triggered **Refresh repositories** marks inaccessible repositories unavailable and retains existing project/card references as documented in M3.1. Only explicit unlink/detach/disconnect operations remove those links.
-- Signed installation `deleted` or `suspend` events disable the local connection without deleting existing references. Re-enable explicitly through the GitHub App UI and a manual **Connect and sync** after restoration.
+- Signed installation `deleted` or `suspend` events atomically disable the local connection and mark its repositories unavailable without deleting existing references. Re-enable explicitly through the GitHub App UI and a manual **Connect and sync** after restoration.
 - No GitHub webhook can authorize a Scrumboy card edit, create a public-board visibility rule or trigger M5 automation. Those actions are not implemented in M4.
 
 ## Monitoring and failure handling
