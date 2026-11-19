@@ -51,6 +51,7 @@ type Broker struct {
 	auth Authenticator
 	grants Grants
     userGrants UserGrants
+    enrollment Enrollment
 	provider Provider
 	now func() time.Time
 	rate *rateLimiter
@@ -90,7 +91,8 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if r.URL.Path != "/v1/github/items/resolve" && r.URL.Path != "/v1/github/items/search" {
+    enroll:=r.URL.Path=="/v1/github/connections/begin" || r.URL.Path=="/v1/github/connections/complete"
+	if r.URL.Path != "/v1/github/items/resolve" && r.URL.Path != "/v1/github/items/search" && !enroll {
 		http.NotFound(w, r)
 		return
 	}
@@ -107,6 +109,14 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests)
 		return
 	}
+    if enroll {
+        if b.enrollment==nil {
+            http.NotFound(w,r)
+            return
+        }
+        b.handleEnrollment(w,r,instance)
+        return
+    }
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		writeError(w, http.StatusUnsupportedMediaType)
