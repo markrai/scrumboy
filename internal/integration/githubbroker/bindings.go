@@ -117,6 +117,19 @@ func (s *BindingsDB) initialize() error {
         hits INTEGER NOT NULL CHECK(hits > 0),
         PRIMARY KEY(window_start,instance_id,operation,outcome)
     );`)
+    if err!=nil{return err}
+    _,err=s.db.Exec(`CREATE TABLE IF NOT EXISTS github_broker_security_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        occurred_at INTEGER NOT NULL,
+        instance_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        user_id INTEGER NOT NULL DEFAULT 0 CHECK(user_id>=0),
+        installation_id INTEGER NOT NULL DEFAULT 0 CHECK(installation_id>=0),
+        repository_id INTEGER NOT NULL DEFAULT 0 CHECK(repository_id>=0)
+    );`)
+    if err!=nil{return err}
+    _,err=s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_github_broker_security_instance_time
+        ON github_broker_security_events(instance_id,occurred_at DESC);`)
     return err
 }
 
