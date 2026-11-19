@@ -4,6 +4,7 @@ import (
     "context"
     "sort"
     "strconv"
+    "sync"
     "strings"
 
     "scrumboy/internal/integration"
@@ -13,6 +14,7 @@ import (
 type GitHubUserVerifier interface {
     Begin(string) (string,error)
     Complete(context.Context,string,string,string,int64) (githubconnect.Verification,error)
+    Cancel(string)
 }
 
 type GitHubRepositoryReader interface {
@@ -23,6 +25,7 @@ type BindingCoordinator struct {
     verifier GitHubUserVerifier
     repositories GitHubRepositoryReader
     bindings *BindingsDB
+    locks *subjectLocks
 }
 
 type BindingSummary struct {
@@ -39,7 +42,8 @@ type BindingSummary struct {
 
 func NewBindingCoordinator(verifier GitHubUserVerifier,reader GitHubRepositoryReader,bindings *BindingsDB) (*BindingCoordinator,error) {
     if verifier==nil || reader==nil || bindings==nil || bindings.db==nil {return nil,ErrUnavailable}
-    return &BindingCoordinator{verifier:verifier,repositories:reader,bindings:bindings},nil
+    return &BindingCoordinator{verifier:verifier,repositories:reader,bindings:bindings,
+        locks:&subjectLocks{entries:make(map[string]*subjectLock)}},nil
 }
 
 func bindingSubject(instance string,userID int64) string {
@@ -54,6 +58,8 @@ func parsePositiveID(raw string)(int64,error) {
 
 func (b *BindingCoordinator) Begin(instance string,userID int64) (string,error) {
     if b==nil || !validInstance(instance) || userID<=0{return "",ErrDenied}
+    unlock:=b.locks.acquire(bindingSubject(instance,userID))
+    defer unlock()
     return b.verifier.Begin(bindingSubject(instance,userID))
 }
 
@@ -61,6 +67,8 @@ func (b *BindingCoordinator) Complete(ctx context.Context,instance string,userID
     result:=BindingSummary{}
     if b==nil || !validInstance(instance) || userID<=0 || installationID<=0 {return result,ErrDenied}
     subject:=bindingSubject(instance,userID)
+    unlock:=b.locks.acquire(subject)
+    defer unlock()
     verified,err:=b.verifier.Complete(ctx,subject,state,code,installationID)
     if err!=nil{return result,ErrDenied}
     if verified.Subject!=subject || verified.InstallationID!=installationID ||
@@ -106,4 +114,60 @@ func (b *BindingCoordinator) Complete(ctx context.Context,instance string,userID
         result.RepositoryIDs=append(result.RepositoryIDs,id)
     }
     return result,nil
+}
+
+type subjectLock struct {
+    mutex sync.Mutex
+    users int
+}
+
+type subjectLocks struct {
+    mutex sync.Mutex
+    entries map[string]*subjectLock
+}
+
+func (g *subjectLocks) acquire(subject string) func() {
+    g.mutex.Lock()
+    entry:=g.entries[subject]
+    if entry==nil {
+        entry=&subjectLock{}
+        g.entries[subject]=entry
+    }
+    entry.users++
+    g.mutex.Unlock()
+    entry.mutex.Lock()
+    return func() {
+        entry.mutex.Unlock()
+        g.mutex.Lock()
+        entry.users--
+        if entry.users==0{delete(g.entries,subject)}
+        g.mutex.Unlock()
+    }
+}
+
+func (b *BindingCoordinator) RevokeUser(ctx context.Context,instance string,userID int64) error {
+    if b==nil || !validInstance(instance) || userID<=0{return ErrDenied}
+    subject:=bindingSubject(instance,userID)
+    unlock:=b.locks.acquire(subject)
+    defer unlock()
+    b.verifier.Cancel(subject)
+    return b.bindings.RevokeUser(ctx,instance,userID)
+}
+
+func (b *BindingCoordinator) RevokeInstallation(ctx context.Context,instance string,userID,installationID int64) error {
+    if b==nil || !validInstance(instance) || userID<=0 || installationID<=0{return ErrDenied}
+    subject:=bindingSubject(instance,userID)
+    unlock:=b.locks.acquire(subject)
+    defer unlock()
+    b.verifier.Cancel(subject)
+    return b.bindings.RevokeInstallation(ctx,instance,userID,installationID)
+}
+
+func (b *BindingCoordinator) RevokeRepository(ctx context.Context,instance string,userID,installationID,repositoryID int64) error {
+    if b==nil || !validInstance(instance) || userID<=0 || installationID<=0 || repositoryID<=0{return ErrDenied}
+    subject:=bindingSubject(instance,userID)
+    unlock:=b.locks.acquire(subject)
+    defer unlock()
+    b.verifier.Cancel(subject)
+    return b.bindings.RevokeRepository(ctx,instance,userID,installationID,repositoryID)
 }
