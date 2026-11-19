@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"mime"
 	"net/http"
 	"regexp"
@@ -105,7 +106,7 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var extra any
-	if decoder.Decode(&extra) != nil || in.InstallationID <= 0 || in.RepositoryID <= 0 ||
+	if !errors.Is(decoder.Decode(&extra), io.EOF) || in.InstallationID <= 0 || in.RepositoryID <= 0 ||
 		(in.Kind != "issue" && in.Kind != "pr") {
 		writeError(w, http.StatusBadRequest)
 		return
