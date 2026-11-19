@@ -316,7 +316,7 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
             const slug = projectSelect.value;
             const accountId = Number(accountSelect.value);
             selectedProjectSlug = slug || null;
-            projectHeading.textContent = slug ? 'Project: ' + (projectSelect.selectedOptions[0]?.textContent || slug) : 'Select a project';
+            projectHeading.textContent = slug ? 'Project: ' + (Array.from(projectSelect.options).find(option => option.value === slug)?.textContent || slug) : 'Select a project';
             projectBody.replaceChildren();
             if (!slug || !accountId) {
                 textNode(projectBody, 'p', 'Select a project to manage its GitHub repositories.').className = 'github-integration__hint';
