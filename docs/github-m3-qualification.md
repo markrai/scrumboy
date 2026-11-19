@@ -57,6 +57,18 @@ This is the release gate for the live GitHub App integration before automatic Gi
 
 **Status:** Architecture decision documented only. Scenario E is not passed by the existing M3.2 automated tests or Vega's trusted-owner test installation.
 
+## Scenario F: isolated broker qualification (implemented; live acceptance pending)
+
+- [x] Separate executable requiring TLS 1.3, client CA verification and exact client certificate fingerprint pinning.
+- [x] Explicit expiring server-owned grants for installation and repository ID; no global installation listing, repository URL parameters, token export or generic GitHub API path.
+- [x] Bounded JSON, rate budgets and canonical result validation with cross-instance, cross-repository, expired-grant, provider-error and spoofed client identity tests.
+- [ ] Verify broker server and client TLS connection against test certificates on isolated infrastructure; confirm unpinned clients cannot connect.
+- [ ] Qualify a disposable installation and repository with a short-lived operator grant; verify safe success, denial, expiry and restart-driven revocation.
+- [ ] Replace the temporary operator-snapshot grant source with durable verified user-to-installation ownership and online revocation before any general release.
+- [ ] Integrate a verified identity-bound instance client; run two-tenant end-to-end tests without publishing credentials.
+
+**Status:** Code and automated tests added. No publicly usable central shared-App service, self-hosted enrollment or end-user connection flow is implemented. See [broker staging documentation](github-broker.md).
+
 ## Automated tests and CI
 - `go test ./internal/integration/... ./internal/store/... ./internal/httpapi/... ./internal/mcp/... ./internal/migrate/...`
 - Frontend `npm test` in `internal/httpapi/web`, the generated-code parity check and browser checks.

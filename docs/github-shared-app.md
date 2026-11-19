@@ -20,6 +20,14 @@ The maintainer's `markrai` installation and another account's installation are *
 
 The next code slices must add: (A) a separately deployable central service that owns Scrumboy Connect secrets and authenticates callers, (B) a trusted browser/session callback binding and durable per-instance/per-user installation ownership, (C) strictly scoped broker API operations, and (D) revocable self-hosted instance credentials. **Do not expose the App-global installation directory, accept a user-supplied installation ID as proof, or distribute App private-key material in the meantime.**
 
+## M3.3.A central broker qualification implementation
+
+An isolated mTLS-only **Scrumboy Connect broker** is now implemented in `internal/integration/githubbroker` and `cmd/scrumboy-connect-broker`. It owns the App PEM and exposes fixed read-only issue/PR resolve and search operations. Server certificates must be verified and pinned; every call requires an explicit operator-provisioned, expiring installation/repository grant. The request handler never returns GitHub credentials or accepts a caller-supplied repository name.
+
+This is **only the trusted operator test stage**, not a multi-user rollout: grants are provisioned from a file on startup, do not verify a Scrumboy user's GitHub installation ownership, and require process restart for revocation. The per-process budgets are not distributed. See [broker staging and security contract](github-broker.md) for all details.
+
+The next implementation step is durable verified account binding plus a secure instance client that authorizes individual Scrumboy project requests. Do not publish `Connect GitHub` to ordinary users yet.
+
 ## Required components before launch
 
 1. **Central App credential service.** Operate the App ID/slug, private-key rotation, GitHub installation-token minting, per-request rate limits, audit logs and revocation in a trusted Scrumboy-managed service. Keep installation tokens server-side and restrict GitHub API access to the exact authorized repository ID and read permissions. Do not embed the PEM in the Scrumboy binary, Docker image, GitHub repository or browser.
