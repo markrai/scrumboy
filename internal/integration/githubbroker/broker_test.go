@@ -206,3 +206,14 @@ func TestBrokerRequiresAllDependencies(t *testing.T) {
 		}
 	}
 }
+
+func TestLegacyBrokerRejectsInjectedUserIdentity(t *testing.T) {
+    provider:=&itemStub{}
+    broker:=testBroker(t,"instance-a",activeGrant(),provider)
+    result:=call(t,broker,http.MethodPost,"/v1/github/items/resolve",
+        `{"userId":42,"installationId":11,"repositoryId":22,"kind":"issue","number":357}`,
+        "application/json")
+    if result.Code!=http.StatusBadRequest || provider.resolveCalls!=0{
+        t.Fatalf("legacy mode accepted user identity override %d",result.Code)
+    }
+}

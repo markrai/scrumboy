@@ -117,3 +117,21 @@ func TestSnapshotMissingConfigFailsClosed(t *testing.T) {
 		t.Fatal("missing grants config accepted")
 	}
 }
+
+func TestClientIdentitiesRefuseStaticGrantFallback(t *testing.T) {
+    operator:=writeSnapshot(t,testSnapshotData())
+    if _,err:=LoadClientIdentities(operator);!errors.Is(err,ErrUnavailable){
+        t.Fatalf("operator grant snapshot accepted as identity-only: %v",err)
+    }
+    data:=testSnapshotData()
+    delete(data,"grants")
+    file:=writeSnapshot(t,data)
+    identities,err:=LoadClientIdentities(file)
+    if err!=nil{t.Fatal(err)}
+    if len(identities.clients)!=1 || len(identities.grants)!=0{
+        t.Fatalf("unscoped grant leaked into identity-only mode: %+v",identities)
+    }
+    if _,err:=LoadSnapshot(file);!errors.Is(err,ErrUnavailable){
+        t.Fatalf("identity-only snapshot accepted as operator grant: %v",err)
+    }
+}
