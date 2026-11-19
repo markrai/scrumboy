@@ -16,6 +16,8 @@ type Resource struct {
 
 type GitHubItem struct {
     ResourceID int64 `json:"resourceId,omitempty"`
+    Repository string `json:"repository,omitempty"`
+    Availability string `json:"availability,omitempty"`
     Kind string `json:"kind"`
     Number int64 `json:"number"`
     Title string `json:"title"`
