@@ -108,7 +108,7 @@ func (c *Client) call(ctx context.Context,path string,body request,output any) e
     if output==nil && resp.StatusCode==http.StatusNoContent{return nil}
     if resp.StatusCode!=http.StatusOK{return ErrUnavailable}
     data,err:=io.ReadAll(io.LimitReader(resp.Body,maxResponseBytes+1))
-    if err!=nil || len(data)>maxResponseBytes{return ErrUnavailable}
+    if err!=nil || int64(len(data))>maxResponseBytes{return ErrUnavailable}
     if output==nil || len(data)==0{return ErrUnavailable}
     if err:=json.Unmarshal(data,output);err!=nil{return ErrUnavailable}
     return nil
