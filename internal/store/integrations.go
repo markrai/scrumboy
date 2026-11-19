@@ -33,6 +33,7 @@ type IntegrationResource struct {
 	ExternalID   string
 	Name         string
 	URL          string
+	Availability string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -95,7 +96,7 @@ func scanIntegrationConnection(row interface{ Scan(...any) error }) (Integration
 func scanIntegrationResource(row interface{ Scan(...any) error }) (IntegrationResource, error) {
 	var r IntegrationResource
 	var created, updated int64
-	err := row.Scan(&r.ID, &r.ConnectionID, &r.Kind, &r.ExternalID, &r.Name, &r.URL, &created, &updated)
+	err := row.Scan(&r.ID, &r.ConnectionID, &r.Kind, &r.ExternalID, &r.Name, &r.URL, &r.Availability, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, ErrNotFound
 	}
@@ -108,7 +109,7 @@ func scanIntegrationResource(row interface{ Scan(...any) error }) (IntegrationRe
 }
 
 const integrationConnectionColumns = "id, provider, external_account_id, name, status, created_at, updated_at"
-const integrationResourceColumns = "id, connection_id, kind, external_id, name, url, created_at, updated_at"
+const integrationResourceColumns = "id, connection_id, kind, external_id, name, url, availability, created_at, updated_at"
 
 func (s *Store) CreateIntegrationConnection(ctx context.Context, actorID int64, in CreateIntegrationConnectionInput) (IntegrationConnection, error) {
 	in.Provider = strings.ToLower(strings.TrimSpace(in.Provider))
@@ -375,7 +376,7 @@ func (s *Store) AttachIntegrationResource(ctx context.Context, actorID, projectI
 		return err
 	}
 	var exists int64
-	if err := tx.QueryRowContext(ctx, "SELECT id FROM integration_resources WHERE id = ?", resourceID).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM integration_resources WHERE id = ? AND availability = 'available'", resourceID).Scan(&exists); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}

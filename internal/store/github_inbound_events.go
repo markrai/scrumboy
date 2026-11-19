@@ -218,9 +218,9 @@ func (s *Store) ReconcileGitHubInboundRepositories(ctx context.Context, installa
     if err!=nil{return err}
     now:=time.Now().UTC().UnixMilli()
     for _,resource:=range repositories {
-        _,err=tx.ExecContext(ctx,`INSERT INTO integration_resources(connection_id,kind,external_id,name,url,created_at,updated_at)
-            VALUES(?,'repository',?,?,?,?,?)
-            ON CONFLICT(connection_id,kind,external_id) DO UPDATE SET name=excluded.name,url=excluded.url,updated_at=excluded.updated_at`,
+        _,err=tx.ExecContext(ctx,`INSERT INTO integration_resources(connection_id,kind,external_id,name,url,created_at,updated_at,availability)
+            VALUES(?,'repository',?,?,?,?,?,'available')
+            ON CONFLICT(connection_id,kind,external_id) DO UPDATE SET name=excluded.name,url=excluded.url,availability='available',updated_at=excluded.updated_at`,
             connID,resource.ID,resource.Name,resource.URL,now,now)
         if err!=nil{return err}
     }

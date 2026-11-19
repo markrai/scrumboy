@@ -52,9 +52,9 @@ func (s *Store) SyncGitHubInstallation(ctx context.Context, actorID int64, insta
 		"SELECT "+integrationConnectionColumns+" FROM integration_connections WHERE provider='github' AND external_account_id=?",installationID))
 	if err!=nil{return IntegrationConnection{},err}
 	for _,resource:=range repositories {
-		_,err=tx.ExecContext(ctx,`INSERT INTO integration_resources(connection_id,kind,external_id,name,url,created_at,updated_at)
-			VALUES (?,'repository',?,?,?,?,?)
-			ON CONFLICT(connection_id,kind,external_id) DO UPDATE SET name=excluded.name,url=excluded.url,updated_at=excluded.updated_at`,
+		_,err=tx.ExecContext(ctx,`INSERT INTO integration_resources(connection_id,kind,external_id,name,url,created_at,updated_at,availability)
+			VALUES (?,'repository',?,?,?,?,?,'available')
+			ON CONFLICT(connection_id,kind,external_id) DO UPDATE SET name=excluded.name,url=excluded.url,availability='available',updated_at=excluded.updated_at`,
 			connection.ID,resource.ID,resource.Name,resource.URL,now,now)
 		if err!=nil{return IntegrationConnection{},err}
 	}
@@ -72,17 +72,49 @@ func (s *Store) SyncGitHubInstallation(ctx context.Context, actorID int64, insta
 	rows.Close()
 	if err!=nil{return IntegrationConnection{},err}
 	for _,id:=range stale {
-		if _,err:=tx.ExecContext(ctx,"DELETE FROM integration_resources WHERE id=? AND connection_id=?",id,connection.ID);err!=nil{return IntegrationConnection{},err}
+		if _,err:=tx.ExecContext(ctx,"UPDATE integration_resources SET availability='unavailable',updated_at=? WHERE id=? AND connection_id=? AND availability='available'",now,id,connection.ID);err!=nil{return IntegrationConnection{},err}
 	}
 	return connection,tx.Commit()
 }
 
-func (s *Store) DeleteGitHubInstallation(ctx context.Context,actorID,connectionID int64) error {
+type GitHubDisconnectImpact struct {
+	Repositories int64 `json:"repositories"`
+	ProjectAssociations int64 `json:"projectAssociations"`
+	CardReferences int64 `json:"cardReferences"`
+}
+
+func githubDisconnectImpactTx(ctx context.Context, tx *sql.Tx, connectionID int64) (GitHubDisconnectImpact,error) {
+	var out GitHubDisconnectImpact
+	err:=tx.QueryRowContext(ctx,`SELECT
+		(SELECT COUNT(*) FROM integration_resources WHERE connection_id=c.id),
+		(SELECT COUNT(*) FROM integration_project_resources pr JOIN integration_resources r ON r.id=pr.resource_id WHERE r.connection_id=c.id),
+		(SELECT COUNT(*) FROM integration_todo_resources tr JOIN integration_resources r ON r.id=tr.resource_id WHERE r.connection_id=c.id)
+		FROM integration_connections c WHERE c.id=? AND c.provider='github'`,connectionID).
+		Scan(&out.Repositories,&out.ProjectAssociations,&out.CardReferences)
+	if errors.Is(err,sql.ErrNoRows){return out,ErrNotFound}
+	return out,err
+}
+
+func (s *Store) GetGitHubDisconnectImpact(ctx context.Context,actorID,connectionID int64) (GitHubDisconnectImpact,error) {
+	if connectionID<=0{return GitHubDisconnectImpact{},ErrNotFound}
+	tx,err:=s.db.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
+	if err!=nil{return GitHubDisconnectImpact{},err}
+	defer tx.Rollback()
+	if err:=requireAdminTx(ctx,tx,actorID);err!=nil{return GitHubDisconnectImpact{},err}
+	impact,err:=githubDisconnectImpactTx(ctx,tx,connectionID)
+	if err!=nil{return GitHubDisconnectImpact{},err}
+	return impact,tx.Commit()
+}
+
+func (s *Store) DeleteGitHubInstallation(ctx context.Context,actorID,connectionID int64,expected GitHubDisconnectImpact) error {
 	if connectionID<=0{return ErrNotFound}
 	tx,err:=s.db.BeginTx(ctx,nil)
 	if err!=nil{return err}
 	defer tx.Rollback()
 	if err:=requireAdminTx(ctx,tx,actorID);err!=nil{return err}
+	impact,err:=githubDisconnectImpactTx(ctx,tx,connectionID)
+	if err!=nil{return err}
+	if impact!=expected{return ErrConflict}
 	result,err:=tx.ExecContext(ctx,"DELETE FROM integration_connections WHERE id=? AND provider='github'",connectionID)
 	if err!=nil{return err}
 	n,err:=result.RowsAffected()

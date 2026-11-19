@@ -13,6 +13,7 @@ type integrationResourceResponse struct {
 	ExternalID   string `json:"externalId"`
 	Name         string `json:"name"`
 	URL          string `json:"url"`
+	Availability string `json:"availability"`
 }
 
 func integrationResourcesJSON(resources []store.IntegrationResource) []integrationResourceResponse {
@@ -20,7 +21,7 @@ func integrationResourcesJSON(resources []store.IntegrationResource) []integrati
 	for _, resource := range resources {
 		out = append(out, integrationResourceResponse{
 			ID: resource.ID, ConnectionID: resource.ConnectionID, Kind: resource.Kind,
-			ExternalID: resource.ExternalID, Name: resource.Name, URL: resource.URL,
+			ExternalID: resource.ExternalID, Name: resource.Name, URL: resource.URL, Availability: resource.Availability,
 		})
 	}
 	return out

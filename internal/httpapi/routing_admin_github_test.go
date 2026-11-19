@@ -93,7 +93,16 @@ func TestRESTGitHubAppInstallationAdminLifecycle(t *testing.T){
  var links []integrationResourceResponse
  resp,body=doJSON(t,ownerClient,http.MethodGet,cardURL,nil,&links)
  if resp.StatusCode!=http.StatusOK || len(links)!=1 {t.Fatalf("failed sync removed card link: %d %s",resp.StatusCode,body)}
+ var impact store.GitHubDisconnectImpact
+ resp,body=doJSON(t,viewerClient,http.MethodGet,connPath+"/impact",nil,nil)
+ if resp.StatusCode!=http.StatusForbidden {t.Fatalf("viewer impact: %d %s",resp.StatusCode,body)}
+ resp,body=doJSON(t,ownerClient,http.MethodGet,connPath+"/impact",nil,&impact)
+ if resp.StatusCode!=http.StatusOK || impact.Repositories!=1 || impact.ProjectAssociations!=1 || impact.CardReferences!=1 {t.Fatalf("impact: %d %s %+v",resp.StatusCode,body,impact)}
  resp,body=doJSON(t,ownerClient,http.MethodDelete,connPath,nil,nil)
+ if resp.StatusCode==http.StatusNoContent {t.Fatalf("unconfirmed disconnect accepted")}
+ resp,body=doJSON(t,ownerClient,http.MethodDelete,connPath,map[string]any{"confirmConnectionId":synced.ConnectionID,"impact":store.GitHubDisconnectImpact{}},nil)
+ if resp.StatusCode!=http.StatusConflict {t.Fatalf("stale confirmation accepted: %d %s",resp.StatusCode,body)}
+ resp,body=doJSON(t,ownerClient,http.MethodDelete,connPath,map[string]any{"confirmConnectionId":synced.ConnectionID,"impact":impact},nil)
  if resp.StatusCode!=http.StatusNoContent || provider.invalidated!=987 {t.Fatalf("disconnect: %d %s invalidated %d",resp.StatusCode,body,provider.invalidated)}
  resp,body=doJSON(t,ownerClient,http.MethodGet,cardURL,nil,&links)
  if resp.StatusCode!=http.StatusOK || len(links)!=0 {t.Fatalf("disconnected resources left card links: %d %s",resp.StatusCode,body)}

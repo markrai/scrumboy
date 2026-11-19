@@ -19,7 +19,7 @@ func externalResourcesPayload(resources []store.IntegrationResource) []map[strin
 		items = append(items, map[string]any{
 			"id": r.ID, "connectionId": r.ConnectionID,
 			"kind": r.Kind, "externalId": r.ExternalID,
-			"name": r.Name, "url": r.URL,
+			"name": r.Name, "url": r.URL, "availability": r.Availability,
 		})
 	}
 	return items

@@ -142,6 +142,12 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 			}
 		}
 		if conn==nil {writeError(w,http.StatusNotFound,"NOT_FOUND","not found",nil);return}
+		if len(rest)==3 && rest[2]=="impact" && r.Method==http.MethodGet {
+			impact,err:=s.store.GetGitHubDisconnectImpact(ctx,actorID,id)
+			if err!=nil{writeStoreErr(w,err,false);return}
+			writeJSON(w,http.StatusOK,impact)
+			return
+		}
 		if len(rest)==3 && rest[2]=="resources" && r.Method==http.MethodGet {
 			resources,err:=s.store.ListIntegrationResources(ctx,actorID,id)
 			if err!=nil{writeStoreErr(w,err,false);return}
@@ -149,7 +155,16 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 			return
 		}
 		if len(rest)==2 && r.Method==http.MethodDelete {
-			if err:=s.store.DeleteGitHubInstallation(ctx,actorID,id);err!=nil{writeStoreErr(w,err,false);return}
+			var confirmation struct {
+				ConfirmConnectionID int64 `json:"confirmConnectionId"`
+				Impact store.GitHubDisconnectImpact `json:"impact"`
+			}
+			if err:=readJSON(w,r,s.maxBody,&confirmation);err!=nil{return}
+			if confirmation.ConfirmConnectionID!=id {
+				writeValidationError(w,"confirmConnectionId does not match connection","invalid_confirmation",nil)
+				return
+			}
+			if err:=s.store.DeleteGitHubInstallation(ctx,actorID,id,confirmation.Impact);err!=nil{writeStoreErr(w,err,false);return}
 			installationID,_:=strconv.ParseInt(conn.ExternalAccountID,10,64)
 			revokeCtx,cancel:=context.WithTimeout(ctx,3*time.Second)
 			revokeErr:=s.githubProvider.Revoke(revokeCtx,strconv.FormatInt(installationID,10))

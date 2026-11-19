@@ -43,7 +43,16 @@ func TestGitHubInstallSyncResourceChurnAndIsolation(t *testing.T) {
  if err!=nil || len(links)!=1{t.Fatalf("failed sync removed link %+v %v",links,err)}
  if _,err:=st.SyncGitHubInstallation(ctx,owner.ID,inst,nil);err!=nil{t.Fatal(err)}
  links,err=st.ListTodoIntegrationResources(ctx,owner.ID,project.ID,todo.LocalID)
- if err!=nil || len(links)!=0{t.Fatalf("revoked repo left link %+v %v",links,err)}
- if err:=st.DeleteGitHubInstallation(ctx,viewer.ID,conn.ID);!errors.Is(err,ErrUnauthorized){t.Fatalf("viewer deleted %v",err)}
- if err:=st.DeleteGitHubInstallation(ctx,owner.ID,conn.ID);err!=nil{t.Fatal(err)}
+ if err!=nil || len(links)!=1 || links[0].ID!=resourceID || links[0].Availability!="unavailable"{t.Fatalf("revoked repo lost link %+v %v",links,err)}
+ if err:=st.AttachIntegrationResource(ctx,owner.ID,project.ID,resourceID);!errors.Is(err,ErrNotFound){t.Fatalf("unavailable repo was attached: %v",err)}
+ if err:=st.LinkTodoIntegrationResource(ctx,owner.ID,project.ID,todo.LocalID,resourceID);!errors.Is(err,ErrNotFound){t.Fatalf("unavailable repo was linked: %v",err)}
+ restored,err:=st.SyncGitHubInstallation(ctx,owner.ID,inst,[]integration.Resource{repo})
+ if err!=nil || restored.ID!=conn.ID{t.Fatalf("restored sync %+v %v",restored,err)}
+ links,err=st.ListTodoIntegrationResources(ctx,owner.ID,project.ID,todo.LocalID)
+ if err!=nil || len(links)!=1 || links[0].ID!=resourceID || links[0].Availability!="available" {t.Fatalf("restored repo lost links %+v %v",links,err)}
+ impact,err:=st.GetGitHubDisconnectImpact(ctx,owner.ID,conn.ID)
+ if err!=nil || impact.Repositories!=1 || impact.ProjectAssociations!=1 || impact.CardReferences!=1{t.Fatalf("disconnect impact %+v %v",impact,err)}
+ if err:=st.DeleteGitHubInstallation(ctx,viewer.ID,conn.ID,impact);!errors.Is(err,ErrUnauthorized){t.Fatalf("viewer deleted %v",err)}
+ if err:=st.DeleteGitHubInstallation(ctx,owner.ID,conn.ID,GitHubDisconnectImpact{});!errors.Is(err,ErrConflict){t.Fatalf("stale impact accepted %v",err)}
+ if err:=st.DeleteGitHubInstallation(ctx,owner.ID,conn.ID,impact);err!=nil{t.Fatal(err)}
 }

@@ -46,7 +46,7 @@ func (s *Store) ListTodoIntegrationResources(ctx context.Context, actorID, proje
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT r.id, r.connection_id, r.kind, r.external_id, r.name, r.url, r.created_at, r.updated_at FROM integration_resources r JOIN integration_todo_resources tr ON tr.resource_id = r.id WHERE tr.project_id = ? AND tr.todo_id = ? ORDER BY r.id", projectID, todoID)
+	rows, err := tx.QueryContext(ctx, "SELECT r.id, r.connection_id, r.kind, r.external_id, r.name, r.url, r.availability, r.created_at, r.updated_at FROM integration_resources r JOIN integration_todo_resources tr ON tr.resource_id = r.id WHERE tr.project_id = ? AND tr.todo_id = ? ORDER BY r.id", projectID, todoID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (s *Store) LinkTodoIntegrationResource(ctx context.Context, actorID, projec
 		return err
 	}
 	var association int64
-	if err := tx.QueryRowContext(ctx, "SELECT resource_id FROM integration_project_resources WHERE project_id = ? AND resource_id = ?", projectID, resourceID).Scan(&association); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT pr.resource_id FROM integration_project_resources pr JOIN integration_resources r ON r.id=pr.resource_id AND r.availability='available' WHERE pr.project_id = ? AND pr.resource_id = ?", projectID, resourceID).Scan(&association); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
