@@ -200,3 +200,25 @@ func TestUserRepositoryAuthorizationRejectsIncompleteAndDuplicateData(t *testing
         })
     }
 }
+
+func TestCancelRevokesOnlyTheRequestedPendingOAuthSubject(t *testing.T) {
+    var calls atomic.Int64
+    service:=testService(t,func(w http.ResponseWriter,r *http.Request){
+        calls.Add(1)
+        http.Error(w,"invalid",http.StatusUnauthorized)
+    })
+    first,err:=service.Begin("instance-a:42")
+    if err!=nil{t.Fatal(err)}
+    other,err:=service.Begin("instance-a:43")
+    if err!=nil{t.Fatal(err)}
+    service.Cancel("instance-a:42")
+    if _,err:=service.Complete(context.Background(),"instance-a:42",flowState(t,first),"code",11);
+        !errors.Is(err,ErrInvalidFlow){
+        t.Fatalf("cancelled state accepted: %v",err)
+    }
+    if calls.Load()!=0{t.Fatal("cancelled OAuth state reached GitHub")}
+    if _,err:=service.Complete(context.Background(),"instance-a:43",flowState(t,other),"code",11);err==nil{
+        t.Fatal("GitHub denied test code unexpectedly succeeded")
+    }
+    if calls.Load()!=1{t.Fatal("other user state unexpectedly invalidated")}
+}

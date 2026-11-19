@@ -119,3 +119,27 @@ func TestCoordinatorDoesNotAcceptInvalidOrZeroIdentifiers(t *testing.T) {
     if v.completes!=0 || reader.calls!=0{t.Fatal("invalid request reached OAuth or GitHub")}
     if bindingSubject("instance-a",42)!="instance-a:"+strconv.FormatInt(42,10){t.Fatal("subject collision")}
 }
+
+func TestCoordinatorRevocationCancelsPendingOAuthAndPreservesOtherUsers(t *testing.T) {
+    store,_:=newTestBindings(t)
+    ctx:=context.Background()
+    for _,user:=range []int64{42,43}{
+        if err:=store.recordVerified(ctx,verifiedFixture("instance-a",user,11));err!=nil{t.Fatal(err)}
+    }
+    fixture:=verifiedFixture("instance-a",42,11)
+    vf:=&verificationStub{verification:fixture.verification}
+    reader:=&resourceStub{items:fixture.resources}
+    coordinator,err:=NewBindingCoordinator(vf,reader,store)
+    if err!=nil{t.Fatal(err)}
+    if err:=coordinator.RevokeRepository(ctx,"instance-a",42,11,22);err!=nil{t.Fatal(err)}
+    if vf.cancellations!=1{t.Fatal("OAuth state not invalidated on repo revoke")}
+    if _,err:=store.LookupUser(ctx,"instance-a",42,11,22);!errors.Is(err,ErrDenied){t.Fatal("repo not revoked")}
+    if _,err:=store.LookupUser(ctx,"instance-a",42,11,23);err!=nil{t.Fatal("other repo lost access",err)}
+    if err:=coordinator.RevokeInstallation(ctx,"instance-a",42,11);err!=nil{t.Fatal(err)}
+    if vf.cancellations!=2{t.Fatal("OAuth state not invalidated on installation revoke")}
+    if _,err:=store.LookupUser(ctx,"instance-a",42,11,23);!errors.Is(err,ErrDenied){t.Fatal("installation not revoked")}
+    if _,err:=store.LookupUser(ctx,"instance-a",43,11,22);err!=nil{t.Fatal("other user lost access",err)}
+    if err:=coordinator.RevokeUser(ctx,"instance-a",43);err!=nil{t.Fatal(err)}
+    if vf.cancellations!=3{t.Fatal("OAuth state not invalidated on user revoke")}
+    if _,err:=store.LookupUser(ctx,"instance-a",43,11,22);!errors.Is(err,ErrDenied){t.Fatal("user not revoked")}
+}

@@ -119,3 +119,33 @@ func newNoopUserGrants() UserGrants {return noopUserGrants{}}
 func (noopUserGrants) LookupUser(context.Context,string,int64,int64,int64)(Grant,error) {
     return Grant{},ErrDenied
 }
+
+func TestBoundBrokerOnlineRevocationWithNoStaticGrantFallback(t *testing.T) {
+    store,_:=newTestBindings(t)
+    ctx:=context.Background()
+    if err:=store.recordVerified(ctx,verifiedFixture("instance-a",42,11));err!=nil{t.Fatal(err)}
+    provider:=&itemStub{}
+    broker,err:=NewUserBound(identityStub{instance:"instance-a"},store,provider)
+    if err!=nil{t.Fatal(err)}
+    v:=&verificationStub{verification:verifiedFixture("instance-a",42,11).verification}
+    reader:=&resourceStub{}
+    coordinator,err:=NewBindingCoordinator(v,reader,store)
+    if err!=nil{t.Fatal(err)}
+    if err:=broker.EnableEnrollment(coordinator);err!=nil{t.Fatal(err)}
+    revoke:=func(payload string,want int) {
+        t.Helper()
+        response:=call(t,broker,http.MethodPost,"/v1/github/connections/revoke",payload,"application/json")
+        if response.Code!=want{t.Fatalf("revoke returned %d for %s",response.Code,payload)}
+    }
+    revoke(`{"userId":42,"repositoryId":22}`,http.StatusBadRequest)
+    revoke(`{"userId":42,"installationId":11,"repositoryId":22,"state":"forged"}`,http.StatusBadRequest)
+    revoke(`{"userId":42,"installationId":11,"repositoryId":22}`,http.StatusNoContent)
+    if v.cancellations!=1{t.Fatal("revoke did not cancel pending OAuth")}
+    if _,err:=store.LookupUser(ctx,"instance-a",42,11,22);!errors.Is(err,ErrDenied){t.Fatal("repository revoke failed")}
+    if _,err:=store.LookupUser(ctx,"instance-a",42,11,23);err!=nil{t.Fatal(err)}
+    revoke(`{"userId":42,"installationId":11}`,http.StatusNoContent)
+    if _,err:=store.LookupUser(ctx,"instance-a",42,11,23);!errors.Is(err,ErrDenied){t.Fatal("installation revoke failed")}
+    revoke(`{"userId":42}`,http.StatusNoContent)
+    if v.cancellations!=3{t.Fatalf("expected cancellation on each scope, got %d",v.cancellations)}
+    if provider.resolveCalls!=0 || provider.searchCalls!=0{t.Fatal("revocation reached GitHub metadata provider")}
+}
