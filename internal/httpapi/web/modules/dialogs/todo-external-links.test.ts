@@ -54,6 +54,21 @@ describe('todo external references', () => {
     expect((document.getElementById('externalResourceControls') as HTMLElement).hidden).toBe(true);
   });
 
+  it('retains unavailable links and excludes them from new-link choices', async () => {
+    const mod = await import('./todo-external-links.js');
+    api.mockImplementation(async (path: string, opts?: RequestInit) => {
+      if (opts?.method === 'POST' || opts?.method === 'DELETE') return null;
+      if (path.endsWith('/integrations/resources')) return [{ ...resource, id: 18, name: 'other', availability: 'unavailable' }];
+      if (path.endsWith('/integrations')) return [{ ...resource, availability: 'unavailable' }];
+      return [];
+    });
+    await mod.initializeTodoExternalLinks('alpha', 5, false);
+    expect(document.querySelector('#externalResourcesChips')?.textContent).toContain('Unavailable');
+    expect(document.querySelector<HTMLAnchorElement>('#externalResourcesChips a')?.href).toContain('github.com/test/repo');
+    expect((document.getElementById('externalResourceControls') as HTMLElement).hidden).toBe(true);
+    expect(document.querySelector('#externalResourcesChips button')).not.toBeNull();
+  });
+
   it('links available resources and unlinks existing references', async () => {
     const mod = await import('./todo-external-links.js');
     api.mockImplementation(async (path: string, opts?: RequestInit) => {

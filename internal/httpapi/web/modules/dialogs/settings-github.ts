@@ -210,12 +210,25 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
             if (connection) {
                 const disconnect = action(controls, 'Disconnect', () => {
                     void (async () => {
-                        const confirmed = await showConfirmDialog(
-                            'Disconnecting removes all linked GitHub resource references from Scrumboy. It does not uninstall the GitHub App.',
-                            'Disconnect GitHub App',
-                            'Disconnect'
-                        );
-                        if (confirmed) await mutate(() => apiFetch(base + '/connections/' + connection.id, { method: 'DELETE', signal }));
+                        try {
+                            const impact: any = await apiFetch(base + '/connections/' + connection.id + '/impact', { signal });
+                            if (signal.aborted || !disconnect.isConnected) return;
+                            const confirmed = await showConfirmDialog(
+                                'Disconnecting ' + String(account || 'this GitHub account') +
+                                ' permanently removes ' + impact.repositories + ' repository records, ' +
+                                impact.projectAssociations + ' project associations, and ' +
+                                impact.cardReferences + ' card references from Scrumboy. It does not uninstall the GitHub App.',
+                                'Disconnect GitHub App',
+                                'Disconnect'
+                            );
+                            if (confirmed) await mutate(() => apiFetch(base + '/connections/' + connection.id, {
+                                method: 'DELETE',
+                                signal,
+                                body: JSON.stringify({ confirmConnectionId: connection.id, impact }),
+                            }));
+                        } catch (error) {
+                            if (!signal.aborted) showToast(error instanceof Error ? error.message : 'Could not preview disconnect impact.');
+                        }
                     })();
                 });
                 disconnect.classList.add('github-integration__disconnect');
@@ -246,7 +259,7 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
 
         const note = document.createElement('div');
         note.className = 'github-integration__note';
-        textNode(note, 'span', 'Sync imports repository references only. GitHub issues and card content are not changed.');
+        textNode(note, 'span', 'Repository access changes preserve existing Scrumboy references. Unavailable repositories cannot be linked anew.');
         const guide = textNode(note, 'a', 'Setup guide');
         guide.setAttribute('href', 'https://github.com/markrai/scrumboy/blob/main/docs/github-app.md');
         guide.setAttribute('target', '_blank');
@@ -320,7 +333,8 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
                 const resources = Array.isArray(available) ? available : [];
                 const associated = Array.isArray(linked) ? linked : [];
                 const linkedIds = new Set(associated.map(resource => Number(resource.id)));
-                const choices = resources.filter(resource => !linkedIds.has(Number(resource.id)));
+                const activeResources = resources.filter(resource => resource.availability !== 'unavailable');
+                const choices = activeResources.filter(resource => !linkedIds.has(Number(resource.id)));
                 const addFields = document.createElement('div');
                 addFields.className = 'github-integration__repository-fields';
                 const repositoryField = document.createElement('div');
@@ -353,7 +367,7 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
                 add.classList.add('github-integration__add-repo');
                 add.disabled = choices.length === 0;
                 projectBody.append(addFields);
-                if (!choices.length) textNode(projectBody, 'p', resources.length ? 'All available repositories are linked to this project.' : 'No repositories available. Try Refresh repositories if GitHub access has changed.').className = 'github-integration__hint';
+                if (!choices.length) textNode(projectBody, 'p', activeResources.length ? 'All available repositories are linked to this project.' : 'No repositories available. Try Refresh repositories if GitHub access has changed.').className = 'github-integration__hint';
                 const list = document.createElement('div');
                 list.className = 'github-integration__linked-list';
                 textNode(list, 'h5', 'Linked repositories');
@@ -361,7 +375,7 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
                 for (const resource of associated) {
                     const row = document.createElement('div');
                     row.className = 'github-integration__linked-row';
-                    textNode(row, 'span', String(resource.name));
+                    textNode(row, 'span', String(resource.name) + (resource.availability === 'unavailable' ? ' (Unavailable)' : ''));
                     const remove = action(row, 'Remove', () => {
                         remove.disabled = true;
                         void mutate(async () => {

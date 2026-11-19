@@ -166,6 +166,7 @@ describe('GitHub integration management layout', () => {
     it('preserves confirmation when disconnecting an installation', async () => {
         requests.mockImplementation(async (path: string, init?: RequestInit) => {
             if (path.endsWith('/installations')) return [{ id: 25, account: 'markrai', kind: 'User' }];
+            if (path.endsWith('/impact')) return { repositories: 2, projectAssociations: 1, cardReferences: 3 };
             if (init?.method === 'DELETE') return {};
             return { configured: true, installUrl: '', connections: [{ id: 7, installationId: '25', account: 'markrai', status: 'active' }] };
         });
@@ -177,6 +178,11 @@ describe('GitHub integration management layout', () => {
         (el.querySelector('.github-integration__disconnect') as HTMLButtonElement).click();
         await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/admin/integrations/github/connections/7', expect.objectContaining({ method: 'DELETE' })));
         expect(confirm).toHaveBeenCalledTimes(1);
+        expect(confirm.mock.calls[0][0]).toContain('3 card references');
+        expect(requests).toHaveBeenCalledWith('/api/admin/integrations/github/connections/7', expect.objectContaining({
+            method: 'DELETE',
+            body: JSON.stringify({ confirmConnectionId: 7, impact: { repositories: 2, projectAssociations: 1, cardReferences: 3 } }),
+        }));
         controller.abort();
     });
 

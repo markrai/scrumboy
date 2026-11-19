@@ -24,6 +24,14 @@ function renderExternalResources(slug, localId, linked, available, editable) {
         anchor.rel = 'noopener noreferrer';
         anchor.textContent = item.name;
         chip.append(anchor);
+        if (item.availability === 'unavailable') {
+            chip.classList.add('tag-chip--unavailable');
+            const marker = document.createElement('span');
+            marker.className = 'tag-chip-unavailable';
+            marker.textContent = ' (Unavailable)';
+            marker.title = 'Repository is no longer accessible through the GitHub App';
+            chip.append(marker);
+        }
         if (editable) {
             const remove = document.createElement('button');
             remove.type = 'button';
@@ -45,7 +53,7 @@ function renderExternalResources(slug, localId, linked, available, editable) {
         container.append(chip);
     }
     picker.replaceChildren();
-    for (const item of available.filter(resource => !linkedIds.has(resource.id))) {
+    for (const item of available.filter(resource => !linkedIds.has(resource.id) && resource.availability !== 'unavailable')) {
         const option = document.createElement('option');
         option.value = String(item.id);
         option.textContent = item.name;
