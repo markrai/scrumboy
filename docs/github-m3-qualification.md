@@ -31,10 +31,23 @@ This is the release gate for the live GitHub App integration before automatic Gi
 2. Check HTTP responses, logs, backup exports and browser bundles for accidental exposure of PEM contents, JWTs, installation access tokens, or webhook credentials.
 3. Confirm anonymous or published-board routes cannot enumerate or mutate private integration resources, and instance Owner/Admin status never bypasses project membership.
 
+## Scenario D: M3.2 actionable issue/PR references
+1. In the GitHub App Settings, grant **Issues: Read-only** and **Pull requests: Read-only**. Have the installation owner approve the expanded permissions. Confirm repository-only refresh still works when these additional scopes are absent or pending.
+2. On the isolated Vega test project, verify the repository reference **Add** button is visible and functional on desktop and mobile.
+3. On a disposable Scrumboy card, paste a canonical issue URL and PR URL from an associated repository. Verify each becomes a distinct structured card reference with number, title, state and safe clickable URL.
+4. Search by title with **Issues** and **Pull requests** selected independently. Verify results come only from the selected associated repository. Link a result; repeat linking and verify no duplicates.
+5. Change a disposable issue/PR's state on GitHub, choose **Refresh** in Scrumboy and verify that cached status changes without altering card title/body or writing to GitHub. Verify unlink.
+6. Confirm Viewer sees cached metadata without Link/Search/Refresh/Remove controls, Contributor can modify only their project's card references, and an unrelated user cannot search or enumerate private issue/PR metadata.
+7. Attempt URL injection, a different GitHub hostname, a repository not attached to the project, and a repository attached to another project. None may reach the GitHub provider.
+8. Inspect request metadata in test logs/fakes: GitHub issue/PR tokens must request only read permissions and `repository_ids` restricted to the associated repository ID. Do not expose tokens, PEM contents or JWTs in logs or responses.
+9. Remove GitHub App access to the disposable repository, verify cached linked item metadata remains visible as unavailable, then restore the installation's access and test refresh. No GitHub-side or card-content mutation occurs.
+
+**Shared-App restriction:** This milestone is qualified only for trusted, instance-administrator-managed installations. Connecting different users' personal installations through a shared centrally operated GitHub App is *not* supported. User-bound GitHub installation identity verification is a separate prerequisite for such a service.
+
 ## Automated tests and CI
 - `go test ./internal/integration/... ./internal/store/... ./internal/httpapi/... ./internal/mcp/... ./internal/migrate/...`
 - Frontend `npm test` in `internal/httpapi/web`, the generated-code parity check and browser checks.
-- Migration checks on an isolated old-schema database, including retained resource availability, project/card association cascade for explicit detach/disconnect, and restore compatibility.
+- Migration checks on an isolated old-schema database, including retained resource availability, project/card association cascade for explicit detach/disconnect, M3.2 migration 094 issue/PR identity and cascade, and restore compatibility.
 - Required GitHub checks (Go, frontend, CodeQL, DCO, Gradle, GHCR) must pass on the final qualified commit.
 
 ## Acceptance record

@@ -1,11 +1,11 @@
 # GitHub App integration (M3)
 
-M3 provides an opt-in GitHub App connection and repository reference workflow in Scrumboy Full Mode. It registers GitHub repositories as external resources and lets project Maintainers associate them with durable projects, so Contributors can link cards to those repositories. It does **not** read or modify GitHub issues, accept GitHub webhooks, or synchronize card content. Those are later milestones.
+M3 provides an opt-in GitHub App connection and repository reference workflow in Scrumboy Full Mode. It registers GitHub repositories as external resources and lets project Maintainers associate them with durable projects, so Contributors can link cards to those repositories. M3.2 adds explicit, read-only GitHub issue and pull-request references and title search. It does **not** modify GitHub issues or pull requests, synchronize card content, or automatically change a Scrumboy card when GitHub state changes. Webhooks and optional automations have separate milestones.
 
 ## Create the GitHub App
 
 1. In GitHub's Developer settings, create a GitHub App owned by an account or organization you control.
-2. Grant the **Metadata: Read-only** repository permission, and no other repository, organization or account permissions for M3. Metadata read is mandatory for apps; no write scopes are required.
+2. Grant **Metadata: Read-only** for installation and repository discovery. To enable M3.2 issue/PR references and search, also grant **Issues: Read-only** and **Pull requests: Read-only**. Existing GitHub App installations must approve the expanded permissions. No write scopes, account permissions, organization permissions, or Contents scope are required.
 3. Install the App on selected repositories. For a first test, select a disposable repository. Webhooks can remain disabled until M4 provides a validated webhook receiver.
 4. Record the App ID and App slug. Generate and download the GitHub App RSA private key (a PEM file).
 
@@ -59,6 +59,33 @@ Keep the private key outside the repository and the `./data` backup export path;
 
 Repository names and links may be visible to authenticated members of your Scrumboy project independently of their GitHub access. Deliberately published Scrumboy boards do not automatically expose integration management APIs or private card-reference UI.
 
+## M3.2: GitHub issues and pull requests on cards
+
+In a durable project where an instance administrator connected the GitHub App and a Maintainer associated a repository, open an existing Scrumboy card and expand **External references**.
+
+- The existing repository selector still supports simple repository references; its **Add** button is visible on desktop and mobile.
+- Under **GitHub Issues & Pull Requests**, paste a canonical `https://github.com/OWNER/REPO/issues/123` or `https://github.com/OWNER/REPO/pull/123` URL and choose **Link URL**.
+- Alternatively, choose a repository already associated with the project, select **Issues** or **Pull requests**, enter a title query of 2–100 characters and choose **Search**. The query returns at most 20 results from that selected repository. Choose **Link** to attach a result.
+- A linked item displays its type, number, title, repository and read-only Open/Closed/Draft/Merged status. **Refresh** fetches its current metadata when GitHub access is available. **Remove** unlinks the item without modifying GitHub.
+- Only Contributors and above may link, refresh or remove items. Project Viewers may read retained metadata. Unrelated users, anonymous viewers and public boards have no private search/link APIs.
+- Failed GitHub lookups do not erase or alter existing references or cards. Repository access loss preserves last-known read-only item metadata and displays unavailable state.
+
+**Existing installations need to approve the two additional read permissions**. Scrumboy requests new short-lived tokens only when issue/PR lookup or search is used. Those tokens are minted with GitHub's `repository_ids` restricted to the exact provider repository ID associated with the selected project. The original metadata-only installation-discovery token remains separate. No issue/PR access token or private key is persisted in SQLite, the browser or a card.
+
+**Installation security and deployment model:** M3.2 supports **trusted instance-administrator-managed GitHub App connections only**. Scrumboy Owners/Admins hold the private key and choose which App installation to connect, and project Maintainers decide which repositories to expose to project members. This is **not** GitHub identity verification for individual Scrumboy users. Do not operate one centrally managed GitHub App across mutually untrusted tenants or enable self-service user installation selection until a separate user-bound authorization/installation-ownership flow has been implemented and qualified. GitHub installation access must never be confused with Scrumboy project membership.
+
+Read-only project API (normal Scrumboy authentication and mutation header required):
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/api/board/{slug}/todos/{localId}/github-items` | List cached GitHub issue/PR links |
+| POST | `/api/board/{slug}/todos/{localId}/github-items` | Link validated `{"url":"https://github.com/OWNER/REPO/issues/123"}` |
+| DELETE | `/api/board/{slug}/todos/{localId}/github-items/{resourceId}/{kind}/{number}` | Unlink a specific issue/PR |
+| POST | `/api/board/{slug}/todos/{localId}/github-items/{resourceId}/{kind}/{number}/refresh` | Explicitly refresh item metadata |
+| GET | `/api/board/{slug}/integrations/github/search?resourceId=123&kind=issue&q=title` | Search issues or PRs in one associated repository |
+
+`kind` is `issue` or `pr`. URL input cannot select arbitrary GitHub installations or external hosts. The server reauthorizes every repository and resource against the active project, and all outbound lookup tokens are restricted to one installation and one repository. Existing `integration_todo_resources` references remain compatible, while migration 094 stores structured item references separately from card title/body and preserves project/resource cascade behavior.
+
 ### Live M3 acceptance ledger
 
 | Scenario | Status | Evidence / action |
@@ -71,6 +98,8 @@ Repository names and links may be visible to authenticated members of your Scrum
 | Repository rename and removal | Automated tests exist; **live check pending** | Use disposable repository data; verify retained unavailable references on removal, stable IDs on rename and restoration on reauthorization |
 | Revoked App access, API interruption or incomplete discovery | Automated tests exist; **live check pending** | Verify failed refresh preserves existing links, then restore access |
 | Key rotation and app suspension | **Not yet live-verified** | Use a disposable App key/installation and verify safe failure and recovery |
+| M3.2 URL paste, title search, status refresh and removal | **Not yet live-verified** | Approve issue/PR permissions, link disposable objects on Vega and verify view-only roles |
+| M3.2 scoped token & installation authorization | **Automated tests added; live check pending** | Prove calls cannot access unassociated repositories or unrelated GitHub installations |
 
 Do not mark live scenarios as passed without recording an actual result. The M3 code and CI can be complete while the live acceptance gate remains open.
 
