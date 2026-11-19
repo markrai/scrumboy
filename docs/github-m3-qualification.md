@@ -21,9 +21,10 @@ This is the release gate for the live GitHub App integration before automatic Gi
 ## Scenario B: idempotency and lifecycle
 1. Refresh repositories twice without permission changes; expect no duplicate connection/resource/association.
 2. Rename a disposable GitHub repository; refresh and confirm it retains its Scrumboy resource ID.
-3. Remove that disposable repository from the GitHub App's installation permissions. Explicitly click **Refresh repositories**; confirm the resource and its card/project references are removed only after a successful complete scan.
-4. Simulate GitHub API denial, app suspension or incomplete pagination; expect a visible error and unchanged local references.
-5. Disconnect an account (only on the disposable test setup); confirm that local references are deleted and GitHub installation remains installed until removed separately on GitHub.
+3. Remove that disposable repository from the GitHub App's installation permissions. Explicitly click **Refresh repositories**; confirm its status becomes **unavailable**, its last-known URL remains visible, and all existing card/project references survive. Attempting to create a new reference must fail.
+4. Restore access to the same repository, refresh again, and confirm it becomes **available** with the same internal resource ID and existing card/project references intact.
+5. Simulate GitHub API denial, app suspension or incomplete pagination; expect a visible error and unchanged local references.
+6. Preview disconnect impact using the UI or admin impact endpoint; verify resource, project-association and card-reference counts. Reject missing/stale confirmation and non-admin requests; on a disposable setup only, confirm that a fully verified disconnect explicitly deletes local references without uninstalling the GitHub App.
 
 ## Scenario C: credentials and security
 1. Rotate a disposable App RSA private key and restart with the replacement key. Confirm authentication recovers; invalid keys prevent startup.
@@ -33,7 +34,7 @@ This is the release gate for the live GitHub App integration before automatic Gi
 ## Automated tests and CI
 - `go test ./internal/integration/... ./internal/store/... ./internal/httpapi/... ./internal/mcp/... ./internal/migrate/...`
 - Frontend `npm test` in `internal/httpapi/web`, the generated-code parity check and browser checks.
-- Migration checks on an isolated old-schema database, including project/card association cascade and restore compatibility.
+- Migration checks on an isolated old-schema database, including retained resource availability, project/card association cascade for explicit detach/disconnect, and restore compatibility.
 - Required GitHub checks (Go, frontend, CodeQL, DCO, Gradle, GHCR) must pass on the final qualified commit.
 
 ## Acceptance record

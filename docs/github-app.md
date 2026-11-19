@@ -51,7 +51,7 @@ Keep the private key outside the repository and the `./data` backup export path;
 
 1. Start Scrumboy in Full Mode, sign in as Owner/Admin, and open **Settings > GitHub**.
 2. Install the App at GitHub with only the repositories you choose. Use **Install App** and **Refresh** in Scrumboy if the installation is not listed yet.
-3. Click **Connect and sync** once. A connected account appears with **Refresh repositories** and **Disconnect** controls. Use **Refresh repositories** only when GitHub installation access or repository metadata changes. Disconnect requires confirmation and removes local references; it does not uninstall the App on GitHub.
+3. Click **Connect and sync** once. A connected account appears with **Refresh repositories** and **Disconnect** controls. Use **Refresh repositories** only when GitHub installation access or repository metadata changes. Disconnect previews the exact numbers of local repository records, project associations and card references that will be deleted, and requires explicit confirmation. If those counts change before deletion, Scrumboy rejects the request and requires a fresh preview. It does not uninstall the App on GitHub.
 4. Under **Project repositories**, choose a **Scrumboy project** by its human-readable name. Only durable projects where your current user is a **Maintainer** are shown. Opening Settings from a project automatically selects that project. You no longer need to enter a project URL slug or click **Load project**.
 5. If only one GitHub account is connected, its name is displayed without a dropdown. With multiple accounts, choose the GitHub account whose repositories you want to associate.
 6. Once a project is selected, its available repositories load automatically. Select a **GitHub repository** and click **Add to project**. This permits cards in that project to reference the repository; it does not modify GitHub.
@@ -68,7 +68,7 @@ Repository names and links may be visible to authenticated members of your Scrum
 | Project picker and repository association | **Not yet live-verified** | Select a maintained project and associate `markrai/scrumboy` |
 | Card reference link/unlink | **Not yet live-verified** | Link and unlink from a disposable Scrumboy card; verify no change to card content |
 | Role boundaries | Automated tests exist; **live check pending** | Viewer read, Contributor link/unlink, Maintainer project association |
-| Repository rename and removal | Automated tests exist; **live check pending** | Use disposable repository data; confirm stable IDs and reference cleanup for explicit manual sync |
+| Repository rename and removal | Automated tests exist; **live check pending** | Use disposable repository data; verify retained unavailable references on removal, stable IDs on rename and restoration on reauthorization |
 | Revoked App access, API interruption or incomplete discovery | Automated tests exist; **live check pending** | Verify failed refresh preserves existing links, then restore access |
 | Key rotation and app suspension | **Not yet live-verified** | Use a disposable App key/installation and verify safe failure and recovery |
 
@@ -84,15 +84,16 @@ Endpoints below require an authenticated Owner or Admin, and Scrumboy's normal `
 | GET | `/api/admin/integrations/github/installations` | Discover GitHub App installations |
 | POST | `/api/admin/integrations/github/installations/{installationId}/sync` | Verify and reconcile one installation's repositories |
 | GET | `/api/admin/integrations/github/connections/{connectionId}/resources` | List synchronized repository resources |
-| DELETE | `/api/admin/integrations/github/connections/{connectionId}` | Disconnect the local connection and its references |
+| GET | `/api/admin/integrations/github/connections/{connectionId}/impact` | Preview counts of repositories, project associations and card references |
+| DELETE | `/api/admin/integrations/github/connections/{connectionId}` | Disconnect only with JSON `{"confirmConnectionId":123,"impact":{"repositories":1,"projectAssociations":2,"cardReferences":3}}` matching the current preview |
 
 Project Maintainers can `POST /api/board/{slug}/integrations/resources` with `{"resourceId":123}`, and `DELETE /api/board/{slug}/integrations/resources/{resourceId}`, to manage project associations. See [integration architecture](architecture/integrations-foundation.md) for card API and MCP operations.
 
 ## Security and lifecycle
 
 - GitHub App private keys exist only in the operator's PEM file and the application process. GitHub App installation tokens exist only in memory, with expiry-aware refresh and cache invalidation. Tokens, PEM data and JWTs are never persisted in the integration database.
-- On GitHub denial or revocation, Scrumboy invalidates the cached token and reports the failure; it does not delete synchronized references based on an unsuccessful fetch.
-- On a **successful complete synchronization**, removed or unselected repositories disappear from the connection and their Scrumboy references are cleaned up. Repository renames retain the same stable ID.
+- On GitHub denial or revocation, Scrumboy invalidates the cached token and reports the failure; it does not delete or change synchronized references based on an unsuccessful or incomplete fetch.
+- On a **successful complete synchronization**, repositories missing from the installation's accessible set are marked **unavailable**. Their last-known metadata, Scrumboy resource IDs, project associations, and card references are retained. Existing links are displayed as unavailable and may be explicitly unlinked, but no new links or project associations may be added until GitHub access is restored. A subsequent complete scan that sees the same immutable GitHub repository ID restores availability without losing references. Repository renames retain the same stable ID.
 - Disconnecting locally deletes associated Scrumboy references and attempts to revoke the installation token currently cached by the process. It does not uninstall the App on GitHub or revoke other tokens issued elsewhere. To remove GitHub-side access altogether, uninstall the App or change its permissions in GitHub settings.
 - Provider API access is deliberately fixed to GitHub's public API. GitHub Enterprise Server is not supported in M3.
 
