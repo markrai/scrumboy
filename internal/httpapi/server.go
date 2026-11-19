@@ -421,6 +421,11 @@ type storeAPI interface {
 	ListTodoIntegrationResources(ctx context.Context, actorID, projectID, localID int64) ([]store.IntegrationResource, error)
 	LinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
 	UnlinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
+    GetGitHubProjectRepository(ctx context.Context,actorID,projectID,resourceID int64,manage bool) (store.GitHubProjectRepository,error)
+    ListTodoGitHubItems(ctx context.Context,actorID,projectID,localID int64) ([]integration.GitHubItem,error)
+    LinkTodoGitHubItem(ctx context.Context,actorID,projectID,localID int64,item integration.GitHubItem) error
+    UnlinkTodoGitHubItem(ctx context.Context,actorID,projectID,localID,resourceID int64,kind string,number int64) error
+    RefreshTodoGitHubItem(ctx context.Context,actorID,projectID,localID int64,item integration.GitHubItem) error
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)

@@ -28,6 +28,14 @@ func integrationResourcesJSON(resources []store.IntegrationResource) []integrati
 }
 
 func (s *Server) handleBoardIntegrationRoutes(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) bool {
+	if len(rest)>=4 && rest[1]=="integrations" && rest[2]=="github" && rest[3]=="search" {
+        s.handleProjectGitHubSearch(w,r,rest,pc)
+        return true
+    }
+    if len(rest)>=4 && rest[1]=="todos" && rest[3]=="github-items" {
+        s.handleTodoGitHubItems(w,r,rest,pc)
+        return true
+    }
 	if len(rest) < 3 {
 		return false
 	}
