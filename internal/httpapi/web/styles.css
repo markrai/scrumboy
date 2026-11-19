@@ -8387,6 +8387,17 @@ button.omni-tag-pill:focus-visible {
   padding-top: 12px;
 }
 
+.github-integration__add-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.github-integration__add-section h5 {
+  margin: 0 0 10px;
+  font-size: var(--fs-13);
+}
+
 .github-integration__linked-list h5 {
   margin: 0 0 10px;
   font-size: var(--fs-13);

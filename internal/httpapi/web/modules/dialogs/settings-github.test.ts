@@ -233,13 +233,17 @@ describe('GitHub project picker flow', () => {
         const picker = el.querySelector<HTMLSelectElement>('#githubProjectPicker')!;
         expect(Array.from(picker.options).map(option => option.textContent)).toEqual(['Select a project…', 'Engineering', 'Product']);
         expect(el.querySelector('#githubAccountPicker')).toBeNull();
-        expect(el.querySelector('.github-integration__account-context')?.textContent).toBe('markrai');
+        expect(el.querySelector('.github-integration__account-context')).toBeNull();
+        expect(el.querySelector('label[for="githubAccountPicker"]')).toBeNull();
+        expect(el.querySelector('.github-integration__project h4')?.textContent).toBe('Project: Engineering');
         await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/board/engineering/integrations/resources', expect.anything()));
         await vi.waitFor(() => expect(el.querySelector<HTMLSelectElement>('#githubRepositoryPicker')?.value).toBe('40'));
+        expect(Array.from(el.querySelectorAll('.github-integration__project-body h5')).map(el => el.textContent)).toEqual(['Linked Repositories', 'Add Repositories']);
         expect(el.querySelector('img[src="x"]')).toBeNull();
         picker.value = 'product';
         picker.dispatchEvent(new Event('change'));
         await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/board/product/integrations/resources', expect.anything()));
+        expect(el.querySelector('.github-integration__project h4')?.textContent).toBe('Project: Product');
         controller.abort();
     });
 
@@ -261,6 +265,57 @@ describe('GitHub project picker flow', () => {
         el.querySelector<HTMLButtonElement>('.github-integration__add-repo')!.click();
         await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/board/engineering/integrations/resources', expect.objectContaining({ method: 'POST', body: JSON.stringify({ resourceId: 40 }) })));
         await vi.waitFor(() => expect(el.querySelector('.github-integration__linked-row')?.textContent).toContain('markrai/scrumboy'));
+        controller.abort();
+    });
+
+    it('shows Linked Repositories before Add Repositories without empty add controls', async () => {
+        requests.mockImplementation(async (path: string) => {
+            if (path === '/api/admin/integrations/github') return { configured: true, connections: [{ id: 7, installationId: '25', account: 'markrai', status: 'active' }] };
+            if (path.endsWith('/installations')) return [{ id: 25, account: 'markrai', kind: 'User' }];
+            if (path === '/api/projects') return [{ name: 'Engineering', slug: 'engineering', role: 'Maintainer' }];
+            if (path.endsWith('/connections/7/resources')) return [{ id: 40, name: 'markrai/scrumboy', availability: 'available' }];
+            if (path === '/api/board/engineering/integrations/resources') return [{ id: 40, name: 'markrai/scrumboy', availability: 'available' }];
+            return [];
+        });
+        const el = root(), controller = new AbortController();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        bindGitHubSettingsTab(el, 'engineering', controller.signal);
+        await vi.waitFor(() => expect(el.querySelectorAll('.github-integration__linked-row')).toHaveLength(1));
+        expect(Array.from(el.querySelectorAll('.github-integration__project-body h5')).map(item => item.textContent)).toEqual(['Linked Repositories', 'Add Repositories']);
+        expect(el.querySelector('.github-integration__linked-row')?.textContent).toContain('markrai/scrumboy');
+        expect(el.querySelector('#githubRepositoryPicker')).toBeNull();
+        expect(el.querySelector('.github-integration__add-repo')).toBeNull();
+        expect(el.querySelector('.github-integration__add-section')?.textContent).toContain('All available repositories are linked');
+        expect(el.querySelector('#githubAccountPicker')).toBeNull();
+        expect(el.querySelector('.github-integration__account-context')).toBeNull();
+        controller.abort();
+    });
+
+    it('keeps linked repositories project-specific through project switches and installation refresh', async () => {
+        const resources = [{ id: 40, name: 'org/alpha', availability: 'available' }, { id: 41, name: 'org/beta', availability: 'available' }];
+        requests.mockImplementation(async (path: string) => {
+            if (path === '/api/admin/integrations/github') return { configured: true, connections: [{ id: 7, installationId: '25', account: 'markrai', status: 'active' }] };
+            if (path.endsWith('/installations')) return [{ id: 25, account: 'markrai', kind: 'User' }];
+            if (path === '/api/projects') return [{ name: 'Alpha', slug: 'alpha', role: 'Maintainer' }, { name: 'Beta', slug: 'beta', role: 'Maintainer' }];
+            if (path.endsWith('/connections/7/resources')) return resources;
+            if (path === '/api/board/alpha/integrations/resources') return [resources[0]];
+            if (path === '/api/board/beta/integrations/resources') return [resources[1]];
+            return [];
+        });
+        const el = root(), controller = new AbortController();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        bindGitHubSettingsTab(el, 'alpha', controller.signal);
+        await vi.waitFor(() => expect(el.querySelector('.github-integration__linked-row')?.textContent).toContain('org/alpha'));
+        expect(el.querySelector('.github-integration__linked-row')?.textContent).not.toContain('org/beta');
+        const picker = el.querySelector<HTMLSelectElement>('#githubProjectPicker')!;
+        picker.value = 'beta';
+        picker.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(el.querySelector('.github-integration__linked-row')?.textContent).toContain('org/beta'));
+        expect(el.querySelector('.github-integration__linked-row')?.textContent).not.toContain('org/alpha');
+        expect(el.querySelector('.github-integration__project h4')?.textContent).toBe('Project: Beta');
+        el.querySelector<HTMLButtonElement>('.github-integration__refresh')!.click();
+        await vi.waitFor(() => expect(el.querySelector<HTMLSelectElement>('#githubProjectPicker')?.value).toBe('beta'));
+        await vi.waitFor(() => expect(el.querySelector('.github-integration__linked-row')?.textContent).toContain('org/beta'));
         controller.abort();
     });
 
