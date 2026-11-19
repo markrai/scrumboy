@@ -45,6 +45,7 @@ describe('card GitHub issue and pull request references', () => {
     await vi.waitFor(() => expect(api).toHaveBeenCalledWith('/api/board/alpha/todos/5/github-items', {
       method: 'POST', body: JSON.stringify({ url: 'https://github.com/org/repo/issues/357' }),
     }));
+    await vi.waitFor(() => expect(field.querySelector<HTMLInputElement>('input[type="url"]')).not.toBe(urlInput));
     const input = field.querySelector<HTMLInputElement>('input[type="search"]')!;
     input.value = 'Fix controls';
     Array.from(field.querySelectorAll<HTMLButtonElement>('button')).find(btn => btn.textContent === 'Search')!.click();
