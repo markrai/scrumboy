@@ -91,6 +91,17 @@ func (s *BindingsDB) initialize() error {
     if err!=nil{return err}
     _,err=s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_github_binding_expires
         ON github_verified_bindings(expires_at,revoked_at);`)
+    if err!=nil{return err}
+    _,err=s.db.Exec(`CREATE TABLE IF NOT EXISTS github_instance_certificates (
+        certificate_sha256 BLOB PRIMARY KEY CHECK(length(certificate_sha256)=32),
+        instance_id TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        registered_at INTEGER NOT NULL,
+        revoked_at INTEGER
+    );`)
+    if err!=nil{return err}
+    _,err=s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_github_instance_certificates_instance
+        ON github_instance_certificates(instance_id,revoked_at,expires_at);`)
     return err
 }
 
