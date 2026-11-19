@@ -84,6 +84,9 @@ func run() error {
         }
         broker,err:=githubbroker.NewUserBound(identities,bindings,provider)
         if err!=nil{return errors.New("could not construct user-bound broker")}
+        if err:=broker.EnableDurableAdmission(bindings);err!=nil{
+            return errors.New("could not enable shared broker admission controls")
+        }
         secret,err:=os.ReadFile(clientSecretFile)
         if err!=nil{return errors.New("cannot read GitHub OAuth client secret file")}
         verifier,err:=githubconnect.New(githubconnect.Config{
