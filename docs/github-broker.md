@@ -30,7 +30,7 @@ The qualification binary requires HTTPS certificate/key, a CA for instance clien
 
 The operator-only grant file format is:
 
-`json
+```json
 {
   "clients": [
     {
@@ -48,13 +48,13 @@ The operator-only grant file format is:
     }
   ]
 }
-`
+```
 
 These values are **illustrative**. The fingerprint is SHA-256 of the client certificate's DER representation (`openssl x509 -in client.pem -outform DER | openssl dgst -sha256`). Its corresponding private key must remain on the authorized client instance. The operator must provision a real, verified certificate and GitHub repository, use an expiration in the next 30 days, and create a different identity for every instance.
 
 Run the isolated broker directly on the trusted host:
 
-`sh
+```bash
 go run ./cmd/scrumboy-connect-broker \
   -listen 127.0.0.1:9448 \
   -tls-cert /secure/broker.crt \
@@ -63,7 +63,7 @@ go run ./cmd/scrumboy-connect-broker \
   -grants /secure/qualification-grants.json \
   -github-app-id 123456 \
   -github-key /secure/scrumboy-connect.pem
-`
+```
 
 The listener defaults to localhost. TLS 1.3 and CA-verified client certificates are always required, even on loopback. Never publish the qualification endpoint publicly or configure it as an internet-facing endpoint. Use disposable repositories and test installations for qualification.
 
@@ -71,12 +71,12 @@ Grant snapshots are read **once on startup**. To revoke an instance or repositor
 
 ## Security tests
 
-`sh
+```bash
 go test ./internal/integration/githubbroker ./internal/integration/githubconnect ./internal/integration/githubapp
 go test ./... -count=1 -timeout=10m
-`
+```
 
-Automated tests cover mTLS fingerprint rejection, spoofed forwarded identity, cross-instance access, cross-installation/repository access, expired/duplicate grants, malformed and oversized payloads, forged provider responses, generic upstream error handling, concurrency-safe budgets, and incomplete installation and repository discovery in the companion OAuth verifier.
+Automated tests cover real TLS 1.3 handshakes with trusted, missing and unpinned client certificates; mTLS fingerprint rejection, spoofed forwarded identity, cross-instance access, cross-installation/repository access, expired/duplicate grants, malformed and oversized payloads, forged provider responses, generic upstream error handling, concurrency-safe budgets, and incomplete installation and repository discovery in the companion OAuth verifier.
 
 **Required next work:** verified Scrumboy user/session callbacks, durable instance/user/install/repository ownership bindings and revocation; a credentialed Scrumboy-to-broker client integrated with the existing project permission checks; and multi-tenant acceptance with two unrelated GitHub accounts. The current operator snapshot is **not** proof of GitHub installation ownership by an end user, so M3.3 and the shared-App release gate remain open.
 
