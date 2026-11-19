@@ -2,9 +2,9 @@
 
 M3 provides an opt-in GitHub App connection and repository reference workflow in Scrumboy Full Mode. It registers GitHub repositories as external resources and lets project Maintainers associate them with durable projects, so Contributors can link cards to those repositories. M3.2 adds explicit, read-only GitHub issue and pull-request references and title search. It does **not** modify GitHub issues or pull requests, synchronize card content, or automatically change a Scrumboy card when GitHub state changes. Webhooks and optional automations have separate milestones.
 
-## Intended user experience: shared `scrumboy-connector` GitHub App
+## Intended user experience: shared Scrumboy Connect GitHub App
 
-**Product decision:** Scrumboy users will piggyback on the Scrumboy-managed **`scrumboy-connector`** GitHub App. An ordinary user should **not** need to register a GitHub App, generate a private key, or configure an App ID to connect their own repositories.
+**Product decision:** Scrumboy users will piggyback on the Scrumboy-managed **Scrumboy Connect** GitHub App. An ordinary user should **not** need to register a GitHub App, generate a private key, or configure an App ID to connect their own repositories.
 
 The intended flow is **Settings → GitHub → Connect GitHub → approve installation on your own account/organization → select repositories → link issues/PRs to a Scrumboy project**. A user grants GitHub access to the repositories they choose; their installation is separate from the maintainer's `markrai` installation and does not grant access to that account's repositories. Publishing a Scrumboy board remains the board owner's decision and must not bypass project authorization.
 
@@ -12,7 +12,7 @@ The intended flow is **Settings → GitHub → Connect GitHub → approve instal
 
 The GitHub App's **App ID and slug are public identifiers**; they do not authenticate a caller. The PEM private key and installation tokens must remain on infrastructure operated by the Scrumboy integration service, never in a browser, Scrumboy card, Git repository, or a downloadable self-hosted distribution.
 
-For the target multi-user design and self-hosted support, see [Shared `scrumboy-connector` architecture and rollout](github-shared-app.md).
+For the target multi-user design and self-hosted support, see [Shared Scrumboy Connect architecture and rollout](github-shared-app.md).
 
 ## Current trusted-operator setup (temporary M3 test mode)
 
@@ -90,7 +90,7 @@ In a durable project where an instance administrator connected the GitHub App an
 
 **Existing installations need to approve the two additional read permissions**. Scrumboy requests new short-lived tokens only when issue/PR lookup or search is used. Those tokens are minted with GitHub's `repository_ids` restricted to the exact provider repository ID associated with the selected project. The original metadata-only installation-discovery token remains separate. No issue/PR access token or private key is persisted in SQLite, the browser or a card.
 
-**Current implementation and required next step:** M3.2 supports **trusted instance-administrator-managed connections only**. For broad user adoption, Scrumboy will use the shared **`scrumboy-connector`** App, not require users to create their own Apps. That **requires** a separately authenticated, ownership-bound installation flow and server-side credential broker, described in [the shared-App design](github-shared-app.md). Neither the direct-mode code nor this documentation change implements that broker. Do not share the App's PEM key, accept arbitrary installation IDs as authorization, or expose the shared installation directory to unrelated tenants.
+**Current implementation and required next step:** M3.2 supports **trusted instance-administrator-managed connections only**. For broad user adoption, Scrumboy will use the shared **Scrumboy Connect** App, not require users to create their own Apps. That **requires** a separately authenticated, ownership-bound installation flow and server-side credential broker, described in [the shared-App design](github-shared-app.md). Neither the direct-mode code nor this documentation change implements that broker. Do not share the App's PEM key, accept arbitrary installation IDs as authorization, or expose the shared installation directory to unrelated tenants.
 
 Read-only project API (normal Scrumboy authentication and mutation header required):
 

@@ -4,7 +4,7 @@ M1 introduces a provider-neutral, database-backed foundation for connecting exte
 
 ## Shared GitHub App product direction
 
-The end-user GitHub experience is to install **one centrally operated `scrumboy-connector` App** on repositories the user controls or administers. End users **do not register their own GitHub Apps**. The App ID/slug are public, while the private key and App-issued installation credentials are retained by a trusted service under Scrumboy's operational control.
+The end-user GitHub experience is to install **one centrally operated Scrumboy Connect App** on repositories the user controls or administers. End users **do not register their own GitHub Apps**. The App ID/slug are public, while the private key and App-issued installation credentials are retained by a trusted service under Scrumboy's operational control.
 
 This design requires distinct boundaries for GitHub installation ownership, Scrumboy account/tenant identity, project authorization, and self-hosted server authentication. App-global installation discovery must not be exposed as a user-owned installation list. The present trusted instance-administrator-managed connection is a **temporary implementation**, not the multi-tenant shared-App design. See [shared-App architecture and release gate](../github-shared-app.md). No user-bound broker or verified self-service installation flow is implemented yet.
 

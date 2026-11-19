@@ -1,10 +1,12 @@
-# Shared `scrumboy-connector` GitHub App: required product architecture
+# Shared Scrumboy Connect GitHub App: required product architecture
 
 > **Status: decided design, NOT IMPLEMENTED.** This is the intended end-user integration experience. PR #366 currently has only a trusted administrator-managed, direct-App integration (M3/M3.2). Do not treat the shared integration as deployed or qualified.
 
+**Name vs. identifiers:** **Scrumboy Connect** is the GitHub App's display name. Its numeric App ID and installation URL slug are separate GitHub-assigned identifiers and must be read from the actual App configuration; do not derive either from the display name.
+
 ## Product contract
 
-Scrumboy offers **one centrally maintained, public `scrumboy-connector` GitHub App**. Each user or organization installs that same App **into their own GitHub account or organization** and selects the repositories the App may access. Ordinary Scrumboy users never create a GitHub App, provide an App ID, upload a PEM key, or receive a shared App token.
+Scrumboy offers **one centrally maintained, public Scrumboy Connect GitHub App**. Each user or organization installs that same App **into their own GitHub account or organization** and selects the repositories the App may access. Ordinary Scrumboy users never create a GitHub App, provide an App ID, upload a PEM key, or receive a shared App token.
 
 The maintainer's `markrai` installation and another account's installation are **distinct**. Installing the App under a different GitHub account **does not grant GitHub access to `markrai` repositories**. A Scrumboy project may display linked private-repository metadata to its authorized members after an authorized Maintainer associates that repository, even if those members do not individually have GitHub access. This is a deliberate Scrumboy collaboration visibility decision, not GitHub permission delegation.
 
@@ -21,7 +23,7 @@ The maintainer's `markrai` installation and another account's installation are *
 ## Intended workflow
 
 1. User opens **Settings → GitHub → Connect GitHub**.
-2. Scrumboy starts an authenticated GitHub connection flow to install/authorize `scrumboy-connector` under the user's own account or an organization they administer.
+2. Scrumboy starts an authenticated GitHub connection flow to install/authorize Scrumboy Connect under the user's own account or an organization they administer.
 3. On return, the trusted service independently verifies the caller's right to that exact installation and records a tenant-bound connection.
 4. The user selects repositories the GitHub App installation can access, then a Scrumboy project Maintainer explicitly associates permitted repositories with a project.
 5. Project Contributors link GitHub issues or pull requests by URL or bounded repository-scoped search; Viewers see permitted read-only metadata.
