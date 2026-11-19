@@ -103,7 +103,7 @@ func TestLegacyBrokerCannotExposeEnrollmentEndpoints(t *testing.T) {
     legacy:=testBroker(t,"instance-a",activeGrant(),provider)
     result:=call(t,legacy,http.MethodPost,"/v1/github/connections/begin",`{"userId":42}`,"application/json")
     if result.Code!=http.StatusNotFound{t.Fatalf("legacy broker enrollment exposed %d",result.Code)}
-    if err:=legacy.EnableEnrollment(&verificationStub{});!errors.Is(err,ErrUnavailable){
+    if err:=legacy.EnableEnrollment(&BindingCoordinator{});!errors.Is(err,ErrUnavailable){
         t.Fatalf("legacy broker enabled enrollment: %v",err)
     }
     unauthorized,err:=NewUserBound(identityStub{err:ErrDenied},newNoopUserGrants(),provider)
