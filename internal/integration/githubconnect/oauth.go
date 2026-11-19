@@ -137,6 +137,15 @@ func challengeEntry(subject, verifier string, now time.Time) challenge {
     return challenge{subject: subject, verifier: verifier, expires: now.Add(flowTTL)}
 }
 
+func (s *Service) Cancel(subject string) {
+    if !validSubject(subject){return}
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    for state,entry:=range s.pending {
+        if entry.subject==subject{delete(s.pending,state)}
+    }
+}
+
 func (s *Service) consume(subject, state string) (string, error) {
     if !validSubject(subject) || len(state) != 43 { return "", ErrInvalidFlow }
     s.mu.Lock()
