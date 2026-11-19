@@ -48,6 +48,7 @@ func (s *BindingsDB) RegisterInstanceCertificate(ctx context.Context,instance st
         certificate_sha256,instance_id,expires_at,registered_at,revoked_at)
         VALUES(?,?,?,?,NULL)`,hash[:],instance,certificate.NotAfter.Unix(),now.Unix())
     if err!=nil{return ErrUnavailable}
+    if err:=s.auditChange(ctx,tx,"register_certificate",instance,0,0,0);err!=nil{return err}
     if err:=tx.Commit();err!=nil{return ErrUnavailable}
     return nil
 }
@@ -55,12 +56,17 @@ func (s *BindingsDB) RegisterInstanceCertificate(ctx context.Context,instance st
 func (s *BindingsDB) RevokeInstanceCertificate(ctx context.Context,instance string,certificateDER []byte) error {
     if s==nil || s.db==nil || !validInstance(instance) || len(certificateDER)==0{return ErrDenied}
     hash:=sha256.Sum256(certificateDER)
-    result,err:=s.db.ExecContext(ctx,`UPDATE github_instance_certificates
+    tx,err:=s.db.BeginTx(ctx,nil)
+    if err!=nil{return ErrUnavailable}
+    defer tx.Rollback()
+    result,err:=tx.ExecContext(ctx,`UPDATE github_instance_certificates
         SET revoked_at=? WHERE instance_id=? AND certificate_sha256=? AND revoked_at IS NULL`,
         s.now().Unix(),instance,hash[:])
     if err!=nil{return ErrUnavailable}
     count,err:=result.RowsAffected()
     if err!=nil || count!=1{return ErrDenied}
+    if err:=s.auditChange(ctx,tx,"revoke_certificate",instance,0,0,0);err!=nil{return err}
+    if err:=tx.Commit();err!=nil{return ErrUnavailable}
     return nil
 }
 
@@ -74,6 +80,7 @@ func (s *BindingsDB) DisconnectInstance(ctx context.Context,instance string) err
         WHERE instance_id=? AND revoked_at IS NULL`,now,instance);err!=nil{return ErrUnavailable}
     if _,err=tx.ExecContext(ctx,`UPDATE github_verified_bindings SET revoked_at=?
         WHERE instance_id=? AND revoked_at IS NULL`,now,instance);err!=nil{return ErrUnavailable}
+    if err:=s.auditChange(ctx,tx,"disconnect_instance",instance,0,0,0);err!=nil{return err}
     if err:=tx.Commit();err!=nil{return ErrUnavailable}
     return nil
 }

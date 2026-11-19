@@ -205,6 +205,7 @@ func (s *BindingsDB) recordVerified(ctx context.Context,r verifiedRecord) error 
             r.instance,r.userID,v.InstallationID,id,resource.Name)
         if err!=nil{return ErrUnavailable}
     }
+    if err:=s.auditChange(ctx,tx,"bind_verified",r.instance,r.userID,v.InstallationID,0);err!=nil{return err}
     if err:=tx.Commit();err!=nil{return ErrUnavailable}
     return nil
 }
@@ -229,36 +230,45 @@ func (s *BindingsDB) LookupUser(ctx context.Context,instance string,userID,insta
     return grant,nil
 }
 
-func (s *BindingsDB) revoke(ctx context.Context,query string,args ...any) error {
+func (s *BindingsDB) revoke(ctx context.Context,event,instance string,userID,installationID,repositoryID int64,query string,args ...any) error {
     if s==nil || s.db==nil{return ErrDenied}
-    _,err:=s.db.ExecContext(ctx,query,args...)
+    tx,err:=s.db.BeginTx(ctx,nil)
     if err!=nil{return ErrUnavailable}
+    defer tx.Rollback()
+    if _,err=tx.ExecContext(ctx,query,args...);err!=nil{return ErrUnavailable}
+    if err:=s.auditChange(ctx,tx,event,instance,userID,installationID,repositoryID);err!=nil{return err}
+    if err:=tx.Commit();err!=nil{return ErrUnavailable}
     return nil
 }
 
 func (s *BindingsDB) RevokeUser(ctx context.Context,instance string,userID int64) error {
     if !validInstance(instance) || userID<=0{return ErrDenied}
-    return s.revoke(ctx,`UPDATE github_verified_bindings SET revoked_at=?
+    return s.revoke(ctx,"revoke_user",instance,userID,0,0,
+        `UPDATE github_verified_bindings SET revoked_at=?
         WHERE instance_id=? AND user_id=? AND revoked_at IS NULL`,
         s.now().UTC().Unix(),instance,userID)
 }
 
 func (s *BindingsDB) RevokeInstallation(ctx context.Context,instance string,userID,installationID int64) error {
     if !validInstance(instance) || userID<=0 || installationID<=0{return ErrDenied}
-    return s.revoke(ctx,`UPDATE github_verified_bindings SET revoked_at=?
+    return s.revoke(ctx,"revoke_installation",instance,userID,installationID,0,
+        `UPDATE github_verified_bindings SET revoked_at=?
         WHERE instance_id=? AND user_id=? AND installation_id=? AND revoked_at IS NULL`,
         s.now().UTC().Unix(),instance,userID,installationID)
 }
 
 func (s *BindingsDB) RevokeInstance(ctx context.Context,instance string) error {
     if !validInstance(instance){return ErrDenied}
-    return s.revoke(ctx,`UPDATE github_verified_bindings SET revoked_at=?
-        WHERE instance_id=? AND revoked_at IS NULL`,s.now().UTC().Unix(),instance)
+    return s.revoke(ctx,"revoke_instance",instance,0,0,0,
+        `UPDATE github_verified_bindings SET revoked_at=?
+        WHERE instance_id=? AND revoked_at IS NULL`,
+        s.now().UTC().Unix(),instance)
 }
 
 func (s *BindingsDB) RevokeRepository(ctx context.Context,instance string,userID,installationID,repositoryID int64) error {
     if !validInstance(instance) || userID<=0 || installationID<=0 || repositoryID<=0{return ErrDenied}
-    return s.revoke(ctx,`DELETE FROM github_verified_repositories
+    return s.revoke(ctx,"revoke_repository",instance,userID,installationID,repositoryID,
+        `DELETE FROM github_verified_repositories
         WHERE instance_id=? AND user_id=? AND installation_id=? AND repository_id=?`,
         instance,userID,installationID,repositoryID)
 }
