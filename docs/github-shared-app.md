@@ -12,6 +12,14 @@ The maintainer's `markrai` installation and another account's installation are *
 
 **Important:** A GitHub App private key is powerful across installations of that App. GitHub's separation of installations does not automatically impose Scrumboy tenant isolation on a server that holds the App key. Never distribute that PEM key to users or arbitrary self-hosted servers.
 
+## M3.3 implementation progress
+
+**First security slice implemented in PR #366:** `internal/integration/githubconnect` now provides a bounded, one-time GitHub App user OAuth/PKCE flow and provider-authenticated installation verification. A trusted caller supplies a pre-authenticated, opaque Scrumboy subject; the verifier binds the OAuth state to that subject, rejects replay and expiry, exchanges a GitHub authorization code only once, reads the authenticated GitHub user identity, and checks the selected installation against the paginated `GET /user/installations` response and configured App ID. It refuses suspended, unknown or wrong-App installations and never returns or persists the GitHub user token.
+
+**Important boundary:** This is a reusable internal primitive, **not** a released connection flow. The subject is an input from a future authenticated broker endpoint; the package itself does not authenticate Scrumboy accounts. In-memory pending states are intentionally invalidated by process restart. The implementation does not yet expose HTTP callbacks, persist verified installation bindings, host your App credentials, issue self-hosted service credentials, connect users through the UI or perform on-behalf-of authorization after OAuth completion. Those remain blocked until the remaining M3.3 slices are implemented and tested.
+
+The next code slices must add: (A) a separately deployable central service that owns Scrumboy Connect secrets and authenticates callers, (B) a trusted browser/session callback binding and durable per-instance/per-user installation ownership, (C) strictly scoped broker API operations, and (D) revocable self-hosted instance credentials. **Do not expose the App-global installation directory, accept a user-supplied installation ID as proof, or distribute App private-key material in the meantime.**
+
 ## Required components before launch
 
 1. **Central App credential service.** Operate the App ID/slug, private-key rotation, GitHub installation-token minting, per-request rate limits, audit logs and revocation in a trusted Scrumboy-managed service. Keep installation tokens server-side and restrict GitHub API access to the exact authorized repository ID and read permissions. Do not embed the PEM in the Scrumboy binary, Docker image, GitHub repository or browser.
