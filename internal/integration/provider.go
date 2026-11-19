@@ -14,6 +14,22 @@ type Resource struct {
 	URL string `json:"url"`
 }
 
+type GitHubItem struct {
+    ResourceID int64 `json:"resourceId,omitempty"`
+    Kind string `json:"kind"`
+    Number int64 `json:"number"`
+    Title string `json:"title"`
+    State string `json:"state"`
+    Draft bool `json:"draft"`
+    Merged bool `json:"merged"`
+    URL string `json:"url"`
+}
+
+type IssuePullRequestProvider interface {
+    ResolveItem(context.Context,string,string,string,string,int64) (GitHubItem,error)
+    SearchItems(context.Context,string,string,string,string,string) ([]GitHubItem,error)
+}
+
 type Provider interface {
 	Installations(context.Context) ([]Installation, error)
 	Resources(context.Context, string) ([]Resource, error)
