@@ -42,7 +42,20 @@ This is the release gate for the live GitHub App integration before automatic Gi
 8. Inspect request metadata in test logs/fakes: GitHub issue/PR tokens must request only read permissions and `repository_ids` restricted to the associated repository ID. Do not expose tokens, PEM contents or JWTs in logs or responses.
 9. Remove GitHub App access to the disposable repository, verify cached linked item metadata remains visible as unavailable, then restore the installation's access and test refresh. No GitHub-side or card-content mutation occurs.
 
-**Shared-App restriction:** This milestone is qualified only for trusted, instance-administrator-managed installations. Connecting different users' personal installations through a shared centrally operated GitHub App is *not* supported. User-bound GitHub installation identity verification is a separate prerequisite for such a service.
+**Shared-App product requirement:** Ordinary users must eventually connect their own selected GitHub repositories through the shared `scrumboy-connector` App **without creating an App or receiving the shared PEM key**. The existing M3.2 direct mode is restricted to trusted instance administrators and is **not qualified** for unrelated tenants. See [shared-App implementation and acceptance gate](github-shared-app.md); do not declare the shared experience supported until that separate gate passes.
+
+## Scenario E: shared-App release gate (required; implementation NOT started)
+
+- [ ] Host the one shared `scrumboy-connector` App's private key solely in the trusted Scrumboy integration service. Never distribute it to self-hosted Scrumboy instances.
+- [ ] Authenticate the actual GitHub installer/account and bind each installation ID to an authorized Scrumboy user, tenant and project context; reject spoofed `installation_id` and callback/replay attacks.
+- [ ] Allow a user to select only their own authorized installation and its selected repositories. Ensure an unrelated Scrumboy user cannot list another installation's account names, repository metadata or issue/PR search results.
+- [ ] Enforce project-level Scrumboy role checks, server-to-service authentication, scoped backend access and revocation independently of GitHub App permissions, including on self-hosted deployments.
+- [ ] Test at least two unrelated GitHub accounts with separate installations, including private repositories and negative cross-account/cross-tenant attempts; verify the maintainer's `markrai` repositories never appear for another user.
+- [ ] Verify GitHub uninstall/suspension, account disconnect, repository removal, private-key rotation and token expiry do not leak credentials or silently destroy card references.
+- [ ] Document the privacy boundaries: Scrumboy project members may see metadata that a project administrator deliberately associates with their project, but installing the App alone never shares the maintainer's repositories.
+- [ ] Complete end-to-end hosted and self-hosted qualification before documenting `Connect GitHub` as available to ordinary users.
+
+**Status:** Architecture decision documented only. Scenario E is not passed by the existing M3.2 automated tests or Vega's trusted-owner test installation.
 
 ## Automated tests and CI
 - `go test ./internal/integration/... ./internal/store/... ./internal/httpapi/... ./internal/mcp/... ./internal/migrate/...`
