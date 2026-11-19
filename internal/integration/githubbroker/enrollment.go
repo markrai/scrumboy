@@ -14,6 +14,9 @@ import (
 type Enrollment interface {
     Begin(string,int64) (string,error)
     Complete(context.Context,string,int64,string,string,int64) (BindingSummary,error)
+    RevokeUser(context.Context,string,int64) error
+    RevokeInstallation(context.Context,string,int64,int64) error
+    RevokeRepository(context.Context,string,int64,int64,int64) error
 }
 
 func (b *Broker) EnableEnrollment(service Enrollment) error {
@@ -27,6 +30,7 @@ func (b *Broker) EnableEnrollment(service Enrollment) error {
 type enrollmentRequest struct {
     UserID int64 `json:"userId"`
     InstallationID int64 `json:"installationId,omitempty"`
+    RepositoryID int64 `json:"repositoryId,omitempty"`
     State string `json:"state,omitempty"`
     Code string `json:"code,omitempty"`
 }
@@ -52,7 +56,7 @@ func (b *Broker) handleEnrollment(w http.ResponseWriter,r *http.Request,instance
     ctx,cancel:=context.WithTimeout(r.Context(),15*time.Second)
     defer cancel()
     if r.URL.Path=="/v1/github/connections/begin" {
-        if in.InstallationID!=0 || in.State!="" || in.Code!="" {
+        if in.InstallationID!=0 || in.RepositoryID!=0 || in.State!="" || in.Code!="" {
             writeError(w,http.StatusBadRequest)
             return
         }
@@ -64,7 +68,29 @@ func (b *Broker) handleEnrollment(w http.ResponseWriter,r *http.Request,instance
         writeJSON(w,map[string]string{"authorizationUrl":authorizationURL})
         return
     }
-    if in.InstallationID<=0 || len(in.State)!=43 || len(in.Code)==0 ||
+    if r.URL.Path=="/v1/github/connections/revoke" {
+        if in.State!="" || in.Code!="" || (in.RepositoryID>0 && in.InstallationID<=0) ||
+            in.RepositoryID<0 || in.InstallationID<0 {
+            writeError(w,http.StatusBadRequest)
+            return
+        }
+        var revokeErr error
+        switch {
+        case in.RepositoryID>0:
+            revokeErr=b.enrollment.RevokeRepository(ctx,instance,in.UserID,in.InstallationID,in.RepositoryID)
+        case in.InstallationID>0:
+            revokeErr=b.enrollment.RevokeInstallation(ctx,instance,in.UserID,in.InstallationID)
+        default:
+            revokeErr=b.enrollment.RevokeUser(ctx,instance,in.UserID)
+        }
+        if revokeErr!=nil {
+            writeError(w,http.StatusForbidden)
+            return
+        }
+        w.WriteHeader(http.StatusNoContent)
+        return
+    }
+    if in.RepositoryID!=0 || in.InstallationID<=0 || len(in.State)!=43 || len(in.Code)==0 ||
         len(in.Code)>1024 || strings.ContainsAny(in.Code,"\r\n\x00") {
         writeError(w,http.StatusBadRequest)
         return

@@ -15,11 +15,16 @@ type verificationStub struct {
     err error
     begins int
     completes int
+    cancellations int
 }
 
 func (f *verificationStub) Begin(subject string) (string,error) {
     f.begins++
     return "https://github.com/login/oauth/authorize?state="+subject,nil
+}
+
+func (f *verificationStub) Cancel(subject string) {
+    f.cancellations++
 }
 
 func (f *verificationStub) Complete(ctx context.Context,subject,state,code string,installationID int64) (githubconnect.Verification,error) {

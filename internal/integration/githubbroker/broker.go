@@ -91,7 +91,9 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-    enroll:=r.URL.Path=="/v1/github/connections/begin" || r.URL.Path=="/v1/github/connections/complete"
+    enroll:=r.URL.Path=="/v1/github/connections/begin" ||
+        r.URL.Path=="/v1/github/connections/complete" ||
+        r.URL.Path=="/v1/github/connections/revoke"
 	if r.URL.Path != "/v1/github/items/resolve" && r.URL.Path != "/v1/github/items/search" && !enroll {
 		http.NotFound(w, r)
 		return
