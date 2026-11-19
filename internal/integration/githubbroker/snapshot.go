@@ -38,7 +38,15 @@ type snapshotDocument struct {
 	} `json:"grants"`
 }
 
-func LoadSnapshot(path string) (*Snapshot, error) {
+func LoadSnapshot(path string) (*Snapshot,error) {
+    return loadSnapshot(path,true)
+}
+
+func LoadClientIdentities(path string) (*Snapshot,error) {
+    return loadSnapshot(path,false)
+}
+
+func loadSnapshot(path string,requireGrants bool) (*Snapshot,error) {
 	if path == "" {
 		return nil, ErrUnavailable
 	}
@@ -59,7 +67,8 @@ func LoadSnapshot(path string) (*Snapshot, error) {
 	}
 	var extra any
 	if !errors.Is(decoder.Decode(&extra), io.EOF) || len(document.Clients) == 0 ||
-		len(document.Clients) > 256 || len(document.Grants) == 0 || len(document.Grants) > 2048 {
+		len(document.Clients) > 256 || len(document.Grants) > 2048 ||
+        (requireGrants && len(document.Grants)==0) || (!requireGrants && len(document.Grants)!=0) {
 		return nil, ErrUnavailable
 	}
 	clients := make(map[[32]byte]string, len(document.Clients))
