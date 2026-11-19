@@ -28,6 +28,14 @@ This is **only the trusted operator test stage**, not a multi-user rollout: gran
 
 The next implementation step is durable verified account binding plus a secure instance client that authorizes individual Scrumboy project requests. Do not publish `Connect GitHub` to ordinary users yet.
 
+## M3.3.B durable ownership binding (backend implemented; public connection blocked)
+
+The central broker now has a **separate persistent SQLite binding database** (`internal/integration/githubbroker/bindings.go`) and internal `BindingCoordinator`. A binding can only be created through the internal coordinator after completing the subject-bound GitHub OAuth/PKCE verifier and intersecting **GitHub user-authorized repository IDs** with App-installation repository metadata. The store rejects forgery, incomplete metadata, duplicate repository IDs and changes to a binding's verified GitHub user identity.
+
+Records bind **Scrumboy instance ID + local Scrumboy user ID + GitHub installation ID + repository ID**. The GitHub account identity is retained for audit and association. Repository privileges expire after **24 hours** unless the user re-verifies, and online user, installation, instance and repository revocation take effect on subsequent lookups **without a broker restart**. A new user-bound broker mode accepts only mTLS-pinned clients, requires an explicit `userId` in each request, and looks up the exact stored binding before GitHub access. The operator-snapshot mode is separate and cannot silently supply fallback grants to the user-bound mode.
+
+**Not yet a usable public connection flow:** The coordinator is an internal trusted service API only. No HTTP setup/callback endpoints, Scrumboy browser-session proof, broker-issued client identity enrollment, automated credential refresh or end-to-end Scrumboy project integration exists. The caller's `userId` will need to be proven by the authenticated local Scrumboy session in the next slice; an mTLS certificate proves the instance, **not which human is using it**. An ordinary user's installation ID is never accepted as ownership evidence on its own. New user-bound databases begin with zero grants and deny all access until a verified coordinator flow provisions them.
+
 ## Required components before launch
 
 1. **Central App credential service.** Operate the App ID/slug, private-key rotation, GitHub installation-token minting, per-request rate limits, audit logs and revocation in a trusted Scrumboy-managed service. Keep installation tokens server-side and restrict GitHub API access to the exact authorized repository ID and read permissions. Do not embed the PEM in the Scrumboy binary, Docker image, GitHub repository or browser.

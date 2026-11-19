@@ -69,6 +69,20 @@ This is the release gate for the live GitHub App integration before automatic Gi
 
 **Status:** Code and automated tests added. No publicly usable central shared-App service, self-hosted enrollment or end-user connection flow is implemented. See [broker staging documentation](github-broker.md).
 
+## Scenario G: M3.3.B durable verified ownership (backend code implemented; acceptance pending)
+
+- [x] Separate broker ownership SQLite database and explicit user-bound request mode; no static-grant fallback, no App PEM exposure.
+- [x] Internal coordinator takes one-time GitHub OAuth verification and intersects authenticated-user repository IDs with installation resources before atomic persistence.
+- [x] Enforce instance, local user, installation and repository identity on every lookup. Reject forged subjects, wrong providers, duplicate IDs, missing metadata and unverified calls.
+- [x] Replace removed repositories atomically, retain per-instance/user isolation, persist across process restarts, and support live user/installation/instance/repository revocation.
+- [x] Provisional 24-hour expiration and deny-by-default startup; zero user-owned grants when configured but not enrolled.
+- [ ] Implement verified Scrumboy session/authenticated-user initiation and browser-bound OAuth callback, then invoke the coordinator on the trusted broker.
+- [ ] Wire verified self-hosted instances to the user-bound broker, enforce project membership at the instance boundary, and prevent fabricated `userId` access.
+- [ ] Qualify real GitHub installation revocation, user membership loss and reauthorization; determine secure automatic refresh behavior.
+- [ ] Complete a two-tenant end-to-end staging test before enabling any public Connect GitHub button.
+
+**Status:** The core persistence/authorization service is implemented; this is **not** live M3.3.B or public user connection acceptance. See [broker modes](github-broker.md).
+
 ## Automated tests and CI
 - `go test ./internal/integration/... ./internal/store/... ./internal/httpapi/... ./internal/mcp/... ./internal/migrate/...`
 - Frontend `npm test` in `internal/httpapi/web`, the generated-code parity check and browser checks.

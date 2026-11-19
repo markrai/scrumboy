@@ -69,6 +69,23 @@ The listener defaults to localhost. TLS 1.3 and CA-verified client certificates 
 
 Grant snapshots are read **once on startup**. To revoke an instance or repository grant in this first slice, remove it from the operator file and **restart the broker**; the broker also refuses requests after a grant expires. There is no online self-service enrollment, persistent database, operator endpoint for issuing grants, or automatic grant refresh. A real shared service must replace this file with an authoritative revocable, user-bound grant store and account lifecycle management before public availability. Rate limits are single-process and are not yet suitable as a globally coordinated multi-replica budget.
 
+## M3.3.B: user-bound persistent ownership (separate mode)
+
+The broker executable supports two **mutually exclusive** authorization modes:
+
+| Mode | Flags | Access control |
+| --- | --- | --- |
+| Operator qualification | `-grants /secure/qualification-grants.json` | Existing static expiring instance/repository grant snapshot |
+| Durable user-bound | `-client-identities /secure/client-identities.json -binding-db /secure/connect-bindings.sqlite` | Verified mTLS instance identity **plus** persistent, revocable instance/user/installation/repository binding |
+
+The user-bound identities file contains **only** the `clients` array from the operator snapshot example, with no `grants` field. Including operator grants in this file causes startup to fail. The SQLite path must be absolute and the file owner-only (mode 0600). An empty database grants **no** GitHub repository access. The broker creates its ownership schema on first launch and leaves the database on disk between restarts.
+
+A user-bound resolve request supplies `{"userId":42,"installationId":111,"repositoryId":222,"kind":"issue","number":357}`; search uses the same `userId` and `query` instead of `number`. The broker validates the pinned mTLS instance identity, then checks the exact user/install/repo tuple against the SQLite store. User, installation, instance or individual repository revocation is enforced immediately by that store. No static operator-grant fallback is permitted.
+
+Bindings are written only by the **internal** `BindingCoordinator` after `githubconnect.Service.Complete` verifies GitHub identity and installation access and lists user-accessible repositories. It then validates and intersects metadata reported by the Scrumboy Connect App. Authentication and callback wiring to a browser session are not implemented. Merely knowing a local user ID, installation ID or repository URL cannot create a binding. This service **must not be advertised as active** or exposed for ordinary users until the subject/session verification and callback design are qualified.
+
+The temporary bindings expire after 24 hours because no GitHub refresh token is retained in this slice. Continuous private-repository access and automatic reauthorization require a separately reviewed token lifecycle and live revocation strategy.
+
 ## Security tests
 
 ```bash
