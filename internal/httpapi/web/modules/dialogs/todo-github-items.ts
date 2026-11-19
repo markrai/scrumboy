@@ -5,7 +5,7 @@ import { apiErrorMessage } from '../i18n/index.js';
 
 let generation = 0;
 
-function add(parent, tag, text) {
+function add(parent, tag, text?: string) {
   const node = document.createElement(tag);
   if (text !== undefined) node.textContent = text;
   parent.append(node);
@@ -136,7 +136,7 @@ async function reload(slug, localId, editable, section) {
     results.replaceChildren();
     add(results, 'p', 'Searching…').className = 'muted';
     const params = new URLSearchParams({ resourceId: repoPicker.value, kind: kindPicker.value, q });
-    const result = await apiFetch(base + '/integrations/github/search?' + params.toString());
+    const result = await apiFetch<{ items: any[] }>(base + '/integrations/github/search?' + params.toString());
     if (request !== generation || current !== lastSearch || !results.isConnected) return;
     results.replaceChildren();
     const hits = Array.isArray(result.items) ? result.items : [];
