@@ -66,6 +66,9 @@ func TestVerifiedInstallationRequiresUserTokenAndOneTimePKCE(t *testing.T) {
                 map[string]any{"id":88,"app_id":999,"target_type":"User","account":map[string]any{"id":555,"login":"unrelated"}},
                 map[string]any{"id":77,"app_id":123,"target_type":"Organization","account":map[string]any{"id":666,"login":"sample-org"}},
             }})
+        case "/user/installations/77/repositories":
+            if r.Header.Get("Authorization")!="Bearer github-user-token-long-value"{t.Error("missing user-scoped repository authorization")}
+            json.NewEncoder(w).Encode(map[string]any{"total_count":1,"repositories":[]any{map[string]any{"id":987}}})
         default:http.NotFound(w,r)
         }
     })
@@ -81,7 +84,8 @@ func TestVerifiedInstallationRequiresUserTokenAndOneTimePKCE(t *testing.T) {
     if err!=nil{t.Fatal(err)}
     if result.Subject!="instance:4:user:9" || result.GitHubUserID!=444 ||
         result.InstallationID!=77 || result.AccountID!=666 || result.AccountLogin!="sample-org" ||
-        result.AccountType!="Organization" {t.Fatalf("wrong verified identity %+v",result)}
+        result.AccountType!="Organization" || len(result.AuthorizedRepositoryIDs)!=1 ||
+        result.AuthorizedRepositoryIDs[0]!=987 {t.Fatalf("wrong verified identity %+v",result)}
     if exchanges.Load()!=1 || profiles.Load()!=1 || installs.Load()!=1 {t.Fatal("unexpected GitHub requests")}
     if _,err=service.Complete(context.Background(),"instance:4:user:9",state,"valid-code",77);!errors.Is(err,ErrInvalidFlow){
         t.Fatalf("replay accepted: %v",err)
@@ -165,4 +169,34 @@ func TestPartialInstallationsAndCapacityFailClosed(t *testing.T) {
         if _,err=service.Begin("user:1");err!=nil{t.Fatalf("flow capacity wrong: %v",err)}
     }
     if _,err=service.Begin("user:1");!errors.Is(err,ErrCapacity){t.Fatalf("unbounded pending flow count: %v",err)}
+}
+
+func TestUserRepositoryAuthorizationRejectsIncompleteAndDuplicateData(t *testing.T) {
+    for _,scenario:=range []struct{name string;payload any}{
+        {"incomplete",map[string]any{"total_count":2,"repositories":[]any{map[string]any{"id":123}}}},
+        {"duplicate",map[string]any{"total_count":2,"repositories":[]any{map[string]any{"id":123},map[string]any{"id":123}}}},
+        {"invalid",map[string]any{"total_count":1,"repositories":[]any{map[string]any{"id":0}}}},
+    } {
+        t.Run(scenario.name,func(t *testing.T){
+            service:=testService(t,func(w http.ResponseWriter,r *http.Request){
+                switch r.URL.Path {
+                case "/login/oauth/access_token":
+                    json.NewEncoder(w).Encode(map[string]any{"access_token":"github-user-token-long-value","token_type":"bearer"})
+                case "/user":
+                    json.NewEncoder(w).Encode(map[string]any{"id":444,"login":"test-user"})
+                case "/user/installations":
+                    json.NewEncoder(w).Encode(map[string]any{"total_count":1,"installations":[]any{
+                        map[string]any{"id":77,"app_id":123,"target_type":"Organization","account":map[string]any{"id":666,"login":"sample-org"}},
+                    }})
+                case "/user/installations/77/repositories":
+                    json.NewEncoder(w).Encode(scenario.payload)
+                default:http.NotFound(w,r)
+                }
+            })
+            uri,err:=service.Begin("user:1")
+            if err!=nil{t.Fatal(err)}
+            _,err=service.Complete(context.Background(),"user:1",flowState(t,uri),"valid-code",77)
+            if !errors.Is(err,ErrUnavailable){t.Fatalf("unsafe user repository discovery accepted: %v",err)}
+        })
+    }
 }
