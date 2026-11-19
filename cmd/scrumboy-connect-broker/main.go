@@ -22,6 +22,7 @@ import (
 func run() error {
 	var address, certFile, keyFile, clientCAFile, grantsFile, identitiesFile, bindingsFile, appKeyFile string
     var clientID,clientSecretFile,redirectURI string
+    var dynamicClients bool
 	var appID int64
 	flag.StringVar(&address, "listen", "127.0.0.1:9448", "broker HTTPS listen address")
 	flag.StringVar(&certFile, "tls-cert", "", "broker TLS certificate file")
@@ -29,6 +30,7 @@ func run() error {
 	flag.StringVar(&clientCAFile, "client-ca", "", "CA that signs authorized instance client certificates")
 	flag.StringVar(&grantsFile, "grants", "", "operator-provisioned qualification grant snapshot")
     flag.StringVar(&identitiesFile,"client-identities","","mTLS client identities without operator grants")
+    flag.BoolVar(&dynamicClients,"dynamic-clients",false,"verify client identities against revocable SQLite registry")
     flag.StringVar(&bindingsFile,"binding-db","","absolute path to durable verified ownership SQLite database")
     flag.StringVar(&clientID,"github-client-id","","Scrumboy Connect OAuth client ID for user-bound mode")
     flag.StringVar(&clientSecretFile,"github-client-secret-file","","server-only GitHub App OAuth client secret file")
@@ -40,8 +42,9 @@ func run() error {
 	if address == "" || certFile == "" || keyFile == "" || clientCAFile == "" ||
 		appKeyFile == "" || appID <= 0 || 
         !((grantsFile!="" && identitiesFile=="" && bindingsFile=="" &&
-             clientID=="" && clientSecretFile=="" && redirectURI=="") ||
-          (grantsFile=="" && identitiesFile!="" && bindingsFile!="" &&
+             !dynamicClients && clientID=="" && clientSecretFile=="" && redirectURI=="") ||
+          (grantsFile=="" && bindingsFile!="" &&
+             ((dynamicClients && identitiesFile=="") || (!dynamicClients && identitiesFile!="")) &&
              clientID!="" && clientSecretFile!="" && redirectURI!="")) {
 		return errors.New("broker configuration incomplete")
 	}
@@ -68,11 +71,17 @@ func run() error {
     var handler http.Handler
     mode:="operator qualification"
     if bindingsFile!="" {
-        identities,err:=githubbroker.LoadClientIdentities(identitiesFile)
-        if err!=nil{return errors.New("invalid broker client identities")}
         bindings,err:=githubbroker.OpenBindingsDB(bindingsFile)
         if err!=nil{return errors.New("invalid verified ownership database")}
         defer bindings.Close()
+        var identities githubbroker.Authenticator
+        if dynamicClients {
+            identities=bindings
+        }else{
+            snapshot,err:=githubbroker.LoadClientIdentities(identitiesFile)
+            if err!=nil{return errors.New("invalid broker client identities")}
+            identities=snapshot
+        }
         broker,err:=githubbroker.NewUserBound(identities,bindings,provider)
         if err!=nil{return errors.New("could not construct user-bound broker")}
         secret,err:=os.ReadFile(clientSecretFile)
@@ -89,6 +98,7 @@ func run() error {
         }
         handler=broker
         mode="user-bound (mTLS-only OAuth enrollment; browser callback not enabled)"
+        if dynamicClients {mode="user-bound with online instance credential revocation"}
     } else {
         snapshot,err:=githubbroker.LoadSnapshot(grantsFile)
         if err!=nil{return errors.New("invalid or expired broker grants")}
