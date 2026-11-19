@@ -39,6 +39,10 @@ type Grants interface {
 	Lookup(context.Context, string, int64, int64) (Grant, error)
 }
 
+type UserGrants interface {
+    LookupUser(context.Context,string,int64,int64,int64) (Grant,error)
+}
+
 type Provider interface {
 	integration.IssuePullRequestProvider
 }
@@ -46,6 +50,7 @@ type Provider interface {
 type Broker struct {
 	auth Authenticator
 	grants Grants
+    userGrants UserGrants
 	provider Provider
 	now func() time.Time
 	rate *rateLimiter
@@ -61,7 +66,16 @@ func New(auth Authenticator, grants Grants, provider Provider) (*Broker, error) 
 	}, nil
 }
 
+func NewUserBound(auth Authenticator, grants UserGrants, provider Provider) (*Broker,error) {
+    if auth==nil || grants==nil || provider==nil{return nil,ErrUnavailable}
+    return &Broker{
+        auth:auth,userGrants:grants,provider:provider,now:time.Now,
+        rate:&rateLimiter{entries:make(map[string]rateEntry),limit:120,globalLimit:3000,window:time.Minute},
+    },nil
+}
+
 type requestData struct {
+    UserID int64 `json:"userId,omitempty"`
 	InstallationID int64 `json:"installationId"`
 	RepositoryID int64 `json:"repositoryId"`
 	Kind string `json:"kind"`
@@ -122,7 +136,20 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest)
 		return
 	}
-	scope, err := b.grants.Lookup(r.Context(), instance, in.InstallationID, in.RepositoryID)
+    var scope Grant
+    if b.userGrants != nil {
+        if in.UserID<=0 {
+            writeError(w,http.StatusBadRequest)
+            return
+        }
+        scope,err=b.userGrants.LookupUser(r.Context(),instance,in.UserID,in.InstallationID,in.RepositoryID)
+    } else {
+        if in.UserID!=0 {
+            writeError(w,http.StatusBadRequest)
+            return
+        }
+        scope,err=b.grants.Lookup(r.Context(),instance,in.InstallationID,in.RepositoryID)
+    }
 	if err != nil || !validScope(scope, instance, in.InstallationID, in.RepositoryID, b.now()) {
 		writeError(w, http.StatusForbidden)
 		return
