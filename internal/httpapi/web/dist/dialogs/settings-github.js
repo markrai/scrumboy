@@ -384,7 +384,8 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
                     add.classList.add('github-integration__add-repo');
                     add.disabled = choices.length === 0;
                     addSection.append(addFields);
-                } else {
+                }
+                else {
                     textNode(addSection, 'p', activeResources.length ? 'All available repositories are linked to this project.' : 'No repositories available. Try Refresh repositories if GitHub access has changed.').className = 'github-integration__hint';
                 }
                 projectBody.append(addSection);
