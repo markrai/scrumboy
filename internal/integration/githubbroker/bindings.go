@@ -102,6 +102,21 @@ func (s *BindingsDB) initialize() error {
     if err!=nil{return err}
     _,err=s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_github_instance_certificates_instance
         ON github_instance_certificates(instance_id,revoked_at,expires_at);`)
+    if err!=nil{return err}
+    _,err=s.db.Exec(`CREATE TABLE IF NOT EXISTS github_broker_rate_counters (
+        scope TEXT PRIMARY KEY,
+        window_start INTEGER NOT NULL,
+        hits INTEGER NOT NULL CHECK(hits >= 0)
+    );`)
+    if err!=nil{return err}
+    _,err=s.db.Exec(`CREATE TABLE IF NOT EXISTS github_broker_admissions (
+        window_start INTEGER NOT NULL,
+        instance_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK(outcome IN ('admitted','limited')),
+        hits INTEGER NOT NULL CHECK(hits > 0),
+        PRIMARY KEY(window_start,instance_id,operation,outcome)
+    );`)
     return err
 }
 

@@ -52,6 +52,7 @@ type Broker struct {
 	grants Grants
     userGrants UserGrants
     enrollment Enrollment
+    durableAdmission DurableAdmission
 	provider Provider
 	now func() time.Time
 	rate *rateLimiter
@@ -111,6 +112,17 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests)
 		return
 	}
+    if b.durableAdmission!=nil{
+        allowed,err:=b.durableAdmission.Admit(r.Context(),instance,r.URL.Path)
+        if err!=nil {
+            writeError(w,http.StatusServiceUnavailable)
+            return
+        }
+        if !allowed {
+            writeError(w,http.StatusTooManyRequests)
+            return
+        }
+    }
     if enroll {
         if b.enrollment==nil {
             http.NotFound(w,r)
