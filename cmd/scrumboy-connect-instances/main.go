@@ -18,16 +18,16 @@ func execute()error {
     flag.StringVar(&dbPath,"binding-db","","absolute path to Scrumboy Connect broker SQLite database")
     flag.StringVar(&instance,"instance","","Scrumboy instance identifier")
     flag.StringVar(&certificatePath,"certificate","","public client-auth certificate PEM")
-    flag.StringVar(&action,"action","","register, revoke, disconnect, or activity")
+    flag.StringVar(&action,"action","","register, revoke, disconnect, activity, or security-activity")
     flag.IntVar(&limit,"limit",30,"maximum aggregate activity windows to display (1-200)")
     flag.Parse()
     if dbPath=="" || instance=="" || flag.NArg()!=0{return errors.New("missing or unexpected parameters")}
     switch action {
     case "register","revoke":
         if certificatePath=="" {return errors.New("certificate file required")}
-    case "disconnect","activity":
+    case "disconnect","activity","security-activity":
         if certificatePath!=""{return errors.New("action does not take a certificate")}
-        if action=="activity" && (limit<1 || limit>200){return errors.New("activity limit out of range")}
+        if action!="disconnect" && (limit<1 || limit>200){return errors.New("activity limit out of range")}
     default:
         return errors.New("unsupported action")
     }
@@ -40,6 +40,14 @@ func execute()error {
         if err!=nil{return errors.New("could not read broker admission activity")}
         if err:=json.NewEncoder(os.Stdout).Encode(activity);err!=nil{
             return errors.New("could not output broker admission activity")
+        }
+        return nil
+    }
+    if action=="security-activity"{
+        events,err:=db.SecurityActivity(ctx,instance,limit)
+        if err!=nil{return errors.New("could not read broker security events")}
+        if err:=json.NewEncoder(os.Stdout).Encode(events);err!=nil{
+            return errors.New("could not output broker security events")
         }
         return nil
     }
