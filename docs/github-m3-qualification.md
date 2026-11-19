@@ -97,6 +97,19 @@ This is the release gate for the live GitHub App integration before automatic Gi
 
 **Status:** M3.3.D foundational code implemented, with live and public-release acceptance still pending. See [self-hosted setup](github-self-hosted.md).
 
+## Scenario I: M3.3.E operational broker safeguards (implementation complete; live acceptance pending)
+
+- [x] User-bound broker requires atomic on-disk fixed-window rate admission for every read-only issue/PR and OAuth operation, alongside local process budgets.
+- [x] Enforce instance and global limits across processes accessing one SQLite file; fail closed on missing database, clock rollback and budget exhaustion.
+- [x] Keep redacted per-minute operation counts (24-hour retention) and transactional security history for verified bindings and certificate/connection changes (30-day retention).
+- [x] Provide bounded operator-only activity retrieval, no public audit API and no secret-bearing payloads in event rows.
+- [x] Regression tests for shared budget exhaustion, restart persistence, wrong-instance access, audit rollback, private-data omission and retention.
+- [ ] Qualify multi-host deployment with a genuinely shared transactional budget backend and upstream GitHub rate-limit behavior.
+- [ ] Qualify real broker restarts, restored SQLite data, operator audit review, certificate rotation and two-tenant live failure cases.
+- [ ] Complete **M3.3.C** user/session-bound callbacks and authorization before any shared-App public release (**deferred, not accepted**).
+
+**Status:** The operational code is implemented for a broker deployment using one authoritative SQLite file. Multi-host coordination, live acceptance and ordinary-user rollout are **not** complete. See [broker safeguards](github-broker.md).
+
 ## Automated tests and CI
 - `go test ./internal/integration/... ./internal/store/... ./internal/httpapi/... ./internal/mcp/... ./internal/migrate/...`
 - Frontend `npm test` in `internal/httpapi/web`, the generated-code parity check and browser checks.

@@ -42,6 +42,12 @@ Records bind **Scrumboy instance ID + local Scrumboy user ID + GitHub installati
 
 **M3.3.C remains incomplete and its live testing has been deferred at maintainer request**, not passed or waived. Session-bound browser callbacks, authenticated-user identity propagation, and project-level authorization must be built and verified before public access. The new library is not yet wired to Scrumboy's authenticated routes, and the broker is not a publicly usable connection service.
 
+## M3.3.E: operational-hardening progress
+
+The centrally operated broker now has redacted admission counters and a transactional security-event trail in its ownership database. User-bound requests have a fixed-operation shared request budget, checked before GitHub access, with fail-closed database errors. The budget coordinates processes using the same local SQLite file **only**. See [broker operations](github-broker.md).
+
+This does not complete user identity/session integration, a globally distributed multi-host budget, GitHub provider quota observability, or two-tenant live staging. Those remain required public-release gates.
+
 ## Required components before launch
 
 1. **Central App credential service.** Operate the App ID/slug, private-key rotation, GitHub installation-token minting, per-request rate limits, audit logs and revocation in a trusted Scrumboy-managed service. Keep installation tokens server-side and restrict GitHub API access to the exact authorized repository ID and read permissions. Do not embed the PEM in the Scrumboy binary, Docker image, GitHub repository or browser.

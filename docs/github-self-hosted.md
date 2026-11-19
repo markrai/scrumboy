@@ -69,6 +69,12 @@ The hostname is illustrative. The implementation does not hardcode a public brok
 
 The authenticated server is responsible for supplying the *actual local user ID* and authorizing the Scrumboy project before calling `Resolve`, `Search`, `Begin`, `Complete` or `Revoke`. The new client package is **not yet wired to those authenticated routes**, by design.
 
+## M3.3.E operation budgets and audit controls
+
+The central user-bound broker now enforces a SQLite-backed budget shared by broker processes using the **same on-host database file**, and maintains redacted per-instance operation counters and transactional security-event history. Self-hosted clients do not receive the database or an audit endpoint. Operators can inspect activity via `cmd/scrumboy-connect-instances -action activity` and `-action security-activity`. See [broker operational safeguards](github-broker.md).
+
+**This is not yet multi-host rate-limit coordination**, and M3.3.C's deferred browser-session authorization remains a blocker for public users.
+
 ## Security and qualification status
 
 Automated tests cover CA-verified TLS 1.3, certificate-present client authentication, broker certificate mismatch, HTTP redirect refusal, method and payload constraints, bounded response handling, durable certificate rotation and revocation, cross-instance isolation and full disconnect. No secrets or installation tokens are stored in Scrumboy's browser or SQLite.

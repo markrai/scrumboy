@@ -106,6 +106,33 @@ An **operator-only** command, `cmd/scrumboy-connect-instances`, registers active
 
 The shared-App **public release remains blocked** by M3.3.C's unimplemented session-bound browser integration and the later two-tenant live qualification. No shared GitHub App PEM is deployed to user-operated servers.
 
+## M3.3.E: broker operation budgets and security-event records
+
+**Backend foundation implemented; multi-host and live acceptance are still required.** In user-bound mode, the broker uses the ownership SQLite database for an atomic, fixed-window shared admission budget in addition to the existing per-process guard. This is designed for several broker processes accessing **the same SQLite file on one host**; it is not a distributed coordinator across independent hosts or databases. Do not deploy replicas against separate database copies and claim they share rate limits.
+
+Each admitted request increments the database-backed **120 requests/minute per registered instance** and **3,000 requests/minute global** windows. The fixed-operation endpoints covered include issue/PR lookup, search, OAuth begin/complete, and disconnect. A full or rolled-back window fails closed; a database failure rejects the request with HTTP 503 before the broker contacts GitHub. This is an operation budget, not a guarantee that GitHub's separate provider quotas cannot be exhausted.
+
+The broker also retains two **separate, redacted operational records** in the same SQLite database:
+
+- **Admission activity:** per-minute aggregate counts by instance and operation, with outcomes \`admitted\` and \`limited\`. Only the operation name and counts are stored, never raw URLs, titles, search text, OAuth state, authorization codes, GitHub usernames, or credentials. Rows older than 24 hours are pruned on subsequent requests.
+- **Security events:** per-instance verified binding, user/repository/installation revocation, and client certificate registration/revocation or disconnect. The ledger contains operation and numeric identity IDs, not repository names, certificates, tokens or private keys. These events are written in the **same transaction** as the protected change; an audit failure rolls back that change. Events older than 30 days are pruned when new changes are recorded.
+
+The operator can inspect a single instance's records, with a strict 200-result cap, on the trusted broker host:
+
+```bash
+go run ./cmd/scrumboy-connect-instances \
+  -action activity -instance vega-scrumboy-test \
+  -binding-db /secure/connect-bindings.sqlite -limit 30
+
+go run ./cmd/scrumboy-connect-instances \
+  -action security-activity -instance vega-scrumboy-test \
+  -binding-db /secure/connect-bindings.sqlite -limit 30
+```
+
+The output is JSON suitable for local redacted review. Neither command exposes a public HTTP audit API.
+
+**Release restrictions:** Independent broker hosts with independent SQLite databases **do not** share a budget; true multi-host deployment requires a single authoritative transactional budget service or an equivalent centralized database. This implementation does not add continuous GitHub account membership revalidation, full upstream quota coordination, durable user OAuth refresh, or the deferred authenticated Scrumboy browser/session callback. Two unrelated-tenant live qualification and operational monitoring remain required before public enablement.
+
 ## Security tests
 
 ```bash
