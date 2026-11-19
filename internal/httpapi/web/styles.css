@@ -3368,6 +3368,10 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   display: inline-flex;
 }
 
+#externalResourceControls[hidden] {
+  display: none;
+}
+
 @media (max-width: 767px) {
   .tags-add-btn {
     display: inline-flex;

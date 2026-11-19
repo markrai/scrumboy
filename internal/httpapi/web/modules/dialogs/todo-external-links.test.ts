@@ -69,6 +69,20 @@ describe('todo external references', () => {
     expect(document.querySelector('#externalResourcesChips button')).not.toBeNull();
   });
 
+  it('keeps repository references visible when GitHub item metadata fails', async () => {
+    api.mockImplementation(async (path: string) => {
+      if (path.endsWith('/github-items')) throw new Error('offline');
+      if (path.endsWith('/integrations/resources')) return [resource];
+      if (path.endsWith('/integrations')) return [resource];
+      return [];
+    });
+    const mod = await import('./todo-external-links.js');
+    await mod.initializeTodoExternalLinks('alpha', 5, false);
+    await vi.waitFor(() => expect(toast).toHaveBeenCalled());
+    expect(document.querySelector<HTMLAnchorElement>('#externalResourcesChips a')?.href).toContain('github.com/test/repo');
+    expect(document.getElementById('todoGitHubItems')).toBeNull();
+  });
+
   it('links available resources and unlinks existing references', async () => {
     const mod = await import('./todo-external-links.js');
     api.mockImplementation(async (path: string, opts?: RequestInit) => {

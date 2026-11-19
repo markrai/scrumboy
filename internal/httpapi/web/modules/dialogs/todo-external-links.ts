@@ -117,8 +117,12 @@ export async function initializeTodoExternalLinks(slug: string, localId: number,
   const field = document.getElementById('todoExternalResourcesField');
   if (!field) return;
   field.style.display = '';
-  await loadExternalResources(slug, localId, !archived && getTodoFormPermissions().canEditLinks);
-  await initializeTodoGitHubItems(slug, localId, !archived && getTodoFormPermissions().canEditLinks);
+  const editable = !archived && getTodoFormPermissions().canEditLinks;
+  await loadExternalResources(slug, localId, editable);
+  void initializeTodoGitHubItems(slug, localId, editable).catch(err => {
+    resetTodoGitHubItems();
+    showToast(apiErrorMessage(err, { fallbackKey: 'todo.externalResources.failed' }));
+  });
 }
 
 export function resetTodoExternalLinks(): void {
