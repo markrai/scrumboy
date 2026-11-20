@@ -121,8 +121,11 @@ func TestGitHubItemsRESTAuthorizationAndProjectScope(t *testing.T) {
     var browseResult struct { Items []integration.GitHubItem `json:"items"` }
     resp,body=doJSON(t,viewerClient,http.MethodGet,browseBase,nil,&browseResult)
     if resp.StatusCode!=http.StatusOK || provider.browses!=1 || len(browseResult.Items)!=1 || browseResult.Items[0].ResourceID!=resourceID || provider.browseState!="open" || provider.browseQuery!="" {t.Fatalf("browse %d %s %+v",resp.StatusCode,body,browseResult)}
-    for _,bad:=range []string{"&state=invalid","&q=x"} {
-        resp,body=doJSON(t,viewerClient,http.MethodGet,browseBase+bad,nil,nil)
+    for _,bad:=range []string{
+        ts.URL+"/api/board/"+project.Slug+"/integrations/github/browse?resourceId="+strconv.FormatInt(resourceID,10)+"&kind=issue&state=invalid",
+        browseBase+"&q=x",
+    } {
+        resp,body=doJSON(t,viewerClient,http.MethodGet,bad,nil,nil)
         if resp.StatusCode!=http.StatusBadRequest || provider.browses!=1 {t.Fatalf("invalid browse reached provider %d %s",resp.StatusCode,body)}
     }
     resp,body=doJSON(t,outsiderClient,http.MethodGet,browseBase,nil,nil)

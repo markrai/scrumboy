@@ -318,8 +318,10 @@ todoForm.addEventListener("submit", async (e) => {
         method: "POST",
         body: JSON.stringify(createPayload),
       });
-      await notifyTodoCreated(createdTodo, todoDialogGeneration);
-      showToast(t("todo.created"));
+      const referenceFailures = await notifyTodoCreated(createdTodo, todoDialogGeneration);
+      showToast(referenceFailures > 0
+        ? t("todo.created") + " " + referenceFailures + " GitHub reference(s) could not be linked. Reopen the Todo to retry."
+        : t("todo.created"));
     }
 
     await requestTodoDialogClose({ force: true, reason: "save" });
