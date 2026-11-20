@@ -423,8 +423,6 @@ type storeAPI interface {
     ListGitHubAutomationMatches(ctx context.Context, actorID, projectID int64, limit int) ([]store.GitHubAutomationMatch,error)
     ListIntegrationAutomationActions(ctx context.Context,actorID,projectID int64,limit int)([]store.IntegrationAutomationAction,error)
     ListIntegrationAutomationActionAudit(ctx context.Context,actorID,projectID,actionID int64,limit int)([]store.IntegrationAutomationActionAudit,error)
-    ApproveIntegrationAutomationExecution(ctx context.Context,actorID,projectID,ruleID,expectedVersion int64)(store.IntegrationAutomationRule,error)
-    RevokeIntegrationAutomationExecution(ctx context.Context,actorID,projectID,ruleID int64)error
     UpdateIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64,in store.UpdateIntegrationAutomationRuleInput) (store.IntegrationAutomationRule,error)
     DeleteIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64) error
     PreviewIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64,in store.IntegrationAutomationPreviewInput) (store.IntegrationAutomationPreview,error)
