@@ -70,7 +70,7 @@ func TestAutomationMatchHistoryIsReadOnlyAndProjectScoped(t *testing.T){
         ExecutionAvailable bool `json:"executionAvailable"`
     }
     resp,body:=doJSON(t,viewerClient,http.MethodGet,base+"?limit=1",nil,&result)
-    if resp.StatusCode!=http.StatusOK||len(result.Matches)!=1||result.ExecutionAvailable||
+    if resp.StatusCode!=http.StatusOK||len(result.Matches)!=1||!result.ExecutionAvailable||
         result.Matches[0].RuleID!=rule.ID||result.Matches[0].WouldExecute{
         t.Fatalf("viewer match list %d %s %+v",resp.StatusCode,body,result)
     }

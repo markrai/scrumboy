@@ -35,6 +35,6 @@ func (s *Server) handleProjectAutomationMatches(w http.ResponseWriter,r *http.Re
     matches,err:=s.store.ListGitHubAutomationMatches(ctx,actor,pc.Project.ID,limit)
     if err!=nil{writeStoreErr(w,err,true);return}
     writeJSON(w,http.StatusOK,map[string]any{
-        "matches":matches,"executionAvailable":false,
+        "matches":matches,"executionAvailable":true,
     })
 }

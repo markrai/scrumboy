@@ -10,6 +10,7 @@ import (
 )
 
 func TestAutomationRuleRESTAuthorizationAndNonExecutingPreview(t *testing.T){
+    t.Setenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED","false")
     ts,db,cleanup:=newTestHTTPServer(t,"full")
     defer cleanup()
     ownerClient:=newCookieClient(t)
@@ -63,14 +64,14 @@ func TestAutomationRuleRESTAuthorizationAndNonExecutingPreview(t *testing.T){
         ExecutionAvailable bool `json:"executionAvailable"`
     }
     resp,body=doJSON(t,viewerClient,http.MethodGet,base,nil,&list)
-    if resp.StatusCode!=http.StatusOK||len(list.Rules)!=1||list.ExecutionAvailable{
+    if resp.StatusCode!=http.StatusOK||len(list.Rules)!=1||!list.ExecutionAvailable{
         t.Fatalf("viewer list %d %s %+v",resp.StatusCode,body,list)
     }
     sample:=map[string]any{"resourceId":repo.ID,"eventType":"pull_request.merged"}
     var preview store.IntegrationAutomationPreview
     resp,body=doJSON(t,viewerClient,http.MethodPost,url+"/preview",sample,&preview)
     if resp.StatusCode!=http.StatusOK||!preview.Matched||preview.Reason!="rule_disabled"||
-        preview.ExecutionAvailable||preview.WouldExecute||!preview.SampleOnly {
+        !preview.ExecutionAvailable||preview.WouldExecute||!preview.SampleOnly {
         t.Fatalf("preview %d %s %+v",resp.StatusCode,body,preview)
     }
     resp,body=doJSON(t,strangerClient,http.MethodPost,url+"/preview",sample,nil)
@@ -82,7 +83,7 @@ func TestAutomationRuleRESTAuthorizationAndNonExecutingPreview(t *testing.T){
     if resp.StatusCode!=http.StatusOK||!enabled.Enabled{t.Fatalf("enable %d %s %+v",resp.StatusCode,body,enabled)}
     resp,body=doJSON(t,viewerClient,http.MethodPost,url+"/preview",sample,&preview)
     if resp.StatusCode!=http.StatusOK||!preview.Matched||preview.Reason!="execution_not_approved"||
-        preview.ExecutionAvailable||preview.WouldExecute{
+        !preview.ExecutionAvailable||preview.WouldExecute{
         t.Fatalf("enabled preview triggered action %d %s %+v",resp.StatusCode,body,preview)
     }
     resp,body=doJSON(t,ownerClient,http.MethodPost,url+"/preview",map[string]any{

@@ -84,7 +84,7 @@ function errorText(error) {
     if (value?.status === 403 || value?.status === 404)
         return 'Permission changed. Refresh the project or ask a Maintainer.';
     if (value?.status === 409)
-        return 'This rule changed or execution is unavailable. The latest settings have been reloaded.';
+        return 'This rule changed or is unavailable. The latest settings have been reloaded.';
     return 'The request could not be confirmed. The latest server state has been reloaded.';
 }
 export function renderAutomationTabShell() {
@@ -126,13 +126,7 @@ export function bindAutomationTab(options) {
             return;
         }
         const snapshot = data;
-        if (!snapshot.executionAvailable) {
-            const note = append(root, 'p', 'Execution is off at the server. You can configure, enable and preview rules, but they cannot produce notifications until the operator enables execution and a Maintainer separately approves each rule.', 'settings-automations__notice');
-            note.setAttribute('role', 'status');
-        }
-        else {
-            append(root, 'p', 'Execution is available on this server, but each rule still requires separate Maintainer approval. Enabled alone is not approval.', 'settings-automations__notice');
-        }
+        append(root, 'p', 'Enabled rules can create in-app notifications after a Maintainer approves their execution. Each rule can be disabled or have its approval revoked at any time.', 'settings-automations__notice');
         const repositories = snapshot.repositories.filter(repo => repo.availability === 'available');
         const repositoryNames = new Map(snapshot.repositories.map(repo => [repo.id, repo.name]));
         const choices = repositories.map(repo => [String(repo.id), repo.name]);
@@ -175,11 +169,9 @@ export function bindAutomationTab(options) {
             append(row, 'p', (repositoryNames.get(rule.resourceId) || 'Repository unavailable') + ' · ' + eventLabel(rule.eventType), 'muted');
             append(row, 'p', rule.executionApprovedAt
                 ? 'Execution approved · ' + relativeDate(rule.executionApprovedAt)
-                : !snapshot.executionAvailable
-                    ? 'Notifications unavailable: server execution is off'
-                    : !rule.enabled
-                        ? 'Notifications off: enable the rule before approval'
-                        : 'Approval required before notifications can run', 'settings-automations__approval');
+                : !rule.enabled
+                    ? 'Notifications off: enable the rule before approval'
+                    : 'Approval required before notifications can run', 'settings-automations__approval');
             const controls = append(row, 'div', undefined, 'settings-automations__controls');
             makeButton(controls, 'Preview', () => { void preview(rule); }, { disabled: busy });
             if (canManage) {
@@ -193,7 +185,7 @@ export function bindAutomationTab(options) {
                 if (rule.executionApprovedAt) {
                     makeButton(controls, 'Revoke approval', () => { void revoke(rule); }, { disabled: busy, danger: true });
                 }
-                else if (rule.enabled && snapshot.executionAvailable) {
+                else if (rule.enabled) {
                     makeButton(controls, 'Approve execution', () => { void approve(rule); }, { disabled: busy });
                 }
                 makeButton(controls, 'Delete', () => { void remove(rule); }, { disabled: busy, danger: true });
@@ -279,7 +271,6 @@ export function bindAutomationTab(options) {
                 rules: rules.rules,
                 matches: matches.matches,
                 actions: actions.actions,
-                executionAvailable: rules.executionAvailable,
             };
             previews.clear();
         }
@@ -345,7 +336,7 @@ export function bindAutomationTab(options) {
         }
     }
     async function approve(rule) {
-        if (!canManage || busy || !data?.executionAvailable)
+        if (!canManage || busy || !data)
             return;
         const version = Date.parse(rule.updatedAt);
         if (!Number.isSafeInteger(version) || version <= 0) {

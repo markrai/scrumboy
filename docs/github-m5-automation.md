@@ -48,7 +48,7 @@ Content-Type: application/json
 
 Returns \`201\` with the stored rule. Clients cannot activate execution by adding fields to creation requests.
 
-**List rules:** \`GET /api/board/{slug}/integrations/automation-rules\` returns \`{"rules":[...],"executionAvailable":false}\`.
+**List rules:** \`GET /api/board/{slug}/integrations/automation-rules\` returns \`{"rules":[...],"executionAvailable":true}\`.
 
 **Update a rule:** \`PATCH /api/board/{slug}/integrations/automation-rules/{ruleId}\` accepts one or more of \`name\`, \`resourceId\`, \`eventType\` and \`enabled\`. For example:
 
@@ -69,7 +69,7 @@ Content-Type: application/json
 {"resourceId":123,"eventType":"pull_request.merged"}
 \`\`\`
 
-The response describes a deterministic match against the saved rule. Its \`sampleOnly\` field is always \`true\`, and \`executionAvailable\` and \`wouldExecute\` are always \`false\`.
+The response describes a deterministic match against the saved rule. Its \`sampleOnly\` field is always \`true\`, \`executionAvailable\` is \`true\` in the current M5.C implementation, and \`wouldExecute\` remains \`false\`: previews never execute notifications.
 
 \`\`\`json
 {
@@ -78,7 +78,7 @@ The response describes a deterministic match against the saved rule. Its \`sampl
   "matched":true,
   "enabled":false,
   "actionType":"notify",
-  "executionAvailable":false,
+  "executionAvailable":true,
   "wouldExecute":false,
   "reason":"rule_disabled"
 }
@@ -131,7 +131,7 @@ Authenticated members of an authorized project can read a bounded receipt list:
 GET /api/board/my-project/integrations/automation-matches?limit=30
 \`\`\`
 
-The limit defaults to 30 and cannot exceed 100. Responses contain \`matches\` and \`executionAvailable:false\`, with per-match \`wouldExecute:false\`. The endpoint is GET-only and cannot be accessed from unrelated or anonymous boards. It contains only associated local resource IDs, event type, item number, timestamps, action proposal and rule IDs, not raw webhook bodies or private GitHub data.
+The limit defaults to 30 and cannot exceed 100. Responses contain \`matches\` and \`executionAvailable:true\` (the current server capability), with per-match \`wouldExecute:false\` because listing matches is read-only. The endpoint is GET-only and cannot be accessed from unrelated or anonymous boards. It contains only associated local resource IDs, event type, item number, timestamps, action proposal and rule IDs, not raw webhook bodies or private GitHub data.
 
 The existing admin-only webhook status endpoint \`GET /api/admin/integrations/github/webhooks\` also reports an \`automation\` object with pending/leased/completed/dead and receipt counts. Operational errors remain distinguishable from a valid zero-match result, while exact provider errors and payloads are not logged.
 
@@ -143,11 +143,13 @@ The public shared-App browser/session binding and live multi-tenant staging rema
 
 ## M5.C: separately approved, in-app notification execution
 
-**Implementation status: staged; operator execution remains default-off, live staging and final acceptance pending.** Migration 097 adds new durable approval, action and redacted action-audit tables. The legacy `execution_approved_at` column remains NULL and is **not** used as authorization. A new approval record is authoritative; this preserves M5.A's strict no-auto-upgrade rule while allowing an explicit M5.C consent workflow.
+**Implementation status: staged; server execution capability is available by default, live staging and final acceptance pending.** Migration 097 adds new durable approval, action and redacted action-audit tables. The legacy `execution_approved_at` column remains NULL and is **not** used as authorization. A new approval record is authoritative; this preserves M5.A's strict no-auto-upgrade rule while allowing an explicit M5.C consent workflow.
 
 The only executable action is `notify`, implemented as a durable **project-scoped in-app notification record**. It does not send email, push notifications or provider API writes, and cannot modify card contents, status, visibility or GitHub resources. The M5.D UI will present the feed; until then it is readable through the project API.
 
-Before testing, the operator must explicitly set `SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED=true` in a **non-production** Full Mode deployment. The default is disabled. Disabling the setting halts action claims; the setting is also checked on every worker batch. Do not enable it in general-availability production before M5.E and the M3.3.C authorization gate.
+The automation executor is available automatically in a Full Mode deployment with the GitHub webhook service configured. There is **no server-wide automation execution environment switch**. The former `SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED` variable is ignored, whether set to `true` or `false`; do not add it to deployment manifests. Execution still requires an enabled rule, separate authenticated Maintainer approval of that exact rule version, a valid repository association, and a verified matching GitHub webhook. Merely installing the GitHub App, enabling a rule or upgrading the server never grants per-rule execution approval.
+
+This behavior is staged in PR #366, which remains unreleased pending M5.E and M3.3.C acceptance. Do not deploy the unqualified branch to general-availability production.
 
 To activate execution, a project Maintainer first creates and enables a rule as before. Enabling `enabled:true` alone is never consent. Next, the Maintainer submits a **separate, authenticated** request:
 
@@ -158,7 +160,7 @@ Content-Type: application/json
 {"confirm":"APPROVE_NOTIFY_EXECUTION","ruleUpdatedAtMs":1795000000000}
 ```
 
-`ruleUpdatedAtMs` must be the exact millisecond timestamp represented by the rule's `updatedAt` field. Stale configurations fail with a conflict, disabled rules and unavailable repository associations are rejected. Only a project Maintainer can approve or revoke; CSRF/session protection matches normal project rules. The worker also rechecks that the approver is still a project Maintainer before completing any pending action. A newly approved response exposes `executionApprovedAt`. `DELETE` on the same path immediately revokes the approval, even if the operator has disabled execution. **Any rule PATCH also revokes approval**, including a disable, rename, event change or repository change. A later reapproval creates a new monotonic approval identity so old queued actions cannot revive.
+`ruleUpdatedAtMs` must be the exact millisecond timestamp represented by the rule's `updatedAt` field. Stale configurations fail with a conflict, disabled rules and unavailable repository associations are rejected. Only a project Maintainer can approve or revoke; CSRF/session protection matches normal project rules. The worker also rechecks that the approver is still a project Maintainer before completing any pending action. A newly approved response exposes `executionApprovedAt`. `DELETE` on the same path immediately revokes the approval without requiring any server-wide setting. **Any rule PATCH also revokes approval**, including a disable, rename, event change or repository change. A later reapproval creates a new monotonic approval identity so old queued actions cannot revive.
 
 Matching still produces **read-only receipts** for enabled rules as in M5.B. An action job is queued *in the same transaction* only when a current approval exists for that exact rule version, and both the rule version and approval predate **webhook admission**. Old receipts or pre-consent events are not backfilled. The queue is capped at 5,000 pending or leased jobs, with unique event/rule keys, short leases, up to eight bounded attempts, and capped retry backoff. Failures are redacted into bounded error classes and audit transitions. The webhook cannot generate new notifications from a re-delivery of the same event.
 
@@ -166,7 +168,7 @@ When a leased notification is completed, the worker rechecks rule enablement, ex
 
 Project members can read the bounded notification and action history at `GET /api/board/{slug}/integrations/automation-actions?limit=30` (maximum 100), including status, attempt count and redacted error class. The admin GitHub webhook status now includes per-status action counts. Audit transitions are durable while the underlying GitHub event remains retained; the existing M5.B 30-day event retention cascades into completed/dead action history. No raw webhook payload, provider token or private content is added to the action tables.
 
-**Acceptance still required before release:** verify Go/migration/HTTP tests and security CI, explicit consent and stale-version failures, lease races, retry exhaustion, revocation mid-flight, operator kill-switch, two unrelated tenants, real GitHub staging webhooks and app revocation. M3.3.C remains an unwaived public release blocker. This milestone does not merge PR #366.
+**Acceptance still required before release:** verify Go/migration/HTTP tests and security CI, explicit consent and stale-version failures, lease races, retry exhaustion, rule disable/revocation mid-flight, legacy environment setting non-interference, two unrelated tenants, real GitHub staging webhooks and app revocation. M3.3.C remains an unwaived public release blocker. This milestone does not merge PR #366.
 
 ## M5.D: project Automations settings
 
@@ -183,8 +185,8 @@ The tab fetches only server-authoritative, project-scoped endpoints:
 | In-app notification history | `GET /api/board/{slug}/integrations/automation-actions?limit=30` | Project member |
 | Notification audit transitions | `GET /api/board/{slug}/integrations/automation-actions/{id}/audit?limit=30` | Project member |
 
-Rule changes continue using the M5.A POST/PATCH/DELETE API. New rules are always disabled, with one supported `notify` action and explicit supported GitHub event types. Enabling a rule **only allows event matching**. If the operator has not enabled `SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED=true`, the UI shows the explicit execution-unavailable notice and never offers approval. When the server flag is enabled, the Maintainer must separately confirm execution in a dialog, and the browser sends the exact current rule timestamp and required `APPROVE_NOTIFY_EXECUTION` marker through the M5.C approval route. Editing a rule revokes that approval, as does disablement and explicit revocation. The UI always reloads authoritative server state after a write or uncertain failure; it never treats optimistic state as approval.
+Rule changes continue using the M5.A POST/PATCH/DELETE API. New rules are always disabled, with one supported `notify` action and explicit supported GitHub event types. Enabling a rule **only allows event matching**. There is no server execution flag or execution-unavailable notice. For each enabled rule, the Maintainer must separately confirm execution in a dialog, and the browser sends the exact current rule timestamp and required `APPROVE_NOTIFY_EXECUTION` marker through the M5.C approval route. Editing a rule revokes that approval, as does disablement and explicit revocation. The UI always reloads authoritative server state after a write or uncertain failure; it never treats optimistic state as approval.
 
 Previews show explicit sample-only, non-executing results. A preview does not authorize execution and cannot trigger a notification. The history page distinguishes completed **in-app records** from email, push or GitHub actions, and includes bounded redacted transition details (`queued`, `claimed`, `completed`, `retry`, `dead`, `cancelled`). Neither automation matching nor the interface changes card content, board visibility or GitHub resources. User-controlled public-board publication decisions are unchanged.
 
-**Remaining release gates:** full Go/frontend/migration/security CI at the final SHA, browser interaction tests in the isolated staging environment, live two-tenant signed webhook and repository revocation exercises, and completion of the deferred M3.3.C public shared-App authorization gate. Do not enable automatic execution in general-availability production until M5.E and those gates pass. Keep cumulative PR #366 open/non-draft.
+**Remaining release gates:** full Go/frontend/migration/security CI at the final SHA, browser interaction tests in the isolated staging environment, live two-tenant signed webhook and repository revocation exercises, and completion of the deferred M3.3.C public shared-App authorization gate. Do not deploy the unfinished M5 feature in general-availability production until M5.E and those gates pass. Keep cumulative PR #366 open/non-draft.

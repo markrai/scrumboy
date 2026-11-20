@@ -54,9 +54,6 @@ func TestAutomationExecutionConsentAndProjectHistoryREST(t *testing.T){
     if resp.StatusCode!=http.StatusOK{t.Fatalf("enable %d %s",resp.StatusCode,body)}
     consentURL:=ruleURL+"/execution-approval"
     consent:=map[string]any{"confirm":"APPROVE_NOTIFY_EXECUTION","ruleUpdatedAtMs":enabled.UpdatedAt.UnixMilli()}
-    resp,body=doJSON(t,ownerClient,http.MethodPost,consentURL,consent,nil)
-    if resp.StatusCode!=http.StatusConflict{t.Fatalf("operator-off consent %d %s",resp.StatusCode,body)}
-    t.Setenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED","true")
     resp,body=doJSON(t,viewerClient,http.MethodPost,consentURL,consent,nil)
     if resp.StatusCode!=http.StatusForbidden{t.Fatalf("viewer consent %d %s",resp.StatusCode,body)}
     resp,body=doJSON(t,outsiderClient,http.MethodPost,consentURL,consent,nil)
@@ -88,8 +85,11 @@ func TestAutomationExecutionConsentAndProjectHistoryREST(t *testing.T){
         t.Fatalf("settle %s %v",status,err)
     }
     actionsURL:=ts.URL+"/api/board/"+project.Slug+"/integrations/automation-actions"
-    resp,body=doJSON(t,viewerClient,http.MethodGet,actionsURL,nil,nil)
-    if resp.StatusCode!=http.StatusOK{t.Fatalf("viewer history %d %s",resp.StatusCode,body)}
+    var actionHistory struct{
+        ExecutionAvailable bool `json:"executionAvailable"`
+    }
+    resp,body=doJSON(t,viewerClient,http.MethodGet,actionsURL,nil,&actionHistory)
+    if resp.StatusCode!=http.StatusOK||!actionHistory.ExecutionAvailable{t.Fatalf("viewer history %d %s %+v",resp.StatusCode,body,actionHistory)}
     resp,body=doJSON(t,outsiderClient,http.MethodGet,actionsURL,nil,nil)
     if resp.StatusCode!=http.StatusNotFound{t.Fatalf("outsider history %d %s",resp.StatusCode,body)}
     auditURL:=actionsURL+"/"+strconv.FormatInt(claimed[0].ID,10)+"/audit"
@@ -108,9 +108,8 @@ func TestAutomationExecutionConsentAndProjectHistoryREST(t *testing.T){
     if resp.StatusCode!=http.StatusBadRequest{t.Fatalf("unbounded history %d %s",resp.StatusCode,body)}
     resp,body=doJSON(t,ownerClient,http.MethodDelete,consentURL,nil,nil)
     if resp.StatusCode!=http.StatusNoContent{t.Fatalf("revoke %d %s",resp.StatusCode,body)}
-    t.Setenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED","false")
     resp,body=doJSON(t,ownerClient,http.MethodDelete,consentURL,nil,nil)
-    if resp.StatusCode!=http.StatusNoContent{t.Fatalf("disabled-operator revoke %d %s",resp.StatusCode,body)}
+    if resp.StatusCode!=http.StatusNoContent{t.Fatalf("repeated revoke %d %s",resp.StatusCode,body)}
     listed,err:=st.ListIntegrationAutomationRules(ctx,ownerID,project.ID)
     if err!=nil||len(listed)!=1||listed[0].ExecutionApprovedAt!=nil{t.Fatalf("revoked %+v %v",listed,err)}
 }

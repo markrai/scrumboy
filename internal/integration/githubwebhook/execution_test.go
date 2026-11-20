@@ -32,13 +32,12 @@ func (f *automationExecutionFake) FailIntegrationAutomationAction(context.Contex
     return true,nil
 }
 
-func TestAutomationExecutorIsOperatorGated(t *testing.T){
-    t.Setenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED","false")
+func TestAutomationExecutorIgnoresLegacyOperatorSetting(t *testing.T){
     fake:=&automationExecutionFake{}
     service:=&Service{executor:fake,logger:log.New(io.Discard,"",0)}
-    if err:=service.ProcessAutomationExecutionBatch(context.Background());err!=nil{t.Fatal(err)}
-    if fake.claims!=0||fake.settled!=0{t.Fatal("executed while operator gate disabled")}
-    t.Setenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED","true")
-    if err:=service.ProcessAutomationExecutionBatch(context.Background());err!=nil{t.Fatal(err)}
-    if fake.claims!=1||fake.settled!=1{t.Fatalf("enabled executor claims=%d settles=%d",fake.claims,fake.settled)}
+    for _,value:=range []string{"false","true",""}{
+        t.Setenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED",value)
+        if err:=service.ProcessAutomationExecutionBatch(context.Background());err!=nil{t.Fatal(err)}
+    }
+    if fake.claims!=3||fake.settled!=3{t.Fatalf("executor claims=%d settles=%d",fake.claims,fake.settled)}
 }

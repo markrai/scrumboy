@@ -2,7 +2,6 @@ package httpapi
 
 import (
     "net/http"
-    "os"
 
     "scrumboy/internal/store"
 )
@@ -28,7 +27,7 @@ func (s *Server) handleProjectAutomationRules(w http.ResponseWriter,r *http.Requ
             rules,err:=s.store.ListIntegrationAutomationRules(ctx,actor,pc.Project.ID)
             if err!=nil{writeStoreErr(w,err,true);return}
             writeJSON(w,http.StatusOK,map[string]any{
-                "rules":rules,"executionAvailable":os.Getenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED")=="true",
+                "rules":rules,"executionAvailable":true,
             })
         case http.MethodPost:
             var in store.CreateIntegrationAutomationRuleInput
@@ -57,15 +56,11 @@ func (s *Server) handleProjectAutomationRules(w http.ResponseWriter,r *http.Requ
             if err:=readJSON(w,r,s.maxBody,&in);err!=nil{return}
             preview,err:=s.store.PreviewIntegrationAutomationRule(ctx,actor,pc.Project.ID,ruleID,in)
             if err!=nil{writeStoreErr(w,err,true);return}
-            preview.ExecutionAvailable=os.Getenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED")=="true"
+            preview.ExecutionAvailable=true
             writeJSON(w,http.StatusOK,preview)
         case "execution-approval":
             switch r.Method{
             case http.MethodPost:
-                if os.Getenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED")!="true"{
-                    writeError(w,http.StatusConflict,"EXECUTION_DISABLED","automation execution is disabled",nil)
-                    return
-                }
                 var in struct{
                     Confirm string `json:"confirm"`
                     RuleUpdatedAtMs int64 `json:"ruleUpdatedAtMs"`

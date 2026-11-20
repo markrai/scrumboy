@@ -33,7 +33,6 @@ function rule(overrides: Record<string, unknown> = {}) {
 function fixtures(settings: {
   canManage?: boolean;
   rules?: any[];
-  available?: boolean;
   repositories?: any[];
   actions?: any[];
   matches?: any[];
@@ -44,7 +43,7 @@ function fixtures(settings: {
       return settings.repositories ?? [{ id: 42, name: 'org/repo', availability: 'available' }];
     }
     if (path === base + '/automation-rules' && !options?.method) {
-      return { rules, executionAvailable: settings.available ?? false };
+      return { rules, executionAvailable: true };
     }
     if (path === base + '/automation-matches?limit=30') {
       return { matches: settings.matches ?? [] };
@@ -121,8 +120,8 @@ describe('project automations settings', () => {
     });
     const controller = mount(false);
     await vi.waitFor(() => expect(document.querySelectorAll('.settings-automations__rule')).toHaveLength(1));
-    expect(document.body.textContent).toContain('Execution is off at the server');
-    expect(document.body.textContent).toContain('Notifications unavailable: server execution is off');
+    expect(document.body.textContent).toContain('Enabled rules can create in-app notifications');
+    expect(document.body.textContent).toContain('Approval required before notifications can run');
     expect(document.body.textContent).toContain('Notification history');
     expect(document.body.textContent).toContain('Recent matches');
     expect(buttons('Create Rule')).toHaveLength(0);
@@ -183,12 +182,13 @@ describe('project automations settings', () => {
     expect(requests).toHaveBeenCalledWith(base + '/automation-rules/8', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ enabled: true }),
     }));
+    expect(buttons('Approve execution')).toHaveLength(1);
     expect(requests.mock.calls.some(call => String(call[0]).endsWith('/execution-approval'))).toBe(false);
     controller.abort();
   });
 
   it('requires separate confirmation and passes the exact rule version to execution consent', async () => {
-    fixtures({ available: true });
+    fixtures();
     const controller = mount(true);
     await vi.waitFor(() => expect(buttons('Approve execution')).toHaveLength(1));
     confirm.mockResolvedValueOnce(false);
@@ -210,7 +210,7 @@ describe('project automations settings', () => {
   });
 
   it('edit and disable remain independent of approval and are confirmed by the server', async () => {
-    fixtures({ available: true, rules: [rule({ executionApprovedAt: version })] });
+    fixtures({ rules: [rule({ executionApprovedAt: version })] });
     const controller = mount(true);
     await vi.waitFor(() => expect(buttons('Revoke approval')).toHaveLength(1));
     findButton('Edit').click();

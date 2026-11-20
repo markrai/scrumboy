@@ -2,7 +2,6 @@ package httpapi
 
 import (
     "net/http"
-    "os"
     "strconv"
 
     "scrumboy/internal/store"
@@ -55,6 +54,6 @@ func (s *Server) handleProjectAutomationActions(w http.ResponseWriter,r *http.Re
     actions,err:=s.store.ListIntegrationAutomationActions(ctx,actor,pc.Project.ID,limit)
     if err!=nil{writeStoreErr(w,err,true);return}
     writeJSON(w,http.StatusOK,map[string]any{
-        "actions":actions,"executionAvailable":os.Getenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED")=="true",
+        "actions":actions,"executionAvailable":true,
     })
 }

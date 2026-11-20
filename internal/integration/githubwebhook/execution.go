@@ -3,7 +3,6 @@ package githubwebhook
 import (
     "context"
     "errors"
-    "os"
     "time"
 
     "scrumboy/internal/store"
@@ -16,12 +15,11 @@ type AutomationExecutor interface {
 }
 
 func (s *Service) ProcessAutomationExecutionBatch(ctx context.Context)error{
-    if s.executor==nil || os.Getenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED")!="true"{return nil}
+    if s.executor==nil{return nil}
     actions,err:=s.executor.ClaimIntegrationAutomationActions(ctx,time.Now().UTC(),5,45*time.Second)
     if err!=nil{return err}
     for _,action:=range actions {
         if err:=ctx.Err();err!=nil{return err}
-        if os.Getenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED")!="true"{return nil}
         attemptCtx,cancel:=context.WithTimeout(ctx,30*time.Second)
         _,err:=s.executor.SettleIntegrationAutomationAction(attemptCtx,action.ID,action.LeaseToken,time.Now().UTC())
         cancel()
