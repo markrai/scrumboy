@@ -61,6 +61,10 @@ func TestIntegrationAutomationRuleAuthorizationAndPreviewAreNonExecuting(t *test
     input.ResourceID=resourceID
     rule,err:=st.CreateIntegrationAutomationRule(ctx,maintainer.ID,project.ID,input)
     if err!=nil{t.Fatal(err)}
+    if _,err:=st.db.ExecContext(ctx,"UPDATE integration_automation_rules SET execution_approved_at=123 WHERE id=?",rule.ID);err==nil {
+        t.Fatal("M5.A schema accepted execution activation without a future consent migration")
+    }
+
     if rule.Enabled || rule.ActionType!="notify"||rule.CreatedByUserID==nil||*rule.CreatedByUserID!=maintainer.ID{
         t.Fatalf("new rule should be disabled and owned %+v",rule)
     }

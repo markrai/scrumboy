@@ -10,6 +10,7 @@ CREATE TABLE integration_automation_rules (
   )),
   action_type TEXT NOT NULL DEFAULT 'notify' CHECK (action_type = 'notify'),
   enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  execution_approved_at INTEGER DEFAULT NULL CHECK (execution_approved_at IS NULL),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (project_id, resource_id) REFERENCES integration_project_resources(project_id, resource_id) ON DELETE CASCADE

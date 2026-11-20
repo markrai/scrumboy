@@ -56,7 +56,7 @@ Returns \`201\` with the stored rule. Clients cannot activate execution by addin
 {"enabled":true}
 \`\`\`
 
-This saves configuration **only**. There is no rule worker, provider-event subscription or execution path in M5.A.
+This saves configuration **only**. There is no rule worker, provider-event subscription or execution path in M5.A. The database also has an `execution_approved_at` field that is constrained to `NULL` throughout M5.A. M5.C must explicitly change that schema and require a new user approval before executing saved configurations.
 
 **Delete a rule:** \`DELETE /api/board/{slug}/integrations/automation-rules/{ruleId}\` returns \`204\`.
 
