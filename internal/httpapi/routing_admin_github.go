@@ -56,7 +56,12 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		if err!=nil {writeInternal(w,err);return}
 		dead,err:=s.githubWebhook.Dead(s.requestContext(r),actorID)
 		if err!=nil {writeStoreErr(w,err,false);return}
-		writeJSON(w,http.StatusOK,map[string]any{"configured":true,"counts":counts,"deadDeliveries":dead})
+		automation,err:=s.githubWebhook.AutomationSummary(s.requestContext(r))
+        if err!=nil && !errors.Is(err,store.ErrNotFound){writeInternal(w,err);return}
+        writeJSON(w,http.StatusOK,map[string]any{
+            "configured":true,"counts":counts,"deadDeliveries":dead,
+            "automation":automation,
+        })
 		return
 	}
 	if len(rest)==3 && rest[0]=="webhooks" && rest[2]=="retry" && r.Method==http.MethodPost {

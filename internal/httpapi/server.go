@@ -420,6 +420,7 @@ type storeAPI interface {
 	ListProjectIntegrationResources(ctx context.Context, actorID, projectID int64) ([]store.IntegrationResource, error)
     CreateIntegrationAutomationRule(ctx context.Context, actorID, projectID int64, in store.CreateIntegrationAutomationRuleInput) (store.IntegrationAutomationRule,error)
     ListIntegrationAutomationRules(ctx context.Context, actorID, projectID int64) ([]store.IntegrationAutomationRule,error)
+    ListGitHubAutomationMatches(ctx context.Context, actorID, projectID int64, limit int) ([]store.GitHubAutomationMatch,error)
     UpdateIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64,in store.UpdateIntegrationAutomationRuleInput) (store.IntegrationAutomationRule,error)
     DeleteIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64) error
     PreviewIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64,in store.IntegrationAutomationPreviewInput) (store.IntegrationAutomationPreview,error)
