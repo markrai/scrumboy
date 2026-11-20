@@ -48,7 +48,7 @@ function fixtures(settings: {
       return { matches: settings.matches ?? [] };
     }
     if (path === base + '/automation-actions?limit=30') {
-      return { actions: settings.actions ?? [] };
+      return { actions: (settings.actions ?? []).map(item => ({ ...item })) };
     }
     if (path.endsWith('/preview')) {
       return { ruleId: 7, matched: true, enabled: true, sampleOnly: true, executionAvailable: true, wouldExecute: false, reason: 'ready_for_new_events' };
