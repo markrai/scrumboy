@@ -190,6 +190,7 @@ var nonAuthorityUserReferences = map[string]bool{
 	"todo_assignee_events.to_assignee_user_id":        true,
 	"todos.created_by_user_id":                        true,
 	"integration_automation_rules.created_by_user_id": true,
+	"integration_automation_execution_approvals.approved_by_user_id": true,
 
 	// Only narrows what a project member may do: GetTodoEditScope also needs a project role.
 	"todos.assignee_user_id": true,
