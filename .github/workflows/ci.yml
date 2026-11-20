@@ -158,3 +158,30 @@ jobs:
         run: |
           git diff --exit-code -- internal/httpapi/web/dist internal/httpapi/web/vendor
           test -z "$(git status --porcelain internal/httpapi/web/dist internal/httpapi/web/vendor)"
+
+  frontend-asset-snapshot:
+    name: M5.D generated modules snapshot
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: internal/httpapi/web/package-lock.json
+
+      - name: Build and print generated modules
+        working-directory: internal/httpapi/web
+        run: |
+          npm ci
+          npm run build
+          echo M5D_SETTINGS_JS_BEGIN
+          base64 dist/dialogs/settings.js
+          echo M5D_SETTINGS_JS_END
+          echo M5D_AUTOMATIONS_JS_BEGIN
+          base64 dist/dialogs/settings-automations.js
+          echo M5D_AUTOMATIONS_JS_END
