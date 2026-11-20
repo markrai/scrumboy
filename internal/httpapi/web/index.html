@@ -132,7 +132,12 @@
           <span data-i18n-text="todo.archive.readOnly">Read-only until restored. Workflow state and history are preserved.</span>
         </div>
 
+        <div class="todo-dialog__tabs" id="todoReferenceTabs" role="tablist" aria-label="Todo sections">
+          <button class="todo-dialog__tab is-active" id="todoDetailsTab" type="button" role="tab" aria-selected="true" aria-controls="todoDetailsPanel">Details</button>
+          <button class="todo-dialog__tab" id="todoReferencesTab" type="button" role="tab" aria-selected="false" aria-controls="todoReferencesPanel">References</button>
+        </div>
         <div class="todo-dialog__body">
+        <div id="todoDetailsPanel" class="todo-dialog__panel" role="tabpanel" aria-labelledby="todoDetailsTab">
         <label class="field">
           <div class="field__label" data-i18n-text="todo.fields.title">Title</div>
           <input class="input" id="todoTitle" name="title" required maxlength="200" autocomplete="off" />
@@ -175,17 +180,6 @@
             <div class="tags-chips" id="linksChips"></div>
           </div>
         </label>
-
-        <div class="field" id="todoExternalResourcesField" style="display: none;">
-          <div class="field__label" data-i18n-text="todo.externalResources.title">External references</div>
-          <div class="tags-input-container">
-            <div class="tags-input-row" id="externalResourceControls">
-              <select class="select" id="externalResourcePicker" aria-label="External resource"></select>
-              <button class="btn tags-add-btn" type="button" id="addExternalResourceBtn" data-i18n-text="common.add">Add</button>
-            </div>
-            <div class="tags-chips" id="externalResourcesChips"></div>
-          </div>
-        </div>
 
         <label class="field" id="todoAssigneeField" style="display: none;">
           <div class="field__label" data-i18n-text="todo.fields.assignedTo">Assigned to</div>
@@ -239,6 +233,19 @@
           <input class="input" type="datetime-local" id="todoDueAt" name="dueAt" />
         </label>
         <div id="todoCustomFields" hidden></div>
+        </div>
+        <div id="todoReferencesPanel" class="todo-dialog__panel" role="tabpanel" aria-labelledby="todoReferencesTab" hidden>
+          <div class="field" id="todoExternalResourcesField" style="display: none;">
+            <div class="field__label" data-i18n-text="todo.externalResources.title">External references</div>
+            <div class="tags-input-container">
+              <div class="tags-input-row" id="externalResourceControls">
+                <select class="select" id="externalResourcePicker" aria-label="External resource"></select>
+                <button class="btn tags-add-btn" type="button" id="addExternalResourceBtn" data-i18n-text="common.add">Add</button>
+              </div>
+              <div class="tags-chips" id="externalResourcesChips"></div>
+            </div>
+          </div>
+        </div>
         </div>
 
         <div class="dialog__footer">

@@ -8526,6 +8526,27 @@ button.omni-tag-pill:focus-visible {
 }
 
 
+.todo-dialog__tabs { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border); }
+.todo-dialog__tabs[hidden], .todo-dialog__tab[hidden], .todo-dialog__panel[hidden] { display: none !important; }
+.todo-dialog__tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+.todo-dialog__tab.is-active { border-bottom-color: var(--accent); color: var(--text); }
+.todo-dialog__tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.todo-dialog__panel { min-width: 0; }
+#todoReferencesPanel { display: flex; flex-direction: column; gap: 16px; }
+#todoDetailsPanel { display: flex; flex-direction: column; gap: var(--s-12); }
+.github-items__browse { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 160px); gap: 8px; }
+.github-items__browse .input, .github-items__browse .select { width: 100%; min-width: 0; }
+.github-items__filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.github-items__filters .select { flex: 1 1 140px; }
+.github-items__results { display: flex; flex-direction: column; gap: 5px; }
+.github-items__results .github-items__item { margin: 0; }
+.github-items__empty { padding: 12px 0; }
+.github-items__heading { font-weight: 650; font-size: var(--fs-13); }
+@media (max-width: 620px) {
+  .todo-dialog__tab { min-height: 44px; flex: 1; }
+  .github-items__browse { grid-template-columns: minmax(0, 1fr); }
+}
+
 .github-items { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .github-items__row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
 .github-items__row .input, .github-items__row .select { flex: 1 1 140px; min-width: 0; }
