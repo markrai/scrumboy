@@ -139,6 +139,7 @@ vi.mock('../core/keybindings.js', () => ({
   formatChordForDisplay: (chord: string) => chord,
   getResolvedChordForAction: () => 'shift+s',
   isTypingInTextField: () => false,
+  isInteractiveElementFocused: () => ['SELECT', 'BUTTON'].includes(document.activeElement?.tagName ?? ''),
   reloadKeybindingsFromStorage: vi.fn(),
   saveKeybindingOverride: vi.fn(),
   setKeybindingsCaptureListening: vi.fn(),
@@ -301,6 +302,23 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     localStorage.clear();
     vi.restoreAllMocks();
     window.history.replaceState({}, '', '/');
+  });
+
+  it('keeps native Tab navigation for focused settings form controls', async () => {
+    await setupSettingsView({ activeTab: 'customization' });
+    const dialog = document.getElementById('settingsDialog') as HTMLDialogElement;
+    const form = document.createElement('form');
+    form.innerHTML = '<select><option>GitHub repository</option></select><button type="button">Create Rule</button>';
+    dialog.querySelector('.dialog__content')!.appendChild(form);
+    const { getSettingsActiveTab } = await import('../state/selectors.js');
+    for (const element of form.querySelectorAll<HTMLElement>('select, button')) {
+      element.focus();
+      expect(document.activeElement).toBe(element);
+      const event = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true });
+      element.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(getSettingsActiveTab()).toBe('customization');
+    }
   });
 
   it('Charts: re-localizes chart copy from cache and re-mounts without fetching /sprints or /burndown', async () => {

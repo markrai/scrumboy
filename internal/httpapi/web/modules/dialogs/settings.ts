@@ -76,6 +76,7 @@ import {
   formatChordForDisplay,
   getResolvedChordForAction,
   isTypingInTextField,
+  isInteractiveElementFocused,
   reloadKeybindingsFromStorage,
   saveKeybindingOverride,
   setKeybindingsCaptureListening,
@@ -2218,7 +2219,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   if (settingsDlgForKeyboard) {
     settingsDlgForKeyboard.addEventListener("keydown", (e) => {
       if (e.key !== "Tab" || e.shiftKey) return;
-      if (isTypingInTextField()) return;
+      if (isTypingInTextField() || isInteractiveElementFocused()) return;
       e.preventDefault();
       const tabs = Array.from(settingsDlgForKeyboard.querySelectorAll(".settings-tab[data-tab]")) as HTMLElement[];
       if (tabs.length === 0) return;

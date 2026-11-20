@@ -148,7 +148,7 @@ export function bindAutomationTab(options) {
                 const repo = labeledSelect(form, 'GitHub repository', choices);
                 const event = labeledSelect(form, 'When', eventChoices);
                 append(form, 'p', 'Action: record an in-app notification. New rules start disabled.', 'muted');
-                const submit = append(form, 'button', 'Create disabled rule', 'btn');
+                const submit = append(form, 'button', 'Create Rule', 'btn');
                 submit.type = 'submit';
                 submit.disabled = busy;
                 form.addEventListener('submit', (e) => {
@@ -175,7 +175,11 @@ export function bindAutomationTab(options) {
             append(row, 'p', (repositoryNames.get(rule.resourceId) || 'Repository unavailable') + ' · ' + eventLabel(rule.eventType), 'muted');
             append(row, 'p', rule.executionApprovedAt
                 ? 'Execution approved · ' + relativeDate(rule.executionApprovedAt)
-                : 'Execution not approved', 'settings-automations__approval');
+                : !snapshot.executionAvailable
+                    ? 'Notifications unavailable: server execution is off'
+                    : !rule.enabled
+                        ? 'Notifications off: enable the rule before approval'
+                        : 'Approval required before notifications can run', 'settings-automations__approval');
             const controls = append(row, 'div', undefined, 'settings-automations__controls');
             makeButton(controls, 'Preview', () => { void preview(rule); }, { disabled: busy });
             if (canManage) {

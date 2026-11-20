@@ -16,7 +16,7 @@ import { setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBack
 import { renderRealBurndownChart, destroyBurndownChart, mountBurndownChart } from '../charts/burndown.js';
 import { emit } from '../events.js';
 import { normalizeSprints } from '../sprints.js';
-import { KEY_ACTION_LIST, chordFromKeyboardEvent, formatChordForDisplay, getResolvedChordForAction, isTypingInTextField, reloadKeybindingsFromStorage, saveKeybindingOverride, setKeybindingsCaptureListening, } from '../core/keybindings.js';
+import { KEY_ACTION_LIST, chordFromKeyboardEvent, formatChordForDisplay, getResolvedChordForAction, isTypingInTextField, isInteractiveElementFocused, reloadKeybindingsFromStorage, saveKeybindingOverride, setKeybindingsCaptureListening, } from '../core/keybindings.js';
 import { requestDesktopNotificationPermission, getDesktopNotificationStatusDescription, getDesktopNotificationStatusKind, } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
 import { getAppRuntime } from '../platform/runtime.js';
@@ -2005,7 +2005,7 @@ export async function renderSettingsModal(options) {
         settingsDlgForKeyboard.addEventListener("keydown", (e) => {
             if (e.key !== "Tab" || e.shiftKey)
                 return;
-            if (isTypingInTextField())
+            if (isTypingInTextField() || isInteractiveElementFocused())
                 return;
             e.preventDefault();
             const tabs = Array.from(settingsDlgForKeyboard.querySelectorAll(".settings-tab[data-tab]"));

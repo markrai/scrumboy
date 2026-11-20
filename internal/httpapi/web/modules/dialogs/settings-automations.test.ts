@@ -122,9 +122,10 @@ describe('project automations settings', () => {
     const controller = mount(false);
     await vi.waitFor(() => expect(document.querySelectorAll('.settings-automations__rule')).toHaveLength(1));
     expect(document.body.textContent).toContain('Execution is off at the server');
+    expect(document.body.textContent).toContain('Notifications unavailable: server execution is off');
     expect(document.body.textContent).toContain('Notification history');
     expect(document.body.textContent).toContain('Recent matches');
-    expect(buttons('Create disabled rule')).toHaveLength(0);
+    expect(buttons('Create Rule')).toHaveLength(0);
     expect(buttons('Enable')).toHaveLength(0);
     expect(buttons('Disable')).toHaveLength(0);
     expect(buttons('Approve execution')).toHaveLength(0);
@@ -163,7 +164,7 @@ describe('project automations settings', () => {
   it('creates disabled rules and never auto-approves when enabling', async () => {
     fixtures({ rules: [] });
     const controller = mount(true);
-    await vi.waitFor(() => expect(buttons('Create disabled rule')).toHaveLength(1));
+    await vi.waitFor(() => expect(buttons('Create Rule')).toHaveLength(1));
     const name = document.querySelector<HTMLInputElement>('input[aria-label="Rule name"]');
     expect(name).not.toBeNull();
     name!.value = 'Review merged PRs';
@@ -236,7 +237,7 @@ describe('project automations settings', () => {
     requests.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }));
     const controller = mount(true);
     await vi.waitFor(() => expect(document.body.textContent).toContain('unavailable for this account'));
-    expect(buttons('Create disabled rule')).toHaveLength(0);
+    expect(buttons('Create Rule')).toHaveLength(0);
     controller.abort();
 
     let release: (value: unknown) => void = () => {};
