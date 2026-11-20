@@ -4,6 +4,8 @@ import (
     "context"
     "net/http"
     "strconv"
+    "strings"
+    "time"
     "testing"
 
     "scrumboy/internal/store"
@@ -70,11 +72,38 @@ func TestAutomationExecutionConsentAndProjectHistoryREST(t *testing.T){
     var approved store.IntegrationAutomationRule
     resp,body=doJSON(t,ownerClient,http.MethodPost,consentURL,consent,&approved)
     if resp.StatusCode!=http.StatusOK||approved.ExecutionApprovedAt==nil{t.Fatalf("approval %d %s %+v",resp.StatusCode,body,approved)}
+    time.Sleep(4*time.Millisecond)
+    event:=store.GitHubAutomationEvent{
+        DeliveryID:"736add23-94ec-4b12-b73b-8cf6f5317d81",
+        InstallationID:"881",RepositoryExternalID:"442",ItemNumber:51,
+        EventType:"pull_request.merged",PayloadSHA256:strings.Repeat("a",64),
+    }
+    if ok,err:=st.AdmitGitHubAutomation(ctx,event);err!=nil||!ok{t.Fatalf("admit %v %v",ok,err)}
+    matches,err:=st.ClaimGitHubAutomation(ctx,time.Now().Add(time.Second),5,45*time.Second)
+    if err!=nil||len(matches)!=1{t.Fatalf("claim matched event %+v %v",matches,err)}
+    if _,err:=st.MatchAndCompleteGitHubAutomation(ctx,matches[0].ID,matches[0].LeaseToken,time.Now().Add(2*time.Second));err!=nil{t.Fatal(err)}
+    claimed,err:=st.ClaimIntegrationAutomationActions(ctx,time.Now().Add(3*time.Second),5,45*time.Second)
+    if err!=nil||len(claimed)!=1{t.Fatalf("claim action %+v %v",claimed,err)}
+    if status,err:=st.SettleIntegrationAutomationAction(ctx,claimed[0].ID,claimed[0].LeaseToken,time.Now().Add(4*time.Second));err!=nil||status!="completed"{
+        t.Fatalf("settle %s %v",status,err)
+    }
     actionsURL:=ts.URL+"/api/board/"+project.Slug+"/integrations/automation-actions"
     resp,body=doJSON(t,viewerClient,http.MethodGet,actionsURL,nil,nil)
     if resp.StatusCode!=http.StatusOK{t.Fatalf("viewer history %d %s",resp.StatusCode,body)}
     resp,body=doJSON(t,outsiderClient,http.MethodGet,actionsURL,nil,nil)
     if resp.StatusCode!=http.StatusNotFound{t.Fatalf("outsider history %d %s",resp.StatusCode,body)}
+    auditURL:=actionsURL+"/"+strconv.FormatInt(claimed[0].ID,10)+"/audit"
+    var audit struct{Audit []store.IntegrationAutomationActionAudit `json:"audit"`}
+    resp,body=doJSON(t,viewerClient,http.MethodGet,auditURL,nil,&audit)
+    if resp.StatusCode!=http.StatusOK||len(audit.Audit)!=3||audit.Audit[0].Transition!="completed"{
+        t.Fatalf("viewer action audit %d %s %+v",resp.StatusCode,body,audit)
+    }
+    resp,body=doJSON(t,outsiderClient,http.MethodGet,auditURL,nil,nil)
+    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("outsider action audit %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,viewerClient,http.MethodGet,auditURL+"?limit=101",nil,nil)
+    if resp.StatusCode!=http.StatusBadRequest{t.Fatalf("unbounded audit %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,viewerClient,http.MethodPost,auditURL,map[string]any{},nil)
+    if resp.StatusCode!=http.StatusMethodNotAllowed{t.Fatalf("audit POST %d %s",resp.StatusCode,body)}
     resp,body=doJSON(t,ownerClient,http.MethodGet,actionsURL+"?limit=101",nil,nil)
     if resp.StatusCode!=http.StatusBadRequest{t.Fatalf("unbounded history %d %s",resp.StatusCode,body)}
     resp,body=doJSON(t,ownerClient,http.MethodDelete,consentURL,nil,nil)
