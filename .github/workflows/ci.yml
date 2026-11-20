@@ -149,3 +149,33 @@ jobs:
         run: |
           git diff --exit-code -- internal/httpapi/web/dist internal/httpapi/web/vendor
           test -z "$(git status --porcelain internal/httpapi/web/dist internal/httpapi/web/vendor)"
+
+  frontend-reference-assets:
+    name: Temporary GitHub reference asset capture
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: internal/httpapi/web/package-lock.json
+
+      - name: Compile and capture reference modules
+        working-directory: internal/httpapi/web
+        run: |
+          npm ci
+          npm run build
+          echo M32_TODO_BEGIN
+          base64 dist/dialogs/todo.js
+          echo M32_TODO_END
+          echo M32_EXTERNAL_BEGIN
+          base64 dist/dialogs/todo-external-links.js
+          echo M32_EXTERNAL_END
+          echo M32_GITHUB_BEGIN
+          base64 dist/dialogs/todo-github-items.js
+          echo M32_GITHUB_END
