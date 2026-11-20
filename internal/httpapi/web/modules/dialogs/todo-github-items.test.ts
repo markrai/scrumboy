@@ -92,12 +92,13 @@ describe('Todo GitHub reference browser', () => {
     const mod = await import('./todo-github-items.js');
     await mod.initializeTodoGitHubItems('alpha', null, true);
     const input = document.querySelector<HTMLInputElement>('#todoGitHubItems input[type="url"]')!;
-    for (const url of ['https://github.com.evil.test/org/repo/issues/1', 'https://github.com/secret/repo/issues/1']) {
+    for (const [index, url] of ['https://github.com.evil.test/org/repo/issues/1', 'https://github.com/secret/repo/issues/1'].entries()) {
       input.value = url;
       findButton('Link URL').click();
+      await vi.waitFor(() => expect(toast).toHaveBeenCalledTimes(index + 1));
+      await vi.waitFor(() => expect(findButton('Link URL').disabled).toBe(false));
     }
     expect(mod.getPendingTodoGitHubURLs()).toEqual([]);
-    expect(toast).toHaveBeenCalledTimes(2);
   });
 
   it('shows cached links read-only for Viewers without allowing mutations or GitHub browsing', async () => {

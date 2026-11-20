@@ -332,7 +332,7 @@ describe("todo close guard", () => {
     await expect(notifyTodoCreated(
       { id: 1, localId: 1, title: "Created", status: "BACKLOG" } as any,
       getTodoDialogOpenGeneration(),
-    )).resolves.toBeUndefined();
+    )).resolves.toBe(0);
     expect(callback).toHaveBeenCalledTimes(1);
   });
 });
