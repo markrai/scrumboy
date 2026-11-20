@@ -204,9 +204,6 @@ func (s *Service) ProcessBatch(ctx context.Context) error {
         _,settleErr:=s.inbox.SettleGitHubInbound(ctx,event.ID,event.LeaseToken,err==nil,class,time.Now().UTC())
         if settleErr!=nil {return settleErr}
     }
-    if s.automation!=nil {
-        return s.ProcessAutomationBatch(ctx)
-    }
     return nil
 }
 
@@ -254,6 +251,11 @@ func (s *Service) Run(ctx context.Context) {
         }
         if err:=s.ProcessBatch(ctx);err!=nil && ctx.Err()==nil {
             s.logger.Printf("github inbound: processing batch failed")
+        }
+        if s.automation!=nil {
+            if err:=s.ProcessAutomationBatch(ctx);err!=nil && ctx.Err()==nil {
+                s.logger.Printf("github automation: matching batch failed")
+            }
         }
         select {
         case <-ctx.Done():return

@@ -74,6 +74,9 @@ func (s *Store) AdmitGitHubInbound(ctx context.Context, event GitHubInboundEvent
         return false, tx.Commit()
     }
     if !errors.Is(err, sql.ErrNoRows) { return false, err }
+    err=tx.QueryRowContext(ctx,"SELECT payload_sha256 FROM integration_github_automation_events WHERE delivery_id=?",event.DeliveryID).Scan(&oldDigest)
+    if err==nil{return false,ErrConflict}
+    if !errors.Is(err,sql.ErrNoRows){return false,err}
 
     var connectionID int64
     err = tx.QueryRowContext(ctx, "SELECT id FROM integration_connections WHERE provider='github' AND external_account_id=? AND status='active'", event.InstallationID).Scan(&connectionID)
