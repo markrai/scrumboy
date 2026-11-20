@@ -47,7 +47,7 @@ func TestAutomationRuleRESTAuthorizationAndNonExecutingPreview(t *testing.T){
         "name":"Notify PR merged","resourceId":repo.ID,"eventType":"pull_request.merged","actionType":"notify",
     }
     resp,body:=doJSON(t,guestClient,http.MethodGet,base,nil,nil)
-    if resp.StatusCode!=http.StatusUnauthorized{t.Fatalf("guest listed rules %d %s",resp.StatusCode,body)}
+    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("guest listed private rules %d %s",resp.StatusCode,body)}
     resp,body=doJSON(t,strangerClient,http.MethodGet,base,nil,nil)
     if resp.StatusCode!=http.StatusNotFound{t.Fatalf("stranger listed rules %d %s",resp.StatusCode,body)}
     resp,body=doJSON(t,viewerClient,http.MethodPost,base,input,nil)
