@@ -42,3 +42,46 @@ CREATE TABLE integration_automation_action_audit (
 );
 CREATE INDEX idx_integration_automation_action_audit_action
   ON integration_automation_action_audit(action_id,id);
+
+CREATE TRIGGER revoke_automation_approval_on_member_delete
+AFTER DELETE ON project_members
+BEGIN
+  DELETE FROM integration_automation_execution_approvals
+  WHERE project_id=OLD.project_id AND approved_by_user_id=OLD.user_id;
+END;
+
+CREATE TRIGGER revoke_automation_approval_on_member_demotion
+AFTER UPDATE OF role ON project_members
+WHEN NEW.role<>'maintainer'
+BEGIN
+  DELETE FROM integration_automation_execution_approvals
+  WHERE project_id=NEW.project_id AND approved_by_user_id=NEW.user_id;
+END;
+
+CREATE TRIGGER revoke_automation_approval_on_rule_update
+AFTER UPDATE OF name, resource_id, event_type, enabled, updated_at ON integration_automation_rules
+BEGIN
+  DELETE FROM integration_automation_execution_approvals WHERE rule_id=NEW.id;
+END;
+
+CREATE TRIGGER revoke_automation_approval_on_installation_loss
+AFTER UPDATE OF status ON integration_connections
+WHEN NEW.status<>'active'
+BEGIN
+  DELETE FROM integration_automation_execution_approvals
+  WHERE rule_id IN (
+    SELECT a.id FROM integration_automation_rules a
+    JOIN integration_resources r ON r.id=a.resource_id
+    WHERE r.connection_id=NEW.id
+  );
+END;
+
+CREATE TRIGGER revoke_automation_approval_on_repository_loss
+AFTER UPDATE OF availability ON integration_resources
+WHEN NEW.availability<>'available'
+BEGIN
+  DELETE FROM integration_automation_execution_approvals
+  WHERE rule_id IN (
+    SELECT id FROM integration_automation_rules WHERE resource_id=NEW.id
+  );
+END;
