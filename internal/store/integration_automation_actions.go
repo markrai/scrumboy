@@ -40,40 +40,6 @@ type IntegrationAutomationActionCounts struct {
     Cancelled int64 `json:"cancelled"`
 }
 
-func (s *Store) ApproveIntegrationAutomationExecution(ctx context.Context, actorID,projectID,ruleID,expectedVersion int64)(IntegrationAutomationRule,error) {
-    if actorID<=0 || projectID<=0 || ruleID<=0 || expectedVersion<=0{return IntegrationAutomationRule{},ErrValidation}
-    tx,err:=s.db.BeginTx(ctx,nil)
-    if err!=nil{return IntegrationAutomationRule{},err}
-    defer tx.Rollback()
-    if err:=s.checkIntegrationProjectTx(ctx,tx,actorID,projectID,true);err!=nil{return IntegrationAutomationRule{},err}
-    rule,err:=automationRuleByIDTx(ctx,tx,projectID,ruleID)
-    if err!=nil{return IntegrationAutomationRule{},err}
-    if rule.UpdatedAt.UnixMilli()!=expectedVersion{return IntegrationAutomationRule{},ErrConflict}
-    if !rule.Enabled || rule.ActionType!="notify"{return IntegrationAutomationRule{},ErrValidation}
-    if err:=integrationAutomationResourceTx(ctx,tx,projectID,rule.ResourceID);err!=nil{return IntegrationAutomationRule{},err}
-    if _,err:=tx.ExecContext(ctx,"DELETE FROM integration_automation_execution_approvals WHERE rule_id=?",ruleID);err!=nil{
-        return IntegrationAutomationRule{},err
-    }
-    now:=time.Now().UTC().UnixMilli()
-    if _,err:=tx.ExecContext(ctx,"INSERT INTO integration_automation_execution_approvals(rule_id,project_id,approved_by_user_id,rule_updated_at,approved_at) VALUES(?,?,?,?,?)",
-        ruleID,projectID,actorID,expectedVersion,now);err!=nil{return IntegrationAutomationRule{},err}
-    rule,err=automationRuleByIDTx(ctx,tx,projectID,ruleID)
-    if err!=nil{return IntegrationAutomationRule{},err}
-    if err:=tx.Commit();err!=nil{return IntegrationAutomationRule{},err}
-    return rule,nil
-}
-
-func (s *Store) RevokeIntegrationAutomationExecution(ctx context.Context,actorID,projectID,ruleID int64)error {
-    if actorID<=0 || projectID<=0 || ruleID<=0{return ErrValidation}
-    tx,err:=s.db.BeginTx(ctx,nil)
-    if err!=nil{return err}
-    defer tx.Rollback()
-    if err:=s.checkIntegrationProjectTx(ctx,tx,actorID,projectID,true);err!=nil{return err}
-    if _,err:=automationRuleByIDTx(ctx,tx,projectID,ruleID);err!=nil{return err}
-    if _,err:=tx.ExecContext(ctx,"DELETE FROM integration_automation_execution_approvals WHERE rule_id=?",ruleID);err!=nil{return err}
-    return tx.Commit()
-}
-
 func (s *Store) ClaimIntegrationAutomationActions(ctx context.Context,now time.Time,limit int,lease time.Duration)([]IntegrationAutomationActionClaim,error) {
     if limit<1 || limit>20 || lease<time.Second || lease>time.Minute{return nil,ErrValidation}
     timestamp:=now.UTC().UnixMilli()
@@ -130,23 +96,18 @@ func (s *Store) SettleIntegrationAutomationAction(ctx context.Context,actionID i
         JOIN integration_automation_rules r ON r.id=a.rule_id
             AND r.project_id=a.project_id AND r.resource_id=a.resource_id
             AND r.updated_at=a.rule_updated_at
-        JOIN integration_automation_execution_approvals ap ON ap.id=a.approval_id
-            AND ap.rule_id=r.id AND ap.project_id=r.project_id
-            AND ap.rule_updated_at=a.rule_updated_at
-        JOIN project_members pm ON pm.project_id=ap.project_id
-            AND pm.user_id=ap.approved_by_user_id AND pm.role='maintainer'
+            AND r.execution_since>0 AND r.execution_since<e.created_at
         JOIN projects p ON p.id=a.project_id AND p.expires_at IS NULL
         JOIN integration_project_resources pr ON pr.project_id=a.project_id
             AND pr.resource_id=a.resource_id
         JOIN integration_resources ir ON ir.id=a.resource_id
         JOIN integration_connections c ON c.id=ir.connection_id
         WHERE a.id=? AND r.enabled=1 AND r.action_type='notify'
-          AND a.action_type='notify'
+          AND a.action_type='notify' AND a.activation_version=a.rule_updated_at
           AND ir.kind='repository' AND ir.availability='available'
           AND ir.external_id=e.repository_external_id
           AND c.provider='github' AND c.status='active'
           AND c.external_account_id=e.installation_id
-          AND ap.approved_at<e.created_at
     )`,actionID).Scan(&authorized)
     if err!=nil{return "",err}
     status:="completed"
@@ -155,7 +116,7 @@ func (s *Store) SettleIntegrationAutomationAction(ctx context.Context,actionID i
     if authorized!=1{
         status="cancelled"
         transition="cancelled"
-        errorClass="approval_or_access_revoked"
+        errorClass="rule_disabled_or_access_revoked"
     }
     res,err:=tx.ExecContext(ctx,"UPDATE integration_automation_actions SET status=?,lease_token=NULL,lease_until=NULL,error_class=?,completed_at=?,updated_at=? WHERE id=? AND status='leased' AND lease_token=? AND lease_until>?",
         status,errorClass,timestamp,timestamp,actionID,leaseToken,timestamp)

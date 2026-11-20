@@ -40,6 +40,7 @@ func TestAutomationMatchHistoryIsReadOnlyAndProjectScoped(t *testing.T){
     enabled:=true
     if _,err:=st.UpdateIntegrationAutomationRule(ctx,ownerID,project.ID,rule.ID,
         store.UpdateIntegrationAutomationRuleInput{Enabled:&enabled});err!=nil{t.Fatal(err)}
+    time.Sleep(4*time.Millisecond)
     event:=store.GitHubAutomationEvent{
         DeliveryID:"b61e607d-2a44-4d9a-8e4f-109e055cfc2d",
         InstallationID:"881",RepositoryExternalID:"442",ItemNumber:357,

@@ -25,7 +25,6 @@ function rule(overrides: Record<string, unknown> = {}) {
     actionType: 'notify',
     enabled: true,
     updatedAt: version,
-    executionApprovedAt: null,
     ...overrides,
   };
 }
@@ -52,7 +51,7 @@ function fixtures(settings: {
       return { actions: settings.actions ?? [] };
     }
     if (path.endsWith('/preview')) {
-      return { ruleId: 7, matched: true, enabled: true, sampleOnly: true, executionAvailable: false, wouldExecute: false, reason: 'execution_not_approved' };
+      return { ruleId: 7, matched: true, enabled: true, sampleOnly: true, executionAvailable: true, wouldExecute: false, reason: 'ready_for_new_events' };
     }
     if (path.includes('/audit?limit=30')) {
       return { audit: [
@@ -65,16 +64,8 @@ function fixtures(settings: {
       rules.push(rule({ id: 8, enabled: false, name: JSON.parse(options.body || '{}').name }));
       return rules[rules.length - 1];
     }
-    if (options?.method === 'POST' && path.endsWith('/execution-approval')) {
-      rules[0] = rule({ executionApprovedAt: version });
-      return rules[0];
-    }
-    if (options?.method === 'DELETE' && path.endsWith('/execution-approval')) {
-      rules[0] = rule();
-      return;
-    }
     if (options?.method === 'PATCH') {
-      rules[0] = rule({ ...JSON.parse(options.body || '{}'), executionApprovedAt: null });
+      rules[0] = rule({ ...JSON.parse(options.body || '{}') });
       return rules[0];
     }
     if (options?.method === 'DELETE') {
@@ -120,8 +111,8 @@ describe('project automations settings', () => {
     });
     const controller = mount(false);
     await vi.waitFor(() => expect(document.querySelectorAll('.settings-automations__rule')).toHaveLength(1));
-    expect(document.body.textContent).toContain('Enabled rules can create in-app notifications');
-    expect(document.body.textContent).toContain('Approval required before notifications can run');
+    expect(document.body.textContent).toContain('Enabling a rule starts notifications');
+    expect(document.body.textContent).not.toContain('Execution approved');
     expect(document.body.textContent).toContain('Notification history');
     expect(document.body.textContent).toContain('Recent matches');
     expect(buttons('Create Rule')).toHaveLength(0);
@@ -130,7 +121,7 @@ describe('project automations settings', () => {
     expect(buttons('Approve execution')).toHaveLength(0);
     expect(buttons('Delete')).toHaveLength(0);
     findButton('Preview').click();
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Sample-only preview: matched'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Ready: future verified'));
     expect(requests).toHaveBeenCalledWith(base + '/automation-rules/7/preview', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ resourceId: 42, eventType: 'pull_request.merged' }),
@@ -160,7 +151,7 @@ describe('project automations settings', () => {
     retry.abort();
   });
 
-  it('creates disabled rules and never auto-approves when enabling', async () => {
+  it('creates disabled rules and enables execution with one control', async () => {
     fixtures({ rules: [] });
     const controller = mount(true);
     await vi.waitFor(() => expect(buttons('Create Rule')).toHaveLength(1));
@@ -182,37 +173,29 @@ describe('project automations settings', () => {
     expect(requests).toHaveBeenCalledWith(base + '/automation-rules/8', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ enabled: true }),
     }));
-    expect(buttons('Approve execution')).toHaveLength(1);
+    expect(buttons('Approve execution')).toHaveLength(0);
+    expect(buttons('Revoke approval')).toHaveLength(0);
     expect(requests.mock.calls.some(call => String(call[0]).endsWith('/execution-approval'))).toBe(false);
     controller.abort();
   });
 
-  it('requires separate confirmation and passes the exact rule version to execution consent', async () => {
+  it('shows clear preview readiness and never asks for execution approval', async () => {
     fixtures();
     const controller = mount(true);
-    await vi.waitFor(() => expect(buttons('Approve execution')).toHaveLength(1));
-    confirm.mockResolvedValueOnce(false);
-    findButton('Approve execution').click();
-    await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(buttons('Disable')).toHaveLength(1));
+    expect(buttons('Approve execution')).toHaveLength(0);
+    expect(buttons('Revoke approval')).toHaveLength(0);
+    findButton('Preview').click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('This is a configuration check only; no GitHub event or notification was sent.'));
     expect(requests.mock.calls.some(call => String(call[0]).endsWith('/execution-approval'))).toBe(false);
-
-    findButton('Approve execution').click();
-    await vi.waitFor(() => expect(buttons('Revoke approval')).toHaveLength(1));
-    expect(requests).toHaveBeenCalledWith(base + '/automation-rules/7/execution-approval', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({ confirm: 'APPROVE_NOTIFY_EXECUTION', ruleUpdatedAtMs: Date.parse(version) }),
-    }));
-    expect(document.body.textContent).toContain('Execution approved');
-    findButton('Revoke approval').click();
-    await vi.waitFor(() => expect(buttons('Approve execution')).toHaveLength(1));
-    expect(requests).toHaveBeenCalledWith(base + '/automation-rules/7/execution-approval', expect.objectContaining({ method: 'DELETE' }));
+    expect(confirm).not.toHaveBeenCalled();
     controller.abort();
   });
 
-  it('edit and disable remain independent of approval and are confirmed by the server', async () => {
-    fixtures({ rules: [rule({ executionApprovedAt: version })] });
+  it('editing and disabling an enabled rule requires no additional approval', async () => {
+    fixtures();
     const controller = mount(true);
-    await vi.waitFor(() => expect(buttons('Revoke approval')).toHaveLength(1));
+    await vi.waitFor(() => expect(buttons('Disable')).toHaveLength(1));
     findButton('Edit').click();
     expect(document.querySelectorAll<HTMLInputElement>('input[aria-label="Rule name"]')).toHaveLength(2);
     const editors = document.querySelectorAll<HTMLFormElement>('.settings-automations__rule form');
@@ -224,12 +207,31 @@ describe('project automations settings', () => {
       method: 'PATCH',
       body: JSON.stringify({ name: 'Changed rule', resourceId: 42, eventType: 'pull_request.merged' }),
     }));
-    await vi.waitFor(() => expect(buttons('Revoke approval')).toHaveLength(0));
+    expect(buttons('Revoke approval')).toHaveLength(0);
     findButton('Disable').click();
     await vi.waitFor(() => expect(buttons('Enable')).toHaveLength(1));
     expect(requests).toHaveBeenCalledWith(base + '/automation-rules/7', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ enabled: false }),
     }));
+    controller.abort();
+  });
+
+  it('refreshes real notification history without replaying old completions as alerts', async () => {
+    const history: any[] = [];
+    fixtures({ actions: history });
+    const controller = mount(true);
+    await vi.waitFor(() => expect(buttons('Refresh')).toHaveLength(1));
+    expect(toast).not.toHaveBeenCalled();
+    history.push({
+      id: 99, ruleId: 7, resourceId: 42, itemNumber: 369, eventType: 'issue.opened',
+      status: 'completed', attempts: 1, createdAt: version, completedAt: version,
+    });
+    findButton('Refresh').click();
+    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('GitHub automation: new notification recorded in history.'));
+    expect(document.body.textContent).toContain('Issue opened #369');
+    findButton('Refresh').click();
+    await vi.waitFor(() => expect(requests.mock.calls.filter(call => call[0] === base + '/automation-actions?limit=30').length).toBeGreaterThanOrEqual(3));
+    expect(toast).toHaveBeenCalledTimes(1);
     controller.abort();
   });
 

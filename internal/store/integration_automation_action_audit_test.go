@@ -16,8 +16,7 @@ func TestIntegrationAutomationActionAuditRequiresProjectMembership(t *testing.T)
     outsider,err:=st.CreateUser(ctx,"automation-audit-outsider@example.com","password123","Outsider")
     if err!=nil{t.Fatal(err)}
     if err:=st.AddProjectMember(WithUserID(ctx,owner),owner,project,viewer.ID,RoleViewer);err!=nil{t.Fatal(err)}
-    rule:=makeActiveAutomationRule(t,st,owner,project,resource)
-    if _,err:=st.ApproveIntegrationAutomationExecution(ctx,owner,project,rule.ID,rule.UpdatedAt.UnixMilli());err!=nil{t.Fatal(err)}
+    _=makeActiveAutomationRule(t,st,owner,project,resource)
     time.Sleep(3*time.Millisecond)
     event:=automationEvent(5600)
     if ok,err:=st.AdmitGitHubAutomation(ctx,event);err!=nil||!ok{t.Fatalf("admit %v %v",ok,err)}

@@ -49,6 +49,7 @@ func makeActiveAutomationRule(t *testing.T,st *Store,owner,project,resource int6
     enabled:=true
     rule,err=st.UpdateIntegrationAutomationRule(ctx,owner,project,rule.ID,UpdateIntegrationAutomationRuleInput{Enabled:&enabled})
     if err!=nil||!rule.Enabled{t.Fatalf("cannot enable rule %+v %v",rule,err)}
+    time.Sleep(4*time.Millisecond)
     return rule
 }
 

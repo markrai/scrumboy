@@ -76,7 +76,7 @@ func TestIntegrationAutomationRuleAuthorizationAndPreviewAreNonExecuting(t *test
     sample:=IntegrationAutomationPreviewInput{ResourceID:resourceID,EventType:"pull_request.merged"}
     preview,err:=st.PreviewIntegrationAutomationRule(ctx,viewer.ID,project.ID,rule.ID,sample)
     if err!=nil{t.Fatal(err)}
-    if !preview.Matched||preview.Reason!="rule_disabled"||preview.WouldExecute||preview.ExecutionAvailable||!preview.SampleOnly{
+    if !preview.Matched||preview.Reason!="rule_disabled"||preview.WouldExecute||!preview.ExecutionAvailable||!preview.SampleOnly{
         t.Fatalf("preview was not safe %+v",preview)
     }
     if _,err:=st.PreviewIntegrationAutomationRule(ctx,outsider.ID,project.ID,rule.ID,sample);!errors.Is(err,ErrNotFound){
@@ -93,8 +93,8 @@ func TestIntegrationAutomationRuleAuthorizationAndPreviewAreNonExecuting(t *test
         UpdateIntegrationAutomationRuleInput{Enabled:&enabled})
     if err!=nil||!rule.Enabled{t.Fatalf("maintainer enable %+v %v",rule,err)}
     preview,err=st.PreviewIntegrationAutomationRule(ctx,viewer.ID,project.ID,rule.ID,sample)
-    if err!=nil||!preview.Matched||preview.Reason!="execution_not_approved"||preview.WouldExecute||preview.ExecutionAvailable{
-        t.Fatalf("enabled rule would execute unexpectedly %+v %v",preview,err)
+    if err!=nil||!preview.Matched||preview.Reason!="ready_for_new_events"||preview.WouldExecute||!preview.ExecutionAvailable{
+        t.Fatalf("enabled rule preview was not a non-executing readiness check %+v %v",preview,err)
     }
     mismatch,err:=st.PreviewIntegrationAutomationRule(ctx,owner.ID,project.ID,rule.ID,
         IntegrationAutomationPreviewInput{ResourceID:resourceID,EventType:"issue.closed"})

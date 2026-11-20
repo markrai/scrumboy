@@ -61,8 +61,7 @@ function validRules(value) {
             Number.isSafeInteger(rule.resourceId) && rule.resourceId > 0 &&
             typeof rule.name === 'string' && typeof rule.eventType === 'string' &&
             rule.actionType === 'notify' && typeof rule.enabled === 'boolean' &&
-            typeof rule.updatedAt === 'string' &&
-            (rule.executionApprovedAt === undefined || rule.executionApprovedAt === null || typeof rule.executionApprovedAt === 'string');
+            typeof rule.updatedAt === 'string';
     });
 }
 function validList(value, key) {
@@ -126,7 +125,7 @@ export function bindAutomationTab(options) {
             return;
         }
         const snapshot = data;
-        append(root, 'p', 'Enabled rules can create in-app notifications after a Maintainer approves their execution. Each rule can be disabled or have its approval revoked at any time.', 'settings-automations__notice');
+        append(root, 'p', 'Enabling a rule starts notifications for future verified GitHub events. Disabling it stops notifications. Preview checks the rule without sending a GitHub event.', 'settings-automations__notice');
         const repositories = snapshot.repositories.filter(repo => repo.availability === 'available');
         const repositoryNames = new Map(snapshot.repositories.map(repo => [repo.id, repo.name]));
         const choices = repositories.map(repo => [String(repo.id), repo.name]);
@@ -152,7 +151,7 @@ export function bindAutomationTab(options) {
                     void mutate(base + '/automation-rules', 'POST', {
                         name: name.value.trim(), resourceId: Number(repo.value),
                         eventType: event.value, actionType: 'notify',
-                    }, 'Rule created. Enable and approve execution separately.');
+                    }, 'Rule created. Enable it to start recording future matching events.');
                 }, { signal });
             }
         }
@@ -167,11 +166,6 @@ export function bindAutomationTab(options) {
             const status = append(heading, 'span', rule.enabled ? 'Enabled' : 'Disabled', 'settings-automations__status');
             status.setAttribute('data-enabled', String(rule.enabled));
             append(row, 'p', (repositoryNames.get(rule.resourceId) || 'Repository unavailable') + ' · ' + eventLabel(rule.eventType), 'muted');
-            append(row, 'p', rule.executionApprovedAt
-                ? 'Execution approved · ' + relativeDate(rule.executionApprovedAt)
-                : !rule.enabled
-                    ? 'Notifications off: enable the rule before approval'
-                    : 'Approval required before notifications can run', 'settings-automations__approval');
             const controls = append(row, 'div', undefined, 'settings-automations__controls');
             makeButton(controls, 'Preview', () => { void preview(rule); }, { disabled: busy });
             if (canManage) {
@@ -180,14 +174,8 @@ export function bindAutomationTab(options) {
                     render();
                 }, { disabled: busy });
                 makeButton(controls, rule.enabled ? 'Disable' : 'Enable', () => {
-                    void mutate(base + '/automation-rules/' + rule.id, 'PATCH', { enabled: !rule.enabled }, rule.enabled ? 'Rule disabled and execution approval revoked.' : 'Rule enabled for matching; execution still needs separate approval.');
+                    void mutate(base + '/automation-rules/' + rule.id, 'PATCH', { enabled: !rule.enabled }, rule.enabled ? 'Rule disabled; pending notifications will be cancelled.' : 'Rule enabled; future matching GitHub events will create in-app notifications.');
                 }, { disabled: busy });
-                if (rule.executionApprovedAt) {
-                    makeButton(controls, 'Revoke approval', () => { void revoke(rule); }, { disabled: busy, danger: true });
-                }
-                else if (rule.enabled) {
-                    makeButton(controls, 'Approve execution', () => { void approve(rule); }, { disabled: busy });
-                }
                 makeButton(controls, 'Delete', () => { void remove(rule); }, { disabled: busy, danger: true });
             }
             const previewText = previews.get(rule.id);
@@ -206,7 +194,7 @@ export function bindAutomationTab(options) {
                     repo.value = unavailable.value;
                 }
                 const event = labeledSelect(form, 'When', eventChoices, rule.eventType);
-                append(form, 'p', 'Saving any change revokes execution approval. Approve the revised rule separately.', 'muted');
+                append(form, 'p', 'Saving an enabled rule starts a new version; pending actions for the old version are cancelled.', 'muted');
                 const submit = append(form, 'button', 'Save changes', 'btn');
                 submit.type = 'submit';
                 submit.disabled = busy;
@@ -217,15 +205,15 @@ export function bindAutomationTab(options) {
                     editingId = null;
                     void mutate(base + '/automation-rules/' + rule.id, 'PATCH', {
                         name: name.value.trim(), resourceId: Number(repo.value), eventType: event.value,
-                    }, 'Rule updated. Execution approval has been revoked.');
+                    }, 'Rule updated. Future matching events will use the new configuration.');
                 }, { signal });
             }
         }
         const activity = append(root, 'section', undefined, 'settings-automations__section');
         append(activity, 'h4', 'Notification history');
-        append(activity, 'p', 'Completed means an in-app notification record was created, not an email, push notification or GitHub action.', 'muted');
+        append(activity, 'p', 'Completed means an in-app notification record was created. This does not currently display a browser pop-up, send email or push a notification.', 'muted');
         if (!snapshot.actions.length)
-            append(activity, 'p', 'No notification actions recorded.', 'muted');
+            append(activity, 'p', 'No notifications recorded. Check Recent matches to see whether GitHub delivered your event.', 'muted');
         for (const item of snapshot.actions) {
             const row = append(activity, 'div', undefined, 'settings-automations__activity');
             append(row, 'strong', eventLabel(item.eventType) + ' #' + item.itemNumber);
@@ -237,9 +225,9 @@ export function bindAutomationTab(options) {
         }
         const matches = append(root, 'section', undefined, 'settings-automations__section');
         append(matches, 'h4', 'Recent matches');
-        append(matches, 'p', 'Matches are read-only observations. A match does not mean an action executed.', 'muted');
+        append(matches, 'p', 'Matches come from real GitHub webhook deliveries. If your new issue does not appear here, verify the GitHub App Issues subscription and its webhook destination. A match does not guarantee a notification was created.', 'muted');
         if (!snapshot.matches.length)
-            append(matches, 'p', 'No matching events recorded.', 'muted');
+            append(matches, 'p', 'No matching GitHub events recorded. Verify the GitHub App Issues/Pull request subscriptions and the webhook destination for this deployment.', 'muted');
         for (const item of snapshot.matches) {
             append(matches, 'div', eventLabel(item.eventType) + ' #' + item.itemNumber +
                 ' · rule ' + item.ruleId + ' · ' + relativeDate(item.matchedAt), 'settings-automations__activity');
@@ -266,11 +254,16 @@ export function bindAutomationTab(options) {
                 !validList(matches, 'matches') || !validList(actions, 'actions')) {
                 throw new Error('Invalid automation API response');
             }
+            const nextActions = actions.actions;
+            if (data && nextActions.some(action => action.status === 'completed' &&
+                !data.actions.some(previous => previous.id === action.id && previous.status === 'completed'))) {
+                showToast('GitHub automation: new notification recorded in history.');
+            }
             data = {
                 repositories: repositories,
                 rules: rules.rules,
                 matches: matches.matches,
-                actions: actions.actions,
+                actions: nextActions,
             };
             previews.clear();
         }
@@ -322,40 +315,17 @@ export function bindAutomationTab(options) {
                 response.wouldExecute !== false || typeof response.reason !== 'string') {
                 throw new Error('Invalid preview response');
             }
-            const reason = response.reason === 'execution_not_approved' ? 'Approval required' :
-                response.reason === 'approved_sample_only' ? 'Approved; this preview never executes' :
-                    response.reason === 'rule_disabled' ? 'Rule disabled' :
-                        response.reason === 'resource_unavailable' ? 'Repository unavailable' :
-                            response.reason === 'sample_does_not_match' ? 'Event does not match' : 'Preview is non-executing';
-            previews.set(rule.id, 'Sample-only preview: ' + (response.matched ? 'matched' : 'no match') + ' · ' + reason);
+            const status = response.reason === 'ready_for_new_events'
+                ? 'Ready: future verified ' + eventLabel(rule.eventType).toLowerCase() + ' events will create in-app notifications.'
+                : response.reason === 'rule_disabled' ? 'This event matches, but the rule is disabled. Enable it to receive notifications.'
+                    : response.reason === 'resource_unavailable' ? 'The linked repository is unavailable. Reconnect it before testing.'
+                        : 'This event does not match the rule.';
+            previews.set(rule.id, status + ' This is a configuration check only; no GitHub event or notification was sent.');
             render();
         }
         catch (error) {
             if (live())
                 showToast(errorText(error));
-        }
-    }
-    async function approve(rule) {
-        if (!canManage || busy || !data)
-            return;
-        const version = Date.parse(rule.updatedAt);
-        if (!Number.isSafeInteger(version) || version <= 0) {
-            showToast('Cannot approve an invalid rule version. Refresh the rules.');
-            return;
-        }
-        const confirmed = await showConfirmDialog('Allow future matching GitHub events for “' + rule.name + '” to create in-app notification records? This is separate from enabling the rule, requires Maintainer access and can be revoked at any time.', 'Approve automation execution', 'Approve execution');
-        if (!confirmed || !live())
-            return;
-        await mutate(base + '/automation-rules/' + rule.id + '/execution-approval', 'POST', {
-            confirm: 'APPROVE_NOTIFY_EXECUTION', ruleUpdatedAtMs: version,
-        }, 'Execution approved for future matching events.');
-    }
-    async function revoke(rule) {
-        if (!canManage || busy)
-            return;
-        const confirmed = await showConfirmDialog('Revoke execution approval for “' + rule.name + '”? Any outstanding actions will be cancelled when processed.', 'Revoke automation approval', 'Revoke approval', 'danger');
-        if (confirmed && live()) {
-            await mutate(base + '/automation-rules/' + rule.id + '/execution-approval', 'DELETE', undefined, 'Execution approval revoked.');
         }
     }
     async function remove(rule) {
@@ -401,4 +371,9 @@ export function bindAutomationTab(options) {
         }
     }
     void load();
+    const poll = window.setInterval(() => {
+        if (live() && !busy && !loading)
+            void load();
+    }, 10000);
+    signal.addEventListener('abort', () => window.clearInterval(poll), { once: true });
 }

@@ -11,7 +11,7 @@ import (
     "scrumboy/internal/store"
 )
 
-func TestAutomationExecutionConsentAndProjectHistoryREST(t *testing.T){
+func TestAutomationEnableAndProjectHistoryREST(t *testing.T){
     t.Setenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED","false")
     ts,db,cleanup:=newTestHTTPServer(t,"full")
     defer cleanup()
@@ -53,22 +53,16 @@ func TestAutomationExecutionConsentAndProjectHistoryREST(t *testing.T){
     resp,body=doJSON(t,ownerClient,http.MethodPatch,ruleURL,map[string]any{"enabled":true},&enabled)
     if resp.StatusCode!=http.StatusOK{t.Fatalf("enable %d %s",resp.StatusCode,body)}
     consentURL:=ruleURL+"/execution-approval"
-    consent:=map[string]any{"confirm":"APPROVE_NOTIFY_EXECUTION","ruleUpdatedAtMs":enabled.UpdatedAt.UnixMilli()}
-    resp,body=doJSON(t,viewerClient,http.MethodPost,consentURL,consent,nil)
-    if resp.StatusCode!=http.StatusForbidden{t.Fatalf("viewer consent %d %s",resp.StatusCode,body)}
-    resp,body=doJSON(t,outsiderClient,http.MethodPost,consentURL,consent,nil)
-    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("outsider consent %d %s",resp.StatusCode,body)}
     resp,body=doJSON(t,ownerClient,http.MethodPost,consentURL,map[string]any{
-        "confirm":"approve","ruleUpdatedAtMs":enabled.UpdatedAt.UnixMilli(),
+        "confirm":"APPROVE_NOTIFY_EXECUTION","ruleUpdatedAtMs":enabled.UpdatedAt.UnixMilli(),
     },nil)
-    if resp.StatusCode!=http.StatusBadRequest{t.Fatalf("unconfirmed consent %d %s",resp.StatusCode,body)}
-    resp,body=doJSON(t,ownerClient,http.MethodPost,consentURL,map[string]any{
-        "confirm":"APPROVE_NOTIFY_EXECUTION","ruleUpdatedAtMs":enabled.UpdatedAt.UnixMilli()+1,
-    },nil)
-    if resp.StatusCode!=http.StatusConflict{t.Fatalf("stale consent %d %s",resp.StatusCode,body)}
-    var approved store.IntegrationAutomationRule
-    resp,body=doJSON(t,ownerClient,http.MethodPost,consentURL,consent,&approved)
-    if resp.StatusCode!=http.StatusOK||approved.ExecutionApprovedAt==nil{t.Fatalf("approval %d %s %+v",resp.StatusCode,body,approved)}
+    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("legacy approval route still active %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,ownerClient,http.MethodDelete,consentURL,nil,nil)
+    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("legacy revocation route still active %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,viewerClient,http.MethodPatch,ruleURL,map[string]any{"enabled":false},nil)
+    if resp.StatusCode!=http.StatusForbidden{t.Fatalf("viewer disabled rule %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,outsiderClient,http.MethodPatch,ruleURL,map[string]any{"enabled":false},nil)
+    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("outsider disabled rule %d %s",resp.StatusCode,body)}
     time.Sleep(4*time.Millisecond)
     event:=store.GitHubAutomationEvent{
         DeliveryID:"736add23-94ec-4b12-b73b-8cf6f5317d81",
@@ -106,10 +100,8 @@ func TestAutomationExecutionConsentAndProjectHistoryREST(t *testing.T){
     if resp.StatusCode!=http.StatusMethodNotAllowed{t.Fatalf("audit POST %d %s",resp.StatusCode,body)}
     resp,body=doJSON(t,ownerClient,http.MethodGet,actionsURL+"?limit=101",nil,nil)
     if resp.StatusCode!=http.StatusBadRequest{t.Fatalf("unbounded history %d %s",resp.StatusCode,body)}
-    resp,body=doJSON(t,ownerClient,http.MethodDelete,consentURL,nil,nil)
-    if resp.StatusCode!=http.StatusNoContent{t.Fatalf("revoke %d %s",resp.StatusCode,body)}
-    resp,body=doJSON(t,ownerClient,http.MethodDelete,consentURL,nil,nil)
-    if resp.StatusCode!=http.StatusNoContent{t.Fatalf("repeated revoke %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,ownerClient,http.MethodPatch,ruleURL,map[string]any{"enabled":false},nil)
+    if resp.StatusCode!=http.StatusOK{t.Fatalf("disable %d %s",resp.StatusCode,body)}
     listed,err:=st.ListIntegrationAutomationRules(ctx,ownerID,project.ID)
-    if err!=nil||len(listed)!=1||listed[0].ExecutionApprovedAt!=nil{t.Fatalf("revoked %+v %v",listed,err)}
+    if err!=nil||len(listed)!=1||listed[0].Enabled{t.Fatalf("rule not disabled %+v %v",listed,err)}
 }

@@ -58,30 +58,6 @@ func (s *Server) handleProjectAutomationRules(w http.ResponseWriter,r *http.Requ
             if err!=nil{writeStoreErr(w,err,true);return}
             preview.ExecutionAvailable=true
             writeJSON(w,http.StatusOK,preview)
-        case "execution-approval":
-            switch r.Method{
-            case http.MethodPost:
-                var in struct{
-                    Confirm string `json:"confirm"`
-                    RuleUpdatedAtMs int64 `json:"ruleUpdatedAtMs"`
-                }
-                if err:=readJSON(w,r,s.maxBody,&in);err!=nil{return}
-                if in.Confirm!="APPROVE_NOTIFY_EXECUTION" || in.RuleUpdatedAtMs<=0{
-                    writeValidationError(w,"explicit execution consent and rule version required","invalid_execution_consent",nil)
-                    return
-                }
-                rule,err:=s.store.ApproveIntegrationAutomationExecution(ctx,actor,pc.Project.ID,ruleID,in.RuleUpdatedAtMs)
-                if err!=nil{writeStoreErr(w,err,true);return}
-                writeJSON(w,http.StatusOK,rule)
-            case http.MethodDelete:
-                if err:=s.store.RevokeIntegrationAutomationExecution(ctx,actor,pc.Project.ID,ruleID);err!=nil{
-                    writeStoreErr(w,err,true)
-                    return
-                }
-                w.WriteHeader(http.StatusNoContent)
-            default:
-                writeError(w,http.StatusMethodNotAllowed,"METHOD_NOT_ALLOWED","method not allowed",nil)
-            }
         default:
             writeError(w,http.StatusNotFound,"NOT_FOUND","not found",nil)
         }
