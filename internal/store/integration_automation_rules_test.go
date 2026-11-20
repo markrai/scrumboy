@@ -198,3 +198,45 @@ func TestIntegrationAutomationRuleCountBound(t *testing.T){
         ResourceID:repos[0].ID,Name:"Too many",EventType:"issue.closed",ActionType:"notify",
     });!errors.Is(err,ErrValidation){t.Fatalf("accepted unbounded rules: %v",err)}
 }
+
+func TestIntegrationAutomationRuleDisableSurvivesGitHubRevocation(t *testing.T){
+    st,cleanup:=newTestStore(t)
+    defer cleanup()
+    ctx:=context.Background()
+    owner,err:=st.BootstrapUser(ctx,"automation-outage-owner@example.com","password123","Owner")
+    if err!=nil{t.Fatal(err)}
+    project,err:=st.CreateProject(WithUserID(ctx,owner.ID),"Outage Automation")
+    if err!=nil{t.Fatal(err)}
+    install:=integration.Installation{ID:"555",Account:"engineering",Kind:"Organization"}
+    repo:=integration.Resource{ID:"123",Name:"engineering/repo",URL:"https://github.com/engineering/repo"}
+    conn,err:=st.SyncGitHubInstallation(ctx,owner.ID,install,[]integration.Resource{repo})
+    if err!=nil{t.Fatal(err)}
+    resources,err:=st.ListIntegrationResources(ctx,owner.ID,conn.ID)
+    if err!=nil||len(resources)!=1{t.Fatal("missing repo",err)}
+    resourceID:=resources[0].ID
+    if err:=st.AttachIntegrationResource(ctx,owner.ID,project.ID,resourceID);err!=nil{t.Fatal(err)}
+    rule,err:=st.CreateIntegrationAutomationRule(ctx,owner.ID,project.ID,
+        CreateIntegrationAutomationRuleInput{ResourceID:resourceID,Name:"Notify",EventType:"issue.closed",ActionType:"notify"})
+    if err!=nil{t.Fatal(err)}
+    enabled:=true
+    if _,err:=st.UpdateIntegrationAutomationRule(ctx,owner.ID,project.ID,rule.ID,
+        UpdateIntegrationAutomationRuleInput{Enabled:&enabled});err!=nil{t.Fatal(err)}
+    if _,err:=st.SyncGitHubInstallation(ctx,owner.ID,install,nil);err!=nil{t.Fatal(err)}
+    preview,err:=st.PreviewIntegrationAutomationRule(ctx,owner.ID,project.ID,rule.ID,
+        IntegrationAutomationPreviewInput{ResourceID:resourceID,EventType:"issue.closed"})
+    if err!=nil||preview.Matched||preview.Reason!="resource_unavailable"||preview.WouldExecute{
+        t.Fatalf("revoked repo matched active rule %+v %v",preview,err)
+    }
+    if _,err:=st.UpdateIntegrationAutomationRule(ctx,owner.ID,project.ID,rule.ID,
+        UpdateIntegrationAutomationRuleInput{Enabled:&enabled});!errors.Is(err,ErrNotFound){
+        t.Fatalf("re-enabled unavailable repository rule: %v",err)
+    }
+    enabled=false
+    updated,err:=st.UpdateIntegrationAutomationRule(ctx,owner.ID,project.ID,rule.ID,
+        UpdateIntegrationAutomationRuleInput{Enabled:&enabled})
+    if err!=nil||updated.Enabled{t.Fatalf("cannot disable inaccessible repo rule %+v %v",updated,err)}
+    if _,err:=st.SyncGitHubInstallation(ctx,owner.ID,install,[]integration.Resource{repo});err!=nil{t.Fatal(err)}
+    updated,err=st.UpdateIntegrationAutomationRule(ctx,owner.ID,project.ID,rule.ID,
+        UpdateIntegrationAutomationRuleInput{Enabled:&enabled})
+    if err!=nil||updated.Enabled{t.Fatalf("disabled rule was silently re-enabled %+v %v",updated,err)}
+}

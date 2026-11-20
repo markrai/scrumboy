@@ -174,7 +174,9 @@ func (s *Store) UpdateIntegrationAutomationRule(ctx context.Context,actorID,proj
 	if !validIntegrationAutomationRule(CreateIntegrationAutomationRuleInput{
 		ResourceID:current.ResourceID,Name:current.Name,EventType:current.EventType,ActionType:current.ActionType,
 	}){return IntegrationAutomationRule{},ErrValidation}
-	if err:=integrationAutomationResourceTx(ctx,tx,projectID,current.ResourceID);err!=nil{return IntegrationAutomationRule{},err}
+	if in.ResourceID!=nil || (in.Enabled!=nil && *in.Enabled) {
+		if err:=integrationAutomationResourceTx(ctx,tx,projectID,current.ResourceID);err!=nil{return IntegrationAutomationRule{},err}
+	}
 	_,err=tx.ExecContext(ctx,`UPDATE integration_automation_rules
 		SET resource_id=?,name=?,event_type=?,enabled=?,updated_at=?
 		WHERE project_id=? AND id=?`,current.ResourceID,current.Name,current.EventType,current.Enabled,
