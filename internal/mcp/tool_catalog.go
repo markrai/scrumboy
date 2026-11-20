@@ -229,6 +229,39 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"targetLocalId": jsonProp("integer", "Project-scoped todo ID to unlink (link target)"),
 			}, []string{"projectSlug", "localId", "targetLocalId"}),
 		},
+		"integrations_resourcesList": {
+			Name: "integrations_resourcesList",
+			Description: "List external resources explicitly associated with a durable project. Requires membership.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project slug"),
+			}, []string{"projectSlug"}),
+		},
+		"todos_externalLinksList": {
+			Name: "todos_externalLinksList",
+			Description: "List external references linked to a card, separate from linked stories.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project slug"),
+				"localId": jsonProp("integer", "Project-scoped card ID"),
+			}, []string{"projectSlug", "localId"}),
+		},
+		"todos_externalLinkAdd": {
+			Name: "todos_externalLinkAdd",
+			Description: "Attach a project-associated external resource to a card. Contributor or higher required.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project slug"),
+				"localId": jsonProp("integer", "Project-scoped card ID"),
+				"resourceId": jsonProp("integer", "ID from integrations_resourcesList"),
+			}, []string{"projectSlug", "localId", "resourceId"}),
+		},
+		"todos_externalLinkRemove": {
+			Name: "todos_externalLinkRemove",
+			Description: "Unlink an external reference from a card without affecting the provider.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project slug"),
+				"localId": jsonProp("integer", "Project-scoped card ID"),
+				"resourceId": jsonProp("integer", "Linked resource ID"),
+			}, []string{"projectSlug", "localId", "resourceId"}),
+		},
 		"sprints_list": {
 			Name:        "sprints_list",
 			Description: "List sprints for a project.",

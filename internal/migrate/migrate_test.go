@@ -691,3 +691,34 @@ func TestMigration059ClassifiesExistingPreferencesAsLegacy(t *testing.T) {
 		t.Fatalf("updated_at changed by migration: got %d, want %d", gotUpdatedAt, now)
 	}
 }
+
+
+func TestMigration098RemovesSeparateAutomationApprovalGate(t *testing.T) {
+    sqlDB := openMigratedDB(t)
+    if !columnExists(t, sqlDB, "integration_automation_rules", "execution_since") {
+        t.Fatal("missing automation activation timestamp")
+    }
+    if !columnExists(t, sqlDB, "integration_automation_actions", "activation_version") {
+        t.Fatal("missing automation action version")
+    }
+    if columnExists(t, sqlDB, "integration_automation_actions", "approval_id") {
+        t.Fatal("obsolete approval_id still exists")
+    }
+    if tableExists(t, sqlDB, "integration_automation_execution_approvals") {
+        t.Fatal("obsolete execution approval table still exists")
+    }
+    for _, trigger := range []string{
+        "revoke_automation_approval_on_member_delete",
+        "revoke_automation_approval_on_member_demotion",
+        "revoke_automation_approval_on_rule_update",
+        "revoke_automation_approval_on_installation_loss",
+        "revoke_automation_approval_on_repository_loss",
+    } {
+        if triggerExists(t, sqlDB, trigger) {
+            t.Fatalf("obsolete approval trigger remains: %s", trigger)
+        }
+    }
+    if err := Apply(context.Background(), sqlDB); err != nil {
+        t.Fatalf("migration not idempotent: %v", err)
+    }
+}

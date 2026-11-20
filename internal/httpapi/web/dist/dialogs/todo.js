@@ -19,6 +19,7 @@ import { apiErrorMessage, formatDate as formatLocalizedDate, hasI18nKey, I18N_LO
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { tagIdentityKey } from '../tag-names.js';
 import { bindShareTodoButton, bindTodoDialogLinkLifecycle, initializeTodoDialogLinks, resetTodoDialogLinks, } from './todo-links.js';
+import { initializeTodoExternalLinks, initializeTodoExternalLinksForCreate, resetTodoExternalLinks, bindTodoExternalLinksLifecycle, pendingTodoExternalLinksSignature, commitPendingTodoExternalLinks } from './todo-external-links.js';
 import { computeTodoDialogPermissions, setTodoFormPermissions, } from './todo-permissions.js';
 import { getTagsFromChips, renderTagsChips, resetTodoTagAutocompleteBindings, setupTagAutocomplete, } from './todo-tags.js';
 import { defaultTodoTagSuggestions, loadAllProjectTagSuggestions, mergeTodoTagSuggestions, } from './todo-tag-suggestions.js';
@@ -42,6 +43,9 @@ let todoDialogClosePromptOpen = false;
 let todoCreatorLocaleAbort = null;
 let todoDialogOpenGeneration = 0;
 let todoCreatedCallback = null;
+let referenceTabBound = false;
+let referenceLoader = null;
+let referenceLoaded = false;
 const todoDrawingSession = new DrawingSession();
 let todoDrawingsEditable = false;
 let todoDrawingSlug = null;
@@ -442,6 +446,44 @@ function bindTodoNotesPreviewControls() {
         }
     });
 }
+function selectTodoDialogTab(tab) {
+    const details = document.getElementById('todoDetailsPanel');
+    const references = document.getElementById('todoReferencesPanel');
+    const detailsTab = document.getElementById('todoDetailsTab');
+    const referencesTab = document.getElementById('todoReferencesTab');
+    if (!details || !references || !detailsTab || !referencesTab)
+        return;
+    if (tab === 'references' && referencesTab.hidden)
+        return;
+    details.hidden = tab !== 'details';
+    references.hidden = tab !== 'references';
+    detailsTab.classList.toggle('is-active', tab === 'details');
+    referencesTab.classList.toggle('is-active', tab === 'references');
+    detailsTab.setAttribute('aria-selected', String(tab === 'details'));
+    referencesTab.setAttribute('aria-selected', String(tab === 'references'));
+    if (tab === 'references' && referenceLoader && !referenceLoaded) {
+        referenceLoaded = true;
+        void referenceLoader().catch(err => {
+            showToast(apiErrorMessage(err, { fallbackKey: 'todo.externalResources.failed' }));
+        });
+    }
+}
+function bindTodoReferenceTabs() {
+    if (referenceTabBound)
+        return;
+    const detailsTab = document.getElementById('todoDetailsTab');
+    const referencesTab = document.getElementById('todoReferencesTab');
+    if (!detailsTab || !referencesTab)
+        return;
+    referenceTabBound = true;
+    detailsTab.addEventListener('click', () => selectTodoDialogTab('details'));
+    referencesTab.addEventListener('click', () => selectTodoDialogTab('references'));
+    document.getElementById('todoForm')?.addEventListener('invalid', event => {
+        if (event.target instanceof HTMLElement && document.getElementById('todoDetailsPanel')?.contains(event.target)) {
+            selectTodoDialogTab('details');
+        }
+    }, true);
+}
 function readTodoDialogSnapshot() {
     const assignee = document.getElementById("todoAssignee");
     const sprint = document.getElementById("todoSprint");
@@ -457,6 +499,7 @@ function readTodoDialogSnapshot() {
         dueAt: todoDueAt?.value ?? "",
         customFields: JSON.stringify(readCustomFieldInputs(document.getElementById("todoCustomFields"))),
         drawings: `${todoDrawingSession.revision}|${todoNotesInk?.isDirty() ? todoNotesInk.revision() : 0}`,
+        references: pendingTodoExternalLinksSignature(),
     };
 }
 function captureTodoDialogBaseline() {
@@ -477,6 +520,7 @@ function isTodoDialogDirty() {
         current.dueAt !== todoDialogBaseline.dueAt ||
         current.customFields !== todoDialogBaseline.customFields ||
         current.drawings !== todoDialogBaseline.drawings ||
+        current.references !== todoDialogBaseline.references ||
         current.tags.length !== todoDialogBaseline.tags.length ||
         current.tags.some((tag, idx) => tag !== todoDialogBaseline?.tags[idx]));
 }
@@ -574,10 +618,17 @@ export function getTodoDialogOpenGeneration() {
     return todoDialogOpenGeneration;
 }
 export async function notifyTodoCreated(todo, generation = todoDialogOpenGeneration) {
+    if (generation !== todoDialogOpenGeneration)
+        return 0;
     const pending = todoCreatedCallback;
-    if (!pending || pending.generation !== generation || generation !== todoDialogOpenGeneration)
-        return;
     todoCreatedCallback = null;
+    const slug = getSlug();
+    let failedReferences = 0;
+    if (slug && Number.isSafeInteger(todo.localId) && todo.localId > 0) {
+        failedReferences = await commitPendingTodoExternalLinks(slug, todo.localId);
+    }
+    if (!pending || pending.generation !== generation)
+        return failedReferences;
     try {
         await pending.callback(todo);
     }
@@ -586,6 +637,7 @@ export async function notifyTodoCreated(todo, generation = todoDialogOpenGenerat
         // that success into a misleading Todo save failure.
         console.warn("todo created callback failed", err);
     }
+    return failedReferences;
 }
 export async function openTodoDialog(opts) {
     const { mode, todo, status, onNavigateToLinkedTodo } = opts;
@@ -599,6 +651,11 @@ export async function openTodoDialog(opts) {
     setEditingTodo(mode === "edit" ? todo : null);
     bindTodoDialogCloseGuards();
     bindTodoDialogLinkLifecycle();
+    bindTodoExternalLinksLifecycle();
+    bindTodoReferenceTabs();
+    resetTodoExternalLinks();
+    referenceLoaded = false;
+    referenceLoader = null;
     bindTodoNotesPreviewControls();
     const board = getBoard();
     const permissions = computeTodoDialogPermissions({
@@ -733,6 +790,21 @@ export async function openTodoDialog(opts) {
     else {
         resetTodoDialogLinks();
     }
+    const canShowExternalLinks = (mode === 'create' || editableWithLinks) && !!slug && !!board?.project && !board.project.expiresAt &&
+        !isAnonymousBoard(board) && !!getUser() &&
+        ["viewer", "contributor", "maintainer", "editor"].includes(String(opts.role ?? "").toLowerCase());
+    const tabs = document.getElementById('todoReferenceTabs');
+    const referencesTab = document.getElementById('todoReferencesTab');
+    if (tabs)
+        tabs.hidden = !canShowExternalLinks;
+    if (referencesTab)
+        referencesTab.hidden = !canShowExternalLinks;
+    if (canShowExternalLinks) {
+        referenceLoader = () => mode === 'create'
+            ? initializeTodoExternalLinksForCreate(slug)
+            : initializeTodoExternalLinks(slug, todo.localId, isArchived);
+    }
+    selectTodoDialogTab('details');
     const estimationField = todoEstimationField;
     const estimationSelect = todoEstimationPoints;
     const showEstimation = isModifiedFibonacciMode();

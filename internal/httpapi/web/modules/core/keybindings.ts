@@ -599,7 +599,7 @@ function onGlobalKeydown(ev: KeyboardEvent): void {
   const view = getCurrentView();
   const tabCyclesMainNav = (chord === "tab" || chord === "shift+tab") && (view === "dashboard" || view === "projects");
   if (tabCyclesMainNav) {
-    if (isTypingInTextField()) return;
+    if (shouldBlockForFocus()) return;
   } else if (shouldBlockForFocus()) {
     return;
   }

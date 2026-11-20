@@ -35,6 +35,8 @@ import (
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
+	"scrumboy/internal/integration"
+	"scrumboy/internal/integration/githubwebhook"
 	"scrumboy/internal/mailer"
 	"scrumboy/internal/oidc"
 	"scrumboy/internal/publicorigin"
@@ -79,6 +81,10 @@ type Options struct {
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
 	// Set from SCRUMBOY_ENCRYPTION_KEY (base64). If unset, password reset endpoints return 503.
 	EncryptionKey []byte
+
+	GitHubProvider integration.Provider
+	GitHubAppSlug string
+	GitHubWebhook *githubwebhook.Service
 
 	OIDCService *oidc.Service // nil when OIDC is not configured
 
@@ -260,7 +266,11 @@ type Server struct {
 	publicStreamRevalidateInterval time.Duration
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
-	oidcService   *oidc.Service // nil when OIDC is not configured
+	oidcService   *oidc.Service
+	githubProvider integration.Provider
+	githubAppSlug string
+	githubWebhook *githubwebhook.Service
+	githubWebhookCancel context.CancelFunc
 
 	passwordResetAdminLimiter   *ratelimit.Limiter // 10 resets/min per admin
 	passwordResetRequestLimiter *ratelimit.Limiter // 5/min per IP+email, self-service request
@@ -400,6 +410,30 @@ type storeAPI interface {
 	CountTodosByPriorityKey(ctx context.Context, projectID int64) (map[string]int, error)
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 	ListProjectCustomFields(ctx context.Context, projectID int64) ([]store.CustomField, error)
+	SyncGitHubInstallation(ctx context.Context, actorID int64, installation integration.Installation, resources []integration.Resource) (store.IntegrationConnection,error)
+	GetGitHubDisconnectImpact(ctx context.Context,actorID,connectionID int64) (store.GitHubDisconnectImpact,error)
+	DeleteGitHubInstallation(ctx context.Context,actorID,connectionID int64,expected store.GitHubDisconnectImpact) error
+	ListIntegrationConnections(ctx context.Context,actorID int64) ([]store.IntegrationConnection,error)
+	ListIntegrationResources(ctx context.Context,actorID,connectionID int64) ([]store.IntegrationResource,error)
+	AttachIntegrationResource(ctx context.Context,actorID,projectID,resourceID int64) error
+	DetachIntegrationResource(ctx context.Context,actorID,projectID,resourceID int64) error
+	ListProjectIntegrationResources(ctx context.Context, actorID, projectID int64) ([]store.IntegrationResource, error)
+    CreateIntegrationAutomationRule(ctx context.Context, actorID, projectID int64, in store.CreateIntegrationAutomationRuleInput) (store.IntegrationAutomationRule,error)
+    ListIntegrationAutomationRules(ctx context.Context, actorID, projectID int64) ([]store.IntegrationAutomationRule,error)
+    ListGitHubAutomationMatches(ctx context.Context, actorID, projectID int64, limit int) ([]store.GitHubAutomationMatch,error)
+    ListIntegrationAutomationActions(ctx context.Context,actorID,projectID int64,limit int)([]store.IntegrationAutomationAction,error)
+    ListIntegrationAutomationActionAudit(ctx context.Context,actorID,projectID,actionID int64,limit int)([]store.IntegrationAutomationActionAudit,error)
+    UpdateIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64,in store.UpdateIntegrationAutomationRuleInput) (store.IntegrationAutomationRule,error)
+    DeleteIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64) error
+    PreviewIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64,in store.IntegrationAutomationPreviewInput) (store.IntegrationAutomationPreview,error)
+	ListTodoIntegrationResources(ctx context.Context, actorID, projectID, localID int64) ([]store.IntegrationResource, error)
+	LinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
+	UnlinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
+    GetGitHubProjectRepository(ctx context.Context,actorID,projectID,resourceID int64,manage bool) (store.GitHubProjectRepository,error)
+    ListTodoGitHubItems(ctx context.Context,actorID,projectID,localID int64) ([]integration.GitHubItem,error)
+    LinkTodoGitHubItem(ctx context.Context,actorID,projectID,localID int64,item integration.GitHubItem) error
+    UnlinkTodoGitHubItem(ctx context.Context,actorID,projectID,localID,resourceID int64,kind string,number int64) error
+    RefreshTodoGitHubItem(ctx context.Context,actorID,projectID,localID int64,item integration.GitHubItem) error
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)
@@ -801,6 +835,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 		publicStreamRevalidateInterval: normalizedPublicStreamInterval(opts.PublicStreamRevalidateInterval, defaultPublicStreamRevalidateInterval),
 		encryptionKey:                  encKey,
 		oidcService:                    opts.OIDCService,
+		githubProvider: opts.GitHubProvider,
+		githubAppSlug: opts.GitHubAppSlug,
+		githubWebhook: opts.GitHubWebhook,
 		passwordResetAdminLimiter:      passwordResetAdminLimiter,
 		passwordResetRequestLimiter:    passwordResetRequestLimiter,
 		firstPasswordStartLimiter:      firstPasswordStartLimiter,
@@ -1107,6 +1144,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 	if opts.MCPHandler != nil {
 		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)
 	}
+	if mode == "full" && server.githubWebhook != nil {
+		webhookCtx, webhookCancel := context.WithCancel(context.Background())
+		server.githubWebhookCancel = webhookCancel
+		go server.githubWebhook.Run(webhookCtx)
+	}
 	return server
 }
 
@@ -1161,6 +1203,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/oauth/") {
 		s.handleOAuth(w, r)
+		return
+	}
+
+	if r.URL.Path == "/api/integrations/github/webhook" {
+		if s.mode != "full" || s.githubWebhook == nil {
+			http.NotFound(w, r)
+			return
+		}
+		s.githubWebhook.ServeHTTP(w, r)
 		return
 	}
 
@@ -1275,6 +1326,9 @@ func (s *Server) Close(ctx context.Context) {
 	if s.durableWebhookCancel != nil {
 		s.durableWebhookCancel()
 	}
+	if s.githubWebhookCancel != nil {
+		s.githubWebhookCancel()
+	}
 	if s.transactionalMailCancel != nil {
 		s.transactionalMailCancel()
 	}
@@ -1288,6 +1342,7 @@ func (s *Server) Close(ctx context.Context) {
 	}{
 		{"webhook", s.webhookDone},
 		{"durable webhook", s.durableWebhookDone},
+		{"github inbound", func() <-chan struct{} { if s.githubWebhook != nil && s.githubWebhookCancel != nil { return s.githubWebhook.Done() }; return nil }()},
 		{"transactional mail", s.transactionalMailDone},
 		{"notification mail", s.notificationMailDone},
 	} {

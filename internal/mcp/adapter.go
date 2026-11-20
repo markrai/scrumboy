@@ -98,6 +98,10 @@ type storeAPI interface {
 	CreateWebhook(ctx context.Context, actorUserID int64, input store.CreateWebhookInput) (store.Webhook, error)
 	ListProjectWebhooks(ctx context.Context, actorUserID, projectID int64, limit int, beforeID int64) ([]store.Webhook, *int64, error)
 	DeleteProjectWebhook(ctx context.Context, actorUserID, projectID, webhookID int64) error
+	ListProjectIntegrationResources(ctx context.Context, actorID, projectID int64) ([]store.IntegrationResource, error)
+	ListTodoIntegrationResources(ctx context.Context, actorID, projectID, localID int64) ([]store.IntegrationResource, error)
+	LinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
+	UnlinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
 	GetUser(ctx context.Context, userID int64) (store.User, error)
 	useradminapp.UserRoleMutationStore
 	useradminapp.UserDeletionStore
@@ -507,6 +511,10 @@ func (a *Adapter) implementedTools() []string {
 		"todos_linksList",
 		"todos_linkAdd",
 		"todos_linkRemove",
+		"integrations_resourcesList",
+		"todos_externalLinksList",
+		"todos_externalLinkAdd",
+		"todos_externalLinkRemove",
 		"sprints_list",
 		"sprints_get",
 		"sprints_getActive",
