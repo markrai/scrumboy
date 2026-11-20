@@ -138,7 +138,7 @@ describe('Todo GitHub reference browser', () => {
     api.mockImplementation(async (path: string) => {
       if (path.endsWith('/github-items')) return [];
       if (path.endsWith('/integrations/resources')) return [repository];
-      if (path.includes('/browse?kind=pr')) return await new Promise(resolve => { finishFirst = resolve; });
+      if (path.includes('/browse?') && path.includes('kind=pr')) return await new Promise(resolve => { finishFirst = resolve; });
       if (path.includes('/browse?') && path.includes('kind=issue')) return { items: [issue] };
       return [];
     });

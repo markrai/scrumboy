@@ -216,6 +216,9 @@ export async function initializeTodoGitHubItems(slug: string, localId: number | 
   urlInput.maxLength = 2048;
   urlInput.placeholder = 'Paste a GitHub issue or PR URL';
   urlInput.setAttribute('aria-label', 'GitHub issue or PR URL');
+  urlInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter') event.preventDefault();
+  });
   button(paste, 'Link URL', async () => {
     if (!urlInput.value.trim()) return;
     await linkURL(urlInput.value);
@@ -233,6 +236,9 @@ export async function initializeTodoGitHubItems(slug: string, localId: number | 
   input.maxLength = 100;
   input.placeholder = 'Filter by title…';
   input.setAttribute('aria-label', 'Filter GitHub issues or pull requests');
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') event.preventDefault();
+  });
   const results = add(section, 'div', undefined, 'github-items__results');
   const cached = new Map<string, { items: Item[]; at: number }>();
   let hits: Item[] = [];

@@ -99,4 +99,20 @@ describe('todo external references', () => {
     (document.getElementById('addExternalResourceBtn') as HTMLButtonElement).click();
     await vi.waitFor(() => expect(api).toHaveBeenCalledWith('/api/board/alpha/todos/5/integrations', { method:'POST', body:JSON.stringify({resourceId:18}) }));
   });
+  it('stages repositories in New Todo and saves them only after a Todo ID exists', async () => {
+    const mod = await import('./todo-external-links.js');
+    await mod.initializeTodoExternalLinksForCreate('alpha');
+    expect(document.querySelector<HTMLButtonElement>('#addExternalResourceBtn')).not.toBeNull();
+    const picker = document.getElementById('externalResourcePicker') as HTMLSelectElement;
+    expect(picker.value).toBe('17');
+    (document.getElementById('addExternalResourceBtn') as HTMLButtonElement).click();
+    expect(mod.pendingTodoExternalLinksSignature()).toContain('"resources":[17]');
+    expect(api.mock.calls.some(([path, opts]) => path.includes('/todos/') && opts?.method === 'POST')).toBe(false);
+    const failures = await mod.commitPendingTodoExternalLinks('alpha', 35);
+    expect(failures).toBe(0);
+    expect(api).toHaveBeenCalledWith('/api/board/alpha/todos/35/integrations', {
+      method: 'POST', body: JSON.stringify({ resourceId:17 }),
+    });
+  });
+
 });
