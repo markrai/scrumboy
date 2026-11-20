@@ -15,6 +15,10 @@ type githubItemTestProvider struct {
     *githubFakeProvider
     resolves int
     searches int
+    browses int
+    browseKind string
+    browseState string
+    browseQuery string
 }
 
 func (p *githubItemTestProvider) ResolveItem(ctx context.Context,installationID,repositoryID,repository,kind string,number int64) (integration.GitHubItem,error) {
@@ -29,6 +33,15 @@ func (p *githubItemTestProvider) SearchItems(ctx context.Context,installationID,
     p.searches++
     if installationID!="987" || repositoryID!="123" || repository!="org/repo" || kind!="issue" || query!="controls" {
         return nil,store.ErrNotFound
+    }
+    return []integration.GitHubItem{{Kind:"issue",Number:357,Title:"Fix card controls",State:"open",URL:"https://github.com/org/repo/issues/357"}},nil
+}
+
+func (p *githubItemTestProvider) BrowseItems(ctx context.Context, installationID, repositoryID, repository, kind, state, query string) ([]integration.GitHubItem, error) {
+    p.browses++
+    p.browseKind, p.browseState, p.browseQuery = kind, state, query
+    if installationID != "987" || repositoryID != "123" || repository != "org/repo" {
+        return nil, store.ErrNotFound
     }
     return []integration.GitHubItem{{Kind:"issue",Number:357,Title:"Fix card controls",State:"open",URL:"https://github.com/org/repo/issues/357"}},nil
 }
@@ -103,6 +116,19 @@ func TestGitHubItemsRESTAuthorizationAndProjectScope(t *testing.T) {
     badSearch:=ts.URL+"/api/board/"+other.Slug+"/integrations/github/search?resourceId="+strconv.FormatInt(resourceID,10)+"&kind=issue&q=controls"
     resp,body=doJSON(t,ownerClient,http.MethodGet,badSearch,nil,nil)
     if resp.StatusCode!=http.StatusNotFound || provider.searches!=1{t.Fatalf("cross-project search %d %s",resp.StatusCode,body)}
+
+    browseBase := ts.URL+"/api/board/"+project.Slug+"/integrations/github/browse?resourceId="+strconv.FormatInt(resourceID,10)+"&kind=issue&state=open"
+    var browseResult struct { Items []integration.GitHubItem `json:"items"` }
+    resp,body=doJSON(t,viewerClient,http.MethodGet,browseBase,nil,&browseResult)
+    if resp.StatusCode!=http.StatusOK || provider.browses!=1 || len(browseResult.Items)!=1 || browseResult.Items[0].ResourceID!=resourceID || provider.browseState!="open" || provider.browseQuery!="" {t.Fatalf("browse %d %s %+v",resp.StatusCode,body,browseResult)}
+    for _,bad:=range []string{"&state=invalid","&q=x"} {
+        resp,body=doJSON(t,viewerClient,http.MethodGet,browseBase+bad,nil,nil)
+        if resp.StatusCode!=http.StatusBadRequest || provider.browses!=1 {t.Fatalf("invalid browse reached provider %d %s",resp.StatusCode,body)}
+    }
+    resp,body=doJSON(t,outsiderClient,http.MethodGet,browseBase,nil,nil)
+    if resp.StatusCode==http.StatusOK || provider.browses!=1 {t.Fatalf("outsider browse %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,ownerClient,http.MethodGet,ts.URL+"/api/board/"+other.Slug+"/integrations/github/browse?resourceId="+strconv.FormatInt(resourceID,10)+"&kind=issue&state=open",nil,nil)
+    if resp.StatusCode!=http.StatusNotFound || provider.browses!=1 {t.Fatalf("cross-project browse %d %s",resp.StatusCode,body)}
     itemPath:=cardAPI+"/"+strconv.FormatInt(resourceID,10)+"/issue/357"
     resp,body=doJSON(t,viewerClient,http.MethodDelete,itemPath,nil,nil)
     if resp.StatusCode!=http.StatusForbidden{t.Fatalf("viewer unlink %d %s",resp.StatusCode,body)}

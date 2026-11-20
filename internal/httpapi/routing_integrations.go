@@ -44,6 +44,10 @@ func (s *Server) handleBoardIntegrationRoutes(w http.ResponseWriter, r *http.Req
         s.handleProjectGitHubSearch(w,r,rest,pc)
         return true
     }
+    if len(rest)>=4 && rest[1]=="integrations" && rest[2]=="github" && rest[3]=="browse" {
+        s.handleProjectGitHubBrowse(w,r,rest,pc)
+        return true
+    }
     if len(rest)>=4 && rest[1]=="todos" && rest[3]=="github-items" {
         s.handleTodoGitHubItems(w,r,rest,pc)
         return true

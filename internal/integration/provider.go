@@ -32,6 +32,10 @@ type IssuePullRequestProvider interface {
     SearchItems(context.Context,string,string,string,string,string) ([]GitHubItem,error)
 }
 
+type IssuePullRequestBrowser interface {
+    BrowseItems(context.Context,string,string,string,string,string,string) ([]GitHubItem,error)
+}
+
 type Provider interface {
 	Installations(context.Context) ([]Installation, error)
 	Resources(context.Context, string) ([]Resource, error)

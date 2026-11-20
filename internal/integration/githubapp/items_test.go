@@ -98,3 +98,49 @@ func TestGitHubItemRejectsWrongResourceAndWrongKind(t *testing.T) {
     _,err:=c.ResolveItem(context.Background(),"987","123","org/repo","issue",17)
     if !errors.Is(err,ErrIncomplete){t.Fatalf("PR masqueraded as issue %v",err)}
 }
+
+func TestBrowseGitHubItemsRestrictsRepositoryAndState(t *testing.T) {
+    var gotQueries []string
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        switch {
+        case strings.HasSuffix(r.URL.Path, "/access_tokens"):
+            json.NewEncoder(w).Encode(map[string]any{"token":"restricted-installation-token-very-long","expires_at":time.Now().Add(time.Hour).Format(time.RFC3339)})
+        case r.URL.Path == "/search/issues":
+            q := r.URL.Query().Get("q")
+            gotQueries = append(gotQueries, q)
+            kind := "issue"
+            segment := "issues"
+            pointer := any(nil)
+            if strings.Contains(q, "is:pr") { kind, segment, pointer = "pr", "pull", map[string]any{"url":"https://api.github.com"} }
+            state := "open"
+            if strings.Contains(q, "is:closed") { state = "closed" }
+            _ = kind
+            json.NewEncoder(w).Encode(map[string]any{"items":[]any{map[string]any{
+                "number":12,"title":"Tracked item","state":state,"html_url":"https://github.com/org/repo/"+segment+"/12","pull_request":pointer,
+            }}})
+        default:
+            http.NotFound(w,r)
+        }
+    }))
+    defer server.Close()
+    c := testClient(t, server.URL)
+    cases := []struct{kind,state,query string}{
+        {"pr","open",""},{"issue","closed",""},{"issue","all","security"},
+    }
+    for _,tc := range cases {
+        items,err:=c.BrowseItems(context.Background(),"987","123","org/repo",tc.kind,tc.state,tc.query)
+        if err!=nil || len(items)!=1 || items[0].Kind!=tc.kind {t.Fatalf("browse %+v: %+v %v",tc,items,err)}
+    }
+    if len(gotQueries)!=3 || !strings.Contains(gotQueries[0],"repo:org/repo is:pr is:open") ||
+       !strings.Contains(gotQueries[1],"repo:org/repo is:issue is:closed") ||
+       !strings.Contains(gotQueries[2],"in:title") { t.Fatalf("browse queries %+v",gotQueries) }
+    for _,tc:=range []struct{repo,kind,state,query string}{
+        {"org/else","issue","open",""},{"org/repo","issue","unknown",""},
+        {"org/repo","issue","open","x"},{"org/repo","issue","open",strings.Repeat("z",101)},
+        {"org/repo","bad","open",""},
+    } {
+        if _,err:=c.BrowseItems(context.Background(),"987","123",tc.repo,tc.kind,tc.state,tc.query);err==nil {
+            t.Errorf("unexpected successful browse for %+v",tc)
+        }
+    }
+}

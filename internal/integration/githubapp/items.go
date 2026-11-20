@@ -16,6 +16,7 @@ import (
 
 var githubRepositoryName = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 var _ integration.IssuePullRequestProvider = (*Client)(nil)
+var _ integration.IssuePullRequestBrowser = (*Client)(nil)
 
 func validItemRepository(id, name string) bool {
     n, err := strconv.ParseInt(id, 10, 64)
@@ -78,13 +79,25 @@ func (c *Client) ResolveItem(ctx context.Context, installationID, repositoryID, 
 }
 
 func (c *Client) SearchItems(ctx context.Context, installationID, repositoryID, repository, kind, query string) ([]integration.GitHubItem, error) {
-    if !validItemRepository(repositoryID,repository) || (kind!="issue" && kind!="pr") ||
-        len(query)>100 || len(strings.TrimSpace(query))<2 { return nil, ErrIncomplete }
-    token, err := c.scopedItemToken(ctx,installationID,repositoryID)
-    if err!=nil{return nil,err}
-    filter, segment := "is:issue","issues"
-    if kind=="pr"{filter,segment="is:pr","pull"}
-    search:="repo:"+repository+" "+filter+" in:title "+strconv.Quote(strings.TrimSpace(query))
+    if len(strings.TrimSpace(query)) < 2 || len(query) > 100 { return nil, ErrIncomplete }
+    return c.searchItems(ctx, installationID, repositoryID, repository, kind, "all", query)
+}
+
+func (c *Client) BrowseItems(ctx context.Context, installationID, repositoryID, repository, kind, state, query string) ([]integration.GitHubItem, error) {
+    if state != "open" && state != "closed" && state != "all" { return nil, ErrIncomplete }
+    if len(query) > 100 || (len(strings.TrimSpace(query)) > 0 && len(strings.TrimSpace(query)) < 2) { return nil, ErrIncomplete }
+    return c.searchItems(ctx, installationID, repositoryID, repository, kind, state, query)
+}
+
+func (c *Client) searchItems(ctx context.Context, installationID, repositoryID, repository, kind, state, query string) ([]integration.GitHubItem, error) {
+    if !validItemRepository(repositoryID, repository) || (kind != "issue" && kind != "pr") { return nil, ErrIncomplete }
+    token, err := c.scopedItemToken(ctx, installationID, repositoryID)
+    if err != nil { return nil, err }
+    qualifier, segment := "is:issue", "issues"
+    if kind == "pr" { qualifier, segment = "is:pr", "pull" }
+    search := "repo:" + repository + " " + qualifier
+    if state != "all" { search += " is:" + state }
+    if strings.TrimSpace(query) != "" { search += " in:title " + strconv.Quote(strings.TrimSpace(query)) }
     var response struct {
         Items []struct {
             Number int64 `json:"number"`
@@ -94,19 +107,22 @@ func (c *Client) SearchItems(ctx context.Context, installationID, repositoryID, 
             PullRequest *json.RawMessage `json:"pull_request"`
         } `json:"items"`
     }
-    if err:=c.request(ctx,http.MethodGet,"/search/issues?per_page=20&q="+url.QueryEscape(search),token,nil,&response);err!=nil{return nil,err}
-    if len(response.Items)>20{return nil,ErrIncomplete}
-    result:=make([]integration.GitHubItem,0,len(response.Items))
-    for _,candidate:=range response.Items {
-        canonical:="https://github.com/"+repository+"/"+segment+"/"+strconv.FormatInt(candidate.Number,10)
-        if candidate.Number<=0 || candidate.Number>2147483647 || !strings.EqualFold(candidate.HTMLURL,canonical) ||
-            !validItemTitle(candidate.Title) || (candidate.State!="open" && candidate.State!="closed") ||
-            (kind=="issue" && candidate.PullRequest!=nil) || (kind=="pr" && candidate.PullRequest==nil) {
-            return nil,ErrIncomplete
+    endpoint := "/search/issues?per_page=20&sort=updated&order=desc&q=" + url.QueryEscape(search)
+    if err := c.request(ctx, http.MethodGet, endpoint, token, nil, &response); err != nil { return nil, err }
+    if len(response.Items) > 20 { return nil, ErrIncomplete }
+    result := make([]integration.GitHubItem, 0, len(response.Items))
+    for _, candidate := range response.Items {
+        canonical := "https://github.com/" + repository + "/" + segment + "/" + strconv.FormatInt(candidate.Number, 10)
+        if candidate.Number <= 0 || candidate.Number > 2147483647 ||
+            !strings.EqualFold(candidate.HTMLURL, canonical) ||
+            !validItemTitle(candidate.Title) || (candidate.State != "open" && candidate.State != "closed") ||
+            (state != "all" && candidate.State != state) ||
+            (kind == "issue" && candidate.PullRequest != nil) || (kind == "pr" && candidate.PullRequest == nil) {
+            return nil, ErrIncomplete
         }
-        result=append(result,integration.GitHubItem{Kind:kind,Number:candidate.Number,Title:candidate.Title,State:candidate.State,URL:candidate.HTMLURL})
+        result = append(result, integration.GitHubItem{Kind:kind, Number:candidate.Number, Title:candidate.Title, State:candidate.State, URL:candidate.HTMLURL})
     }
-    return result,nil
+    return result, nil
 }
 
 func ParseIssuePullRequestURL(raw string) (string,string,int64,error) {

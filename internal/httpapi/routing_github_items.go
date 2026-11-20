@@ -52,6 +52,43 @@ func (s *Server) handleProjectGitHubSearch(w http.ResponseWriter,r *http.Request
     writeJSON(w,http.StatusOK,map[string]any{"items":found})
 }
 
+func (s *Server) handleProjectGitHubBrowse(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) {
+    if len(rest) != 4 || r.Method != http.MethodGet {
+        writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+        return
+    }
+    actor, ok := store.UserIDFromContext(s.requestContext(r))
+    if !ok { writeStoreErr(w, store.ErrUnauthorized, true); return }
+    raw := r.URL.Query()
+    resourceID, err := strconv.ParseInt(raw.Get("resourceId"), 10, 64)
+    kind, state, query := raw.Get("kind"), raw.Get("state"), strings.TrimSpace(raw.Get("q"))
+    if err != nil || resourceID <= 0 || (kind != "issue" && kind != "pr") ||
+        (state != "open" && state != "closed" && state != "all") ||
+        len(query) > 100 || (len(query) > 0 && len(query) < 2) {
+        writeValidationError(w, "invalid GitHub browse input", "invalid_github_browse", nil)
+        return
+    }
+    repo, err := s.store.GetGitHubProjectRepository(s.requestContext(r), actor, pc.Project.ID, resourceID, false)
+    if err != nil { writeStoreErr(w, err, true); return }
+    if s.mode != "full" || s.githubProvider == nil {
+        writeError(w, http.StatusServiceUnavailable, "CAPABILITY_UNAVAILABLE", "GitHub App is not configured", nil)
+        return
+    }
+    provider, ok := s.githubProvider.(integration.IssuePullRequestBrowser)
+    if !ok {
+        writeError(w, http.StatusServiceUnavailable, "CAPABILITY_UNAVAILABLE", "GitHub browsing is unavailable", nil)
+        return
+    }
+    found, err := provider.BrowseItems(s.requestContext(r), repo.InstallationID, repo.ExternalID, repo.Name, kind, state, query)
+    if err != nil { s.githubProviderError(w, err); return }
+    for i := range found {
+        found[i].ResourceID = resourceID
+        found[i].Repository = repo.Name
+        found[i].Availability = "available"
+    }
+    writeJSON(w, http.StatusOK, map[string]any{"items":found})
+}
+
 func (s *Server) handleTodoGitHubItems(w http.ResponseWriter,r *http.Request,rest []string,pc *store.ProjectContext) {
     ctx:=s.requestContext(r)
     actor,ok:=store.UserIDFromContext(ctx)
