@@ -75,7 +75,7 @@ describe('Todo GitHub reference browser', () => {
     findButton('Link').click();
     await vi.waitFor(() => expect(mod.getPendingTodoGitHubURLs()).toEqual([pr.url]));
     expect(api.mock.calls.some(([path,opts]) => path.includes('/todos/') && opts?.method === 'POST')).toBe(false);
-    const urlInput = document.querySelector<HTMLInputElement>('#todoGitHubItems input[type="url"]')!;
+    const urlInput = document.querySelector<HTMLInputElement>('#todoGitHubItems input[aria-label="GitHub issue or PR URL"]')!;
     urlInput.value = issue.url;
     findButton('Link URL').click();
     await vi.waitFor(() => expect(mod.getPendingTodoGitHubURLs()).toHaveLength(2));
@@ -91,7 +91,7 @@ describe('Todo GitHub reference browser', () => {
   it('rejects unrelated GitHub hosts and unlinked repositories while staging', async () => {
     const mod = await import('./todo-github-items.js');
     await mod.initializeTodoGitHubItems('alpha', null, true);
-    const input = document.querySelector<HTMLInputElement>('#todoGitHubItems input[type="url"]')!;
+    const input = document.querySelector<HTMLInputElement>('#todoGitHubItems input[aria-label="GitHub issue or PR URL"]')!;
     for (const [index, url] of ['https://github.com.evil.test/org/repo/issues/1', 'https://github.com/secret/repo/issues/1'].entries()) {
       input.value = url;
       findButton('Link URL').click();

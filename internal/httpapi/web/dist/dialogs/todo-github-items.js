@@ -197,7 +197,8 @@ export async function initializeTodoGitHubItems(slug, localId, editable) {
     }
     const paste = add(section, 'div', undefined, 'github-items__row');
     const urlInput = add(paste, 'input', undefined, 'input');
-    urlInput.type = 'url';
+    urlInput.type = 'text';
+    urlInput.inputMode = 'url';
     urlInput.maxLength = 2048;
     urlInput.placeholder = 'Paste a GitHub issue or PR URL';
     urlInput.setAttribute('aria-label', 'GitHub issue or PR URL');
