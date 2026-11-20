@@ -37,6 +37,7 @@ type Inbox interface {
 type Service struct {
     secret []byte
     inbox Inbox
+    automation AutomationInbox
     provider integration.Provider
     logger *log.Logger
     done chan struct{}
@@ -47,7 +48,8 @@ func New(secret []byte, inbox Inbox, provider integration.Provider, logger *log.
         return nil,errors.New("invalid GitHub webhook configuration")
     }
     if logger==nil {logger=log.New(io.Discard,"",0)}
-    return &Service{secret:append([]byte(nil),secret...),inbox:inbox,provider:provider,logger:logger,done:make(chan struct{})},nil
+    automation,_:=inbox.(AutomationInbox)
+    return &Service{secret:append([]byte(nil),secret...),inbox:inbox,automation:automation,provider:provider,logger:logger,done:make(chan struct{})},nil
 }
 
 func (s *Service) Done() <-chan struct{} {return s.done}
@@ -105,6 +107,38 @@ func (s *Service) ServeHTTP(w http.ResponseWriter,r *http.Request) {
     eventType:=r.Header.Get("X-GitHub-Event")
     if eventType=="ping" {
         w.WriteHeader(http.StatusAccepted)
+        return
+    }
+    if eventType=="issues" || eventType=="pull_request" {
+        if s.automation==nil {
+            w.WriteHeader(http.StatusAccepted)
+            return
+        }
+        digest:=sha256.Sum256(payload)
+        item,supported,err:=normalizeAutomationEvent(payload,eventType,
+            r.Header.Get("X-GitHub-Delivery"),hex.EncodeToString(digest[:]))
+        if err!=nil {
+            http.Error(w,"invalid GitHub automation event",http.StatusBadRequest)
+            return
+        }
+        if !supported {
+            w.WriteHeader(http.StatusAccepted)
+            return
+        }
+        _,err=s.automation.AdmitGitHubAutomation(r.Context(),item)
+        switch {
+        case err==nil,errors.Is(err,store.ErrNotFound):
+            w.WriteHeader(http.StatusAccepted)
+        case errors.Is(err,store.ErrGitHubAutomationFull):
+            http.Error(w,"automation inbox full",http.StatusServiceUnavailable)
+        case errors.Is(err,store.ErrConflict):
+            http.Error(w,"conflicting GitHub delivery",http.StatusConflict)
+        case errors.Is(err,store.ErrValidation):
+            http.Error(w,"invalid automation delivery metadata",http.StatusBadRequest)
+        default:
+            s.logger.Printf("github automation: could not admit verified delivery")
+            http.Error(w,"automation inbox temporarily unavailable",http.StatusServiceUnavailable)
+        }
         return
     }
     switch eventType {
@@ -170,6 +204,9 @@ func (s *Service) ProcessBatch(ctx context.Context) error {
         _,settleErr:=s.inbox.SettleGitHubInbound(ctx,event.ID,event.LeaseToken,err==nil,class,time.Now().UTC())
         if settleErr!=nil {return settleErr}
     }
+    if s.automation!=nil {
+        return s.ProcessAutomationBatch(ctx)
+    }
     return nil
 }
 
@@ -224,6 +261,11 @@ func (s *Service) Run(ctx context.Context) {
         case <-maintenance.C:
             if err:=s.inbox.MaintainGitHubInbound(ctx,time.Now().UTC());err!=nil && ctx.Err()==nil {
                 s.logger.Printf("github inbound: maintenance failed")
+            }
+            if s.automation!=nil {
+                if err:=s.automation.MaintainGitHubAutomation(ctx,time.Now().UTC());err!=nil && ctx.Err()==nil {
+                    s.logger.Printf("github automation: maintenance failed")
+                }
             }
         }
     }
