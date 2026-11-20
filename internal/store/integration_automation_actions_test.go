@@ -105,8 +105,23 @@ func TestIntegrationAutomationExecutionCancelsWhenApproverLosesMaintainerRole(t 
     actions,err:=st.ClaimIntegrationAutomationActions(ctx,time.Now().Add(time.Second),5,45*time.Second)
     if err!=nil||len(actions)!=1{t.Fatalf("claim %+v %v",actions,err)}
     if _,err:=st.db.ExecContext(ctx,"UPDATE project_members SET role='viewer' WHERE project_id=? AND user_id=?",project,owner);err!=nil{t.Fatal(err)}
+    if _,err:=st.db.ExecContext(ctx,"UPDATE project_members SET role='maintainer' WHERE project_id=? AND user_id=?",project,owner);err!=nil{t.Fatal(err)}
+    rules,err:=st.ListIntegrationAutomationRules(ctx,owner,project)
+    if err!=nil||len(rules)!=1||rules[0].ExecutionApprovedAt!=nil{t.Fatalf("membership restore revived consent %+v %v",rules,err)}
     status,err:=st.SettleIntegrationAutomationAction(ctx,actions[0].ID,actions[0].LeaseToken,time.Now().Add(2*time.Second))
     if err!=nil||status!="cancelled"{t.Fatalf("removed approver executed action %s %v",status,err)}
+}
+
+func TestIntegrationAutomationApprovalDoesNotReviveAfterRepositoryRecovery(t *testing.T){
+    st,cleanup,owner,project,resource:=newAutomationFixture(t)
+    defer cleanup()
+    ctx:=context.Background()
+    rule:=makeActiveAutomationRule(t,st,owner,project,resource)
+    if _,err:=st.ApproveIntegrationAutomationExecution(ctx,owner,project,rule.ID,rule.UpdatedAt.UnixMilli());err!=nil{t.Fatal(err)}
+    if _,err:=st.db.ExecContext(ctx,"UPDATE integration_resources SET availability='unavailable' WHERE id=?",resource);err!=nil{t.Fatal(err)}
+    if _,err:=st.db.ExecContext(ctx,"UPDATE integration_resources SET availability='available' WHERE id=?",resource);err!=nil{t.Fatal(err)}
+    listed,err:=st.ListIntegrationAutomationRules(ctx,owner,project)
+    if err!=nil||len(listed)!=1||listed[0].ExecutionApprovedAt!=nil{t.Fatalf("restored repository revived approval %+v %v",listed,err)}
 }
 
 func TestIntegrationAutomationActionRetriesAreBounded(t *testing.T){
