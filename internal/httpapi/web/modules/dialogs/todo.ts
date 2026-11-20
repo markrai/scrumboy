@@ -569,6 +569,11 @@ function bindTodoReferenceTabs(): void {
   referenceTabBound = true;
   detailsTab.addEventListener('click', () => selectTodoDialogTab('details'));
   referencesTab.addEventListener('click', () => selectTodoDialogTab('references'));
+  document.getElementById('todoForm')?.addEventListener('invalid', event => {
+    if (event.target instanceof HTMLElement && document.getElementById('todoDetailsPanel')?.contains(event.target)) {
+      selectTodoDialogTab('details');
+    }
+  }, true);
 }
 
 function readTodoDialogSnapshot(): TodoDialogSnapshot {

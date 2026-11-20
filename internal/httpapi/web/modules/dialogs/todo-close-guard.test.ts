@@ -353,6 +353,10 @@ describe("todo close guard", () => {
     (document.getElementById("todoDetailsTab") as HTMLButtonElement).click();
     expect(references.hidden).toBe(true);
     expect(details.hidden).toBe(false);
+    tab.click();
+    (document.getElementById("todoTitle") as HTMLInputElement).dispatchEvent(new Event("invalid"));
+    expect(details.hidden).toBe(false);
+    expect(references.hidden).toBe(true);
   });
 
   it("does not turn a successful create into a failure when its callback rejects", async () => {
