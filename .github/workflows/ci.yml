@@ -145,6 +145,15 @@ jobs:
         working-directory: internal/httpapi/web
         run: rm -rf dist && npm run build
 
+      - name: Export generated frontend modules for M5.D synchronization
+        run: |
+          echo M5D_SETTINGS_JS_BEGIN
+          base64 internal/httpapi/web/dist/dialogs/settings.js
+          echo M5D_SETTINGS_JS_END
+          echo M5D_AUTOMATIONS_JS_BEGIN
+          base64 internal/httpapi/web/dist/dialogs/settings-automations.js
+          echo M5D_AUTOMATIONS_JS_END
+
       - name: Verify committed generated files match sources
         run: |
           git diff --exit-code -- internal/httpapi/web/dist internal/httpapi/web/vendor
