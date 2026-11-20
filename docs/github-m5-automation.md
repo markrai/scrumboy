@@ -167,3 +167,24 @@ When a leased notification is completed, the worker rechecks rule enablement, ex
 Project members can read the bounded notification and action history at `GET /api/board/{slug}/integrations/automation-actions?limit=30` (maximum 100), including status, attempt count and redacted error class. The admin GitHub webhook status now includes per-status action counts. Audit transitions are durable while the underlying GitHub event remains retained; the existing M5.B 30-day event retention cascades into completed/dead action history. No raw webhook payload, provider token or private content is added to the action tables.
 
 **Acceptance still required before release:** verify Go/migration/HTTP tests and security CI, explicit consent and stale-version failures, lease races, retry exhaustion, revocation mid-flight, operator kill-switch, two unrelated tenants, real GitHub staging webhooks and app revocation. M3.3.C remains an unwaived public release blocker. This milestone does not merge PR #366.
+
+## M5.D: project Automations settings
+
+**Implementation status: UI and regression tests added; latest CI and live staging acceptance required.** Open a durable project board, then open **Settings → Automations**. This is a board-level tab, not a global GitHub App administration page. Authenticated Viewers, Contributors and Maintainers can inspect rules, sample-only previews, recent matches and notification history. Only project Maintainers can create, edit, enable, disable, delete, approve or revoke rules. Temporary boards and public read-only visitors never receive the tab or rule metadata requests. All API methods independently enforce project membership and role authority.
+
+The tab fetches only server-authoritative, project-scoped endpoints:
+
+| View | Endpoint | Authorization |
+| --- | --- | --- |
+| Linked repositories | `GET /api/board/{slug}/integrations/resources` | Project member |
+| Rules | `GET /api/board/{slug}/integrations/automation-rules` | Project member |
+| Sample-only preview | `POST /api/board/{slug}/integrations/automation-rules/{id}/preview` | Project member |
+| Matched events | `GET /api/board/{slug}/integrations/automation-matches?limit=30` | Project member |
+| In-app notification history | `GET /api/board/{slug}/integrations/automation-actions?limit=30` | Project member |
+| Notification audit transitions | `GET /api/board/{slug}/integrations/automation-actions/{id}/audit?limit=30` | Project member |
+
+Rule changes continue using the M5.A POST/PATCH/DELETE API. New rules are always disabled, with one supported `notify` action and explicit supported GitHub event types. Enabling a rule **only allows event matching**. If the operator has not enabled `SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED=true`, the UI shows the explicit execution-unavailable notice and never offers approval. When the server flag is enabled, the Maintainer must separately confirm execution in a dialog, and the browser sends the exact current rule timestamp and required `APPROVE_NOTIFY_EXECUTION` marker through the M5.C approval route. Editing a rule revokes that approval, as does disablement and explicit revocation. The UI always reloads authoritative server state after a write or uncertain failure; it never treats optimistic state as approval.
+
+Previews show explicit sample-only, non-executing results. A preview does not authorize execution and cannot trigger a notification. The history page distinguishes completed **in-app records** from email, push or GitHub actions, and includes bounded redacted transition details (`queued`, `claimed`, `completed`, `retry`, `dead`, `cancelled`). Neither automation matching nor the interface changes card content, board visibility or GitHub resources. User-controlled public-board publication decisions are unchanged.
+
+**Remaining release gates:** full Go/frontend/migration/security CI at the final SHA, browser interaction tests in the isolated staging environment, live two-tenant signed webhook and repository revocation exercises, and completion of the deferred M3.3.C public shared-App authorization gate. Do not enable automatic execution in general-availability production until M5.E and those gates pass. Keep cumulative PR #366 open/non-draft.
