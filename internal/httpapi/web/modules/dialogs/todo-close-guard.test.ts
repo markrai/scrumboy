@@ -112,7 +112,7 @@ function mockTodoModule(): void {
     showConfirmDialog: showConfirmDialogMock,
     showToast: vi.fn(),
   }));
-  vi.doMock("../sprints.js", () => ({ normalizeSprints: () => [] }));
+  vi.doMock("../sprints.js", () => ({ normalizeSprints: () => [], boardSprintsEnabled: () => false }));
   vi.doMock("./todo-links.js", () => ({
     bindShareTodoButton: vi.fn(),
     bindTodoDialogLinkLifecycle: vi.fn(),
