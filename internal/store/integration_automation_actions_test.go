@@ -33,7 +33,7 @@ func TestIntegrationAutomationExecutionRequiresFreshApproval(t *testing.T){
     if _,err:=st.MatchAndCompleteGitHubAutomation(ctx,claim.ID,claim.LeaseToken,time.Now().Add(2*time.Second));err!=nil{t.Fatal(err)}
     summary,err:=st.IntegrationAutomationActionSummary(ctx)
     if err!=nil||summary.Pending!=1||summary.Completed!=0{t.Fatalf("not queued exactly once %+v %v",summary,err)}
-    claims,err:=st.ClaimIntegrationAutomationActions(ctx,time.Now().Add(time.Second),5,45*time.Second)
+    claims,err:=st.ClaimIntegrationAutomationActions(ctx,time.Now().Add(3*time.Second),5,45*time.Second)
     if err!=nil||len(claims)!=1{t.Fatalf("claims %+v %v",claims,err)}
     if _,err:=st.SettleIntegrationAutomationAction(ctx,claims[0].ID,"invalid",time.Now().Add(2*time.Second));!errors.Is(err,ErrValidation){
         t.Fatalf("malformed action token accepted: %v",err)
@@ -71,7 +71,7 @@ func TestIntegrationAutomationExecutionRevocationCancelsClaimedWork(t *testing.T
     if ok,err:=st.AdmitGitHubAutomation(ctx,event);err!=nil||!ok{t.Fatalf("admit %v %v",ok,err)}
     claim:=claimAutomationForTest(t,st,time.Now().Add(time.Second))
     if _,err:=st.MatchAndCompleteGitHubAutomation(ctx,claim.ID,claim.LeaseToken,time.Now().Add(2*time.Second));err!=nil{t.Fatal(err)}
-    actions,err:=st.ClaimIntegrationAutomationActions(ctx,time.Now().Add(time.Second),5,45*time.Second)
+    actions,err:=st.ClaimIntegrationAutomationActions(ctx,time.Now().Add(3*time.Second),5,45*time.Second)
     if err!=nil||len(actions)!=1{t.Fatalf("claim %+v %v",actions,err)}
     if err:=st.RevokeIntegrationAutomationExecution(ctx,owner,project,rule.ID);err!=nil{t.Fatal(err)}
     status,err:=st.SettleIntegrationAutomationAction(ctx,actions[0].ID,actions[0].LeaseToken,time.Now().Add(2*time.Second))
@@ -102,7 +102,7 @@ func TestIntegrationAutomationExecutionCancelsWhenApproverLosesMaintainerRole(t 
     if ok,err:=st.AdmitGitHubAutomation(ctx,event);err!=nil||!ok{t.Fatalf("admit %v %v",ok,err)}
     claim:=claimAutomationForTest(t,st,time.Now().Add(time.Second))
     if _,err:=st.MatchAndCompleteGitHubAutomation(ctx,claim.ID,claim.LeaseToken,time.Now().Add(2*time.Second));err!=nil{t.Fatal(err)}
-    actions,err:=st.ClaimIntegrationAutomationActions(ctx,time.Now().Add(time.Second),5,45*time.Second)
+    actions,err:=st.ClaimIntegrationAutomationActions(ctx,time.Now().Add(3*time.Second),5,45*time.Second)
     if err!=nil||len(actions)!=1{t.Fatalf("claim %+v %v",actions,err)}
     if _,err:=st.db.ExecContext(ctx,"UPDATE project_members SET role='viewer' WHERE project_id=? AND user_id=?",project,owner);err!=nil{t.Fatal(err)}
     if _,err:=st.db.ExecContext(ctx,"UPDATE project_members SET role='maintainer' WHERE project_id=? AND user_id=?",project,owner);err!=nil{t.Fatal(err)}
