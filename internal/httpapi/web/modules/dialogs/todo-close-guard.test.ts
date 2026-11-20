@@ -3,12 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DIALOG_CLOSE_REQUEST_EVENT } from "../core/modal-outside-click.js";
 
 const showConfirmDialogMock = vi.fn();
+let fullProject = false;
 
 function installTodoDom(): void {
   document.body.innerHTML = `
     <dialog id="todoDialog">
       <h2 id="todoDialogTitle"></h2>
       <form id="todoForm">
+        <div id="todoReferenceTabs" role="tablist">
+          <button id="todoDetailsTab" type="button" role="tab" aria-selected="true">Details</button>
+          <button id="todoReferencesTab" type="button" role="tab" aria-selected="false">References</button>
+        </div>
+        <div id="todoDetailsPanel">
         <input id="todoTitle" />
         <div id="todoBodyToggle">
           <button id="todoBodyWriteTab" type="button"></button>
@@ -33,6 +39,13 @@ function installTodoDom(): void {
         <button id="addTagBtn" type="button"></button>
         <div id="tagsChips"></div>
         <button id="saveTodoBtn" type="button"></button>
+        </div>
+        <div id="todoReferencesPanel" hidden>
+          <div id="todoExternalResourcesField">
+            <div id="externalResourceControls"><select id="externalResourcePicker"></select><button id="addExternalResourceBtn" type="button"></button></div>
+            <div id="externalResourcesChips"></div>
+          </div>
+        </div>
       </form>
     </dialog>
   `;
@@ -77,9 +90,9 @@ function mockTodoModule(): void {
     getMarkdownNotesEnabled: () => false,
     getMermaidNotesEnabled: () => false,
     getInlineImagesEnabled: () => false,
-    getSlug: () => "",
+    getSlug: () => fullProject ? "alpha" : "",
     getTagColors: () => ({}),
-    getUser: () => null,
+    getUser: () => fullProject ? { id: 1 } : null,
   }));
   vi.doMock("../state/mutations.js", () => ({
     setAvailableTags: vi.fn(),
@@ -95,7 +108,7 @@ function mockTodoModule(): void {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;"),
-    isAnonymousBoard: () => true,
+    isAnonymousBoard: () => !fullProject,
     showConfirmDialog: showConfirmDialogMock,
     showToast: vi.fn(),
   }));
@@ -185,6 +198,7 @@ describe("todo close guard", () => {
       onchange: null,
     }));
     showConfirmDialogMock.mockReset();
+    fullProject = false;
     mockTodoModule();
   });
 
@@ -322,6 +336,23 @@ describe("todo close guard", () => {
     });
     await notifyTodoCreated({ id: 3, localId: 3, title: "Late", status: "BACKLOG" } as any, secondGeneration);
     expect(second).not.toHaveBeenCalled();
+  });
+
+  it("shows References immediately when creating a Todo in an authenticated project", async () => {
+    fullProject = true;
+    const { openTodoDialog } = await import("./todo.js");
+    await openTodoDialog({ mode: "create", role: "maintainer" });
+    const tab = document.getElementById("todoReferencesTab") as HTMLButtonElement;
+    const details = document.getElementById("todoDetailsPanel") as HTMLElement;
+    const references = document.getElementById("todoReferencesPanel") as HTMLElement;
+    expect(tab.hidden).toBe(false);
+    tab.click();
+    expect(references.hidden).toBe(false);
+    expect(details.hidden).toBe(true);
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    (document.getElementById("todoDetailsTab") as HTMLButtonElement).click();
+    expect(references.hidden).toBe(true);
+    expect(details.hidden).toBe(false);
   });
 
   it("does not turn a successful create into a failure when its callback rejects", async () => {
