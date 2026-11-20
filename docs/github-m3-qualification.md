@@ -127,3 +127,16 @@ This is the release gate for the live GitHub App integration before automatic Gi
 | Final M3 verdict | **Pending live acceptance** |
 
 M4 may be developed on this PR, but the M3 acceptance checkbox stays open until the live scenarios are actually completed. Do not run a destructive lifecycle test against production data.
+
+## Scenario J: M5.B verified event matching (implementation present; CI and staging acceptance pending)
+
+- [x] Raw HMAC-verified GitHub issue and pull-request metadata only; subscribe to Issues and Pull requests. Merge is distinct from unmerged close.
+- [x] Separate migration 096 and durable inbox with delivery digest deduplication, bounded claim/lease/retry, cross-inbox collision rejection and 30-day retention.
+- [x] Idempotent, atomic project/repository/installation-aware rule matching; no event can target a disconnected, unavailable or detached repository.
+- [x] GET-only, project-role-scoped match summaries and redacted admin queue counts; no raw payload or credentials retained.
+- [x] Unit and integration tests covering invalid signatures, malformed/unknown events, duplicates, revoked installations, stale claims, transient database errors, project boundaries and non-execution.
+- [ ] Confirm latest Go, frontend, security and migration CI runs all pass.
+- [ ] Validate live two-tenant GitHub webhooks, installed App permissions, revocation, replay and process restart behavior in staging before public rollout.
+- [ ] Finish deferred M3.3.C browser-session authorization before ordinary users can connect to Scrumboy Connect.
+
+**Non-negotiable:** \`execution_approved_at\` remains NULL, no action executor is wired, and enabling a rule does not authorize any automated action.

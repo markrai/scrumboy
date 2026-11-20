@@ -94,3 +94,49 @@ After enabling a matching rule, \`reason\` changes to \`execution_not_implemente
 - **M5.E:** Full Go, frontend, migration, role/tenant, negative security and live staging acceptance. No release of automatic actions until this passes.
 
 M3.3.C's browser/session GitHub connection and cross-tenant qualification remain deferred, not complete. M5.A does not activate that shared-App feature and does not change public-board visibility.
+
+## M5.B: authenticated event matching (read-only)
+
+**Status: code implemented, automated and live acceptance pending.** This phase consumes only GitHub webhook payloads that pass the existing raw-body HMAC-SHA256 verification. A new metadata-only automation inbox is separate from the M4 installation/repository reconciliation inbox. No worker, endpoint or SQL table performs automated actions, notifications or card changes.
+
+### GitHub App event subscriptions and mapping
+
+The Scrumboy Connect App's GitHub settings must subscribe to **Issues** and **Pull request** events, in addition to the existing Installation, Installation repositories and Repository events. The webhook secret remains server-side and all event types share the existing signed webhook endpoint. These new subscriptions must be enabled separately by the operator; configuration or public connection flows are not changed here.
+
+| Verified GitHub event | Normalized M5 event |
+| --- | --- |
+| \`issues\` with \`opened\` | \`issue.opened\` |
+| \`issues\` with \`closed\` | \`issue.closed\` |
+| \`pull_request\` with \`opened\` | \`pull_request.opened\` |
+| \`pull_request\` with \`closed\` and \`merged: false\` | \`pull_request.closed\` |
+| \`pull_request\` with \`closed\` and \`merged: true\` | \`pull_request.merged\` |
+
+One merged pull request produces **only** \`pull_request.merged\`, never a second closed event. Unsupported actions receive the usual accepted response without a rule event. Recognized actions require positive numeric installation, repository and issue/PR identifiers. The top-level and nested PR numbers must agree. A closed PR lacking a \`merged\` Boolean is rejected rather than guessing its meaning.
+
+### Durable inbox and matching guarantees
+
+Migration \`096_add_github_automation_events.sql\` introduces an independent bounded metadata inbox and a project-linked receipt table. Only delivery ID, payload SHA-256 digest, installation ID, repository ID, issue/PR number, event type, timestamps, lease/retry status and error class are stored. Full GitHub event bodies, issue titles/comments, OAuth states, tokens and App secrets are **not stored**. A delivery ID reused with different payload content or across the M4/M5 inboxes is rejected; identical duplicates have no new effect.
+
+The automation inbox allows at most 5,000 pending or leased events and 8 bounded lease attempts, with claim tokens, lease expiration and capped backoff. Completed/dead events and their receipts are pruned after 30 days. Matching an event and committing its completed status happen in **one SQLite transaction**. A failed receipt insert rolls the transaction back and the event remains retriable. A stale lease cannot finalize an event or create a receipt. A replay cannot generate another receipt for the same event/rule.
+
+Only \`enabled:true\` rules whose repository is **still available**, associated with a project and part of an active, matching GitHub installation can produce a receipt. This association is checked at matching time, not only on webhook admission. Disconnected installations, removed repository permissions, deleted rules, detached projects and unrelated tenants produce no match.
+
+The result is a metadata-only record identifying the matched rule and GitHub item number. The rule's \`updated_at\` is copied as version evidence. Rule \`created_by_user_id\` remains historical provenance, **never** authority to evaluate or execute. No GitHub provider API calls are made when matching.
+
+### Read-only inspection
+
+Authenticated members of an authorized project can read a bounded receipt list:
+
+\`\`\`http
+GET /api/board/my-project/integrations/automation-matches?limit=30
+\`\`\`
+
+The limit defaults to 30 and cannot exceed 100. Responses contain \`matches\` and \`executionAvailable:false\`, with per-match \`wouldExecute:false\`. The endpoint is GET-only and cannot be accessed from unrelated or anonymous boards. It contains only associated local resource IDs, event type, item number, timestamps, action proposal and rule IDs, not raw webhook bodies or private GitHub data.
+
+The existing admin-only webhook status endpoint \`GET /api/admin/integrations/github/webhooks\` also reports an \`automation\` object with pending/leased/completed/dead and receipt counts. Operational errors remain distinguishable from a valid zero-match result, while exact provider errors and payloads are not logged.
+
+### Explicit non-execution gate
+
+M5.A's \`execution_approved_at\` still has a database constraint requiring \`NULL\`. **Even enabled and matched rules are not execution approval.** M5.C must introduce a separately reviewed consent migration and new end-user activation before any notification or card change. Existing \`enabled:true\` rules cannot become executable automatically after an upgrade.
+
+The public shared-App browser/session binding and live multi-tenant staging remain blocked by deferred M3.3.C. M5.B is a backend metadata-processing milestone, **not** general availability.
