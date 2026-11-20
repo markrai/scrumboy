@@ -20,6 +20,7 @@ type IntegrationAutomationRule struct {
 	EventType string `json:"eventType"`
 	ActionType string `json:"actionType"`
 	Enabled bool `json:"enabled"`
+    ExecutionApprovedAt *time.Time `json:"executionApprovedAt,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -80,17 +81,19 @@ func scanIntegrationAutomationRule(row interface{Scan(...any)error}) (Integratio
 	var rule IntegrationAutomationRule
 	var creator sql.NullInt64
 	var created,updated int64
-	err:=row.Scan(&rule.ID,&rule.ProjectID,&creator,&rule.ResourceID,
-		&rule.Name,&rule.EventType,&rule.ActionType,&rule.Enabled,&created,&updated)
+    var approved sql.NullInt64
+    err:=row.Scan(&rule.ID,&rule.ProjectID,&creator,&rule.ResourceID,
+        &rule.Name,&rule.EventType,&rule.ActionType,&rule.Enabled,&created,&updated,&approved)
 	if errors.Is(err,sql.ErrNoRows){return rule,ErrNotFound}
 	if err!=nil{return rule,err}
 	if creator.Valid {id:=creator.Int64;rule.CreatedByUserID=&id}
 	rule.CreatedAt=time.UnixMilli(created).UTC()
 	rule.UpdatedAt=time.UnixMilli(updated).UTC()
+    if approved.Valid{v:=time.UnixMilli(approved.Int64).UTC();rule.ExecutionApprovedAt=&v}
 	return rule,nil
 }
 
-const integrationAutomationColumns="id,project_id,created_by_user_id,resource_id,name,event_type,action_type,enabled,created_at,updated_at"
+const integrationAutomationColumns="id,project_id,created_by_user_id,resource_id,name,event_type,action_type,enabled,created_at,updated_at,(SELECT approved_at FROM integration_automation_execution_approvals ap WHERE ap.rule_id=integration_automation_rules.id AND ap.rule_updated_at=integration_automation_rules.updated_at)"
 
 func integrationAutomationResourceTx(ctx context.Context,tx *sql.Tx,projectID,resourceID int64)error{
 	if resourceID<=0{return ErrValidation}
@@ -177,7 +180,8 @@ func (s *Store) UpdateIntegrationAutomationRule(ctx context.Context,actorID,proj
 	if in.ResourceID!=nil || (in.Enabled!=nil && *in.Enabled) {
 		if err:=integrationAutomationResourceTx(ctx,tx,projectID,current.ResourceID);err!=nil{return IntegrationAutomationRule{},err}
 	}
-	_,err=tx.ExecContext(ctx,`UPDATE integration_automation_rules
+	if _,err:=tx.ExecContext(ctx,"DELETE FROM integration_automation_execution_approvals WHERE rule_id=?",ruleID);err!=nil{return IntegrationAutomationRule{},err}
+    _,err=tx.ExecContext(ctx,`UPDATE integration_automation_rules
 		SET resource_id=?,name=?,event_type=?,enabled=?,updated_at=?
 		WHERE project_id=? AND id=?`,current.ResourceID,current.Name,current.EventType,current.Enabled,
 		time.Now().UTC().UnixMilli(),projectID,ruleID)
@@ -228,7 +232,7 @@ func (s *Store) PreviewIntegrationAutomationRule(ctx context.Context,actorID,pro
 		} else if !rule.Enabled {
 			preview.Reason="rule_disabled"
 		} else {
-			preview.Reason="execution_not_implemented"
+			if rule.ExecutionApprovedAt==nil{preview.Reason="execution_not_approved"}else{preview.Reason="approved_sample_only"}
 		}
 	}
 	if err:=tx.Commit();err!=nil{return IntegrationAutomationPreview{},err}

@@ -38,6 +38,7 @@ type Service struct {
     secret []byte
     inbox Inbox
     automation AutomationInbox
+    executor AutomationExecutor
     provider integration.Provider
     logger *log.Logger
     done chan struct{}
@@ -49,7 +50,8 @@ func New(secret []byte, inbox Inbox, provider integration.Provider, logger *log.
     }
     if logger==nil {logger=log.New(io.Discard,"",0)}
     automation,_:=inbox.(AutomationInbox)
-    return &Service{secret:append([]byte(nil),secret...),inbox:inbox,automation:automation,provider:provider,logger:logger,done:make(chan struct{})},nil
+    executor,_:=inbox.(AutomationExecutor)
+    return &Service{secret:append([]byte(nil),secret...),inbox:inbox,automation:automation,executor:executor,provider:provider,logger:logger,done:make(chan struct{})},nil
 }
 
 func (s *Service) Done() <-chan struct{} {return s.done}
@@ -256,6 +258,9 @@ func (s *Service) Run(ctx context.Context) {
             if err:=s.ProcessAutomationBatch(ctx);err!=nil && ctx.Err()==nil {
                 s.logger.Printf("github automation: matching batch failed")
             }
+        }
+        if err:=s.ProcessAutomationExecutionBatch(ctx);err!=nil && ctx.Err()==nil {
+            s.logger.Printf("github automation: execution batch failed")
         }
         select {
         case <-ctx.Done():return

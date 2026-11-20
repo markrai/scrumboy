@@ -81,7 +81,7 @@ func TestAutomationRuleRESTAuthorizationAndNonExecutingPreview(t *testing.T){
     resp,body=doJSON(t,ownerClient,http.MethodPatch,url,map[string]any{"enabled":true},&enabled)
     if resp.StatusCode!=http.StatusOK||!enabled.Enabled{t.Fatalf("enable %d %s %+v",resp.StatusCode,body,enabled)}
     resp,body=doJSON(t,viewerClient,http.MethodPost,url+"/preview",sample,&preview)
-    if resp.StatusCode!=http.StatusOK||!preview.Matched||preview.Reason!="execution_not_implemented"||
+    if resp.StatusCode!=http.StatusOK||!preview.Matched||preview.Reason!="execution_not_approved"||
         preview.ExecutionAvailable||preview.WouldExecute{
         t.Fatalf("enabled preview triggered action %d %s %+v",resp.StatusCode,body,preview)
     }

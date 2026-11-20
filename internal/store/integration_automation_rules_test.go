@@ -93,7 +93,7 @@ func TestIntegrationAutomationRuleAuthorizationAndPreviewAreNonExecuting(t *test
         UpdateIntegrationAutomationRuleInput{Enabled:&enabled})
     if err!=nil||!rule.Enabled{t.Fatalf("maintainer enable %+v %v",rule,err)}
     preview,err=st.PreviewIntegrationAutomationRule(ctx,viewer.ID,project.ID,rule.ID,sample)
-    if err!=nil||!preview.Matched||preview.Reason!="execution_not_implemented"||preview.WouldExecute||preview.ExecutionAvailable{
+    if err!=nil||!preview.Matched||preview.Reason!="execution_not_approved"||preview.WouldExecute||preview.ExecutionAvailable{
         t.Fatalf("enabled rule would execute unexpectedly %+v %v",preview,err)
     }
     mismatch,err:=st.PreviewIntegrationAutomationRule(ctx,owner.ID,project.ID,rule.ID,

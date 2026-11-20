@@ -37,6 +37,7 @@ type GitHubAutomationCounts struct {
     Completed int64 `json:"completed"`
     Dead int64 `json:"dead"`
     Matches int64 `json:"matches"`
+    Actions IntegrationAutomationActionCounts `json:"actions"`
 }
 
 type GitHubAutomationMatch struct {
@@ -164,31 +165,33 @@ func (s *Store) MatchAndCompleteGitHubAutomation(ctx context.Context,eventID int
     defer tx.Rollback()
     timestamp:=now.UTC().UnixMilli()
     var event GitHubAutomationEvent
-    err=tx.QueryRowContext(ctx,`SELECT installation_id,repository_external_id,item_number,event_type
+    var eventCreatedAt int64
+    err=tx.QueryRowContext(ctx,`SELECT installation_id,repository_external_id,item_number,event_type,created_at
         FROM integration_github_automation_events
         WHERE id=? AND status='leased' AND lease_token=? AND lease_until>?`,
         eventID,leaseToken,timestamp).Scan(&event.InstallationID,
-        &event.RepositoryExternalID,&event.ItemNumber,&event.EventType)
+        &event.RepositoryExternalID,&event.ItemNumber,&event.EventType,&eventCreatedAt)
     if errors.Is(err,sql.ErrNoRows){return 0,ErrConflict}
     if err!=nil{return 0,err}
-    rows,err:=tx.QueryContext(ctx,`SELECT a.id,a.project_id,a.resource_id,a.updated_at,a.action_type
+    rows,err:=tx.QueryContext(ctx,`SELECT a.id,a.project_id,a.resource_id,a.updated_at,a.action_type,ap.id
         FROM integration_automation_rules a
         JOIN integration_project_resources pr
           ON pr.project_id=a.project_id AND pr.resource_id=a.resource_id
         JOIN integration_resources r ON r.id=a.resource_id
         JOIN integration_connections c ON c.id=r.connection_id
+        LEFT JOIN integration_automation_execution_approvals ap ON ap.rule_id=a.id AND ap.project_id=a.project_id AND ap.rule_updated_at=a.updated_at AND ap.approved_at<? AND a.updated_at<?
         WHERE a.enabled=1 AND a.event_type=? AND a.action_type='notify'
           AND c.provider='github' AND c.status='active'
           AND c.external_account_id=? AND r.kind='repository'
           AND r.external_id=? AND r.availability='available'
-        ORDER BY a.id LIMIT ?`,event.EventType,event.InstallationID,
+        ORDER BY a.id LIMIT ?`,eventCreatedAt,eventCreatedAt,event.EventType,event.InstallationID,
         event.RepositoryExternalID,githubAutomationMaxMatchesPerEvent+1)
     if err!=nil{return 0,err}
-    type match struct{id,projectID,resourceID,updatedAt int64;action string}
+    type match struct{id,projectID,resourceID,updatedAt int64;action string;approvalID sql.NullInt64}
     matches:=make([]match,0)
     for rows.Next(){
         var item match
-        if err:=rows.Scan(&item.id,&item.projectID,&item.resourceID,&item.updatedAt,&item.action);err!=nil{
+        if err:=rows.Scan(&item.id,&item.projectID,&item.resourceID,&item.updatedAt,&item.action,&item.approvalID);err!=nil{
             rows.Close()
             return 0,err
         }
@@ -198,12 +201,36 @@ func (s *Store) MatchAndCompleteGitHubAutomation(ctx context.Context,eventID int
     rows.Close()
     if err!=nil{return 0,err}
     if len(matches)>githubAutomationMaxMatchesPerEvent{return 0,ErrGitHubAutomationFull}
+    approvedCount:=0
+    for _,item:=range matches{if item.approvalID.Valid{approvedCount++}}
+    if approvedCount>0{
+        var pending int
+        if err:=tx.QueryRowContext(ctx,"SELECT COUNT(*) FROM integration_automation_actions WHERE status IN ('pending','leased')").Scan(&pending);err!=nil{return 0,err}
+        if pending+approvedCount>maxIntegrationAutomationActions{return 0,ErrGitHubAutomationFull}
+    }
     for _,item:=range matches{
         _,err=tx.ExecContext(ctx,`INSERT INTO integration_github_automation_matches(
             event_id,project_id,rule_id,resource_id,rule_updated_at,action_type,matched_at)
             VALUES(?,?,?,?,?,?,?) ON CONFLICT(event_id,rule_id) DO NOTHING`,
             eventID,item.projectID,item.id,item.resourceID,item.updatedAt,item.action,timestamp)
         if err!=nil{return 0,err}
+        if item.approvalID.Valid{
+            insert,err:=tx.ExecContext(ctx,`INSERT INTO integration_automation_actions(
+                event_id,project_id,rule_id,resource_id,rule_updated_at,approval_id,action_type,
+                next_attempt_at,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,'notify',?,?,?)
+                ON CONFLICT(event_id,rule_id) DO NOTHING`,
+                eventID,item.projectID,item.id,item.resourceID,item.updatedAt,item.approvalID.Int64,
+                timestamp,timestamp,timestamp)
+            if err!=nil{return 0,err}
+            count,err:=insert.RowsAffected()
+            if err!=nil{return 0,err}
+            if count==1{
+                id,err:=insert.LastInsertId()
+                if err!=nil{return 0,err}
+                if _,err:=tx.ExecContext(ctx,"INSERT INTO integration_automation_action_audit(action_id,transition,created_at) VALUES(?,'queued',?)",id,timestamp);err!=nil{return 0,err}
+            }
+        }
     }
     result,err:=tx.ExecContext(ctx,`UPDATE integration_github_automation_events
         SET status='completed',lease_token=NULL,lease_until=NULL,completed_at=?,updated_at=?,
@@ -269,10 +296,13 @@ func (s *Store) GitHubAutomationSummary(ctx context.Context)(GitHubAutomationCou
     rows.Close()
     if err!=nil{return summary,err}
     err=s.db.QueryRowContext(ctx,`SELECT COUNT(*) FROM integration_github_automation_matches`).Scan(&summary.Matches)
+    if err!=nil{return summary,err}
+    summary.Actions,err=s.IntegrationAutomationActionSummary(ctx)
     return summary,err
 }
 
 func (s *Store) MaintainGitHubAutomation(ctx context.Context,now time.Time)error{
+    if err:=s.MaintainIntegrationAutomationActions(ctx,now);err!=nil{return err}
     timestamp:=now.UTC().UnixMilli()
     _,err:=s.db.ExecContext(ctx,`UPDATE integration_github_automation_events
         SET status='dead',error_class='lease_retries_exhausted',
