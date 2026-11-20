@@ -418,6 +418,11 @@ type storeAPI interface {
 	AttachIntegrationResource(ctx context.Context,actorID,projectID,resourceID int64) error
 	DetachIntegrationResource(ctx context.Context,actorID,projectID,resourceID int64) error
 	ListProjectIntegrationResources(ctx context.Context, actorID, projectID int64) ([]store.IntegrationResource, error)
+    CreateIntegrationAutomationRule(ctx context.Context, actorID, projectID int64, in store.CreateIntegrationAutomationRuleInput) (store.IntegrationAutomationRule,error)
+    ListIntegrationAutomationRules(ctx context.Context, actorID, projectID int64) ([]store.IntegrationAutomationRule,error)
+    UpdateIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64,in store.UpdateIntegrationAutomationRuleInput) (store.IntegrationAutomationRule,error)
+    DeleteIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64) error
+    PreviewIntegrationAutomationRule(ctx context.Context,actorID,projectID,ruleID int64,in store.IntegrationAutomationPreviewInput) (store.IntegrationAutomationPreview,error)
 	ListTodoIntegrationResources(ctx context.Context, actorID, projectID, localID int64) ([]store.IntegrationResource, error)
 	LinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
 	UnlinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
