@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
-const requests = vi.fn();
-const confirm = vi.fn();
-const toast = vi.fn();
+const { requests, confirm, toast } = vi.hoisted(() => ({
+  requests: vi.fn(),
+  confirm: vi.fn(),
+  toast: vi.fn(),
+}));
 
 vi.mock('../api.js', () => ({ apiFetch: requests }));
 vi.mock('../utils.js', () => ({ showConfirmDialog: confirm, showToast: toast }));

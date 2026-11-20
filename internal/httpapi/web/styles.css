@@ -8534,6 +8534,107 @@ button.omni-tag-pill:focus-visible {
 .github-items__item .btn { flex: 0 0 auto; }
 .github-items__state { color: var(--muted); font-size: var(--fs-12); }
 
+
+.settings-automations {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 8px 0 24px;
+}
+
+.settings-automations__toolbar,
+.settings-automations__rule-head,
+.settings-automations__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-automations__toolbar {
+  justify-content: flex-end;
+}
+
+.settings-automations__section {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.settings-automations__section h4 {
+  margin: 0 0 12px;
+}
+
+.settings-automations__notice,
+.settings-automations__preview {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  line-height: 1.5;
+}
+
+.settings-automations__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  align-items: end;
+  gap: 12px;
+}
+
+.settings-automations__form > p {
+  grid-column: 1 / -1;
+}
+
+.settings-automations__form > button {
+  justify-self: start;
+}
+
+.settings-automations__rule,
+.settings-automations__activity {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.settings-automations__rule > p,
+.settings-automations__activity > p {
+  margin: 8px 0;
+}
+
+.settings-automations__status {
+  display: inline-flex;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.settings-automations__status[data-enabled="false"] {
+  opacity: 0.65;
+}
+
+.settings-automations__audit {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.settings-automations__audit:empty {
+  display: none;
+}
+
+@media (max-width: 620px) {
+  .settings-automations__section {
+    padding: 12px;
+  }
+
+  .settings-automations__controls .btn {
+    min-height: 40px;
+  }
+}
+
+
 /* ============================================
    PUBLIC READ-ONLY BOARD
    ============================================ */
@@ -8622,104 +8723,5 @@ button.omni-tag-pill:focus-visible {
      filters live in the search input's popover, which stays available. */
   .page--public-board .public-board-badge {
     display: none;
-  }
-}
-
-.settings-automations {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-  padding: 8px 0 24px;
-}
-
-.settings-automations__toolbar,
-.settings-automations__rule-head,
-.settings-automations__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.settings-automations__toolbar {
-  justify-content: flex-end;
-}
-
-.settings-automations__section {
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--border, #7773);
-  border-radius: 12px;
-}
-
-.settings-automations__section h4 {
-  margin: 0 0 12px;
-}
-
-.settings-automations__notice,
-.settings-automations__preview {
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--surface, transparent);
-  border: 1px solid var(--border, #7773);
-  line-height: 1.5;
-}
-
-.settings-automations__form {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
-  align-items: end;
-  gap: 12px;
-}
-
-.settings-automations__form > p {
-  grid-column: 1 / -1;
-}
-
-.settings-automations__form > button {
-  justify-self: start;
-}
-
-.settings-automations__rule,
-.settings-automations__activity {
-  padding: 12px 0;
-  border-top: 1px solid var(--border, #7773);
-  overflow-wrap: anywhere;
-}
-
-.settings-automations__rule > p,
-.settings-automations__activity > p {
-  margin: 8px 0;
-}
-
-.settings-automations__status {
-  display: inline-flex;
-  padding: 2px 8px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  font-size: 12px;
-}
-
-.settings-automations__status[data-enabled="false"] {
-  opacity: 0.65;
-}
-
-.settings-automations__audit {
-  display: grid;
-  gap: 4px;
-  margin-top: 8px;
-}
-
-.settings-automations__audit:empty {
-  display: none;
-}
-
-@media (max-width: 620px) {
-  .settings-automations__section {
-    padding: 12px;
-  }
-
-  .settings-automations__controls .btn {
-    min-height: 40px;
   }
 }

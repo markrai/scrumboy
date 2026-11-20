@@ -705,7 +705,7 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
 
     const boardTabs = Array.from(boardRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
     const personalTabs = Array.from(personalRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
-    expect(boardTabs).toEqual(['sprints', 'workflow', 'priorities', 'customFields', 'calendar', 'charts']);
+    expect(boardTabs).toEqual(['sprints', 'workflow', 'priorities', 'customFields', 'calendar', 'charts', 'automations']);
     expect(personalTabs).toEqual(['profile', 'customization', 'tag-colors', 'backup']);
   });
 
