@@ -220,7 +220,7 @@ describe('project automations settings', () => {
     const history: any[] = [];
     fixtures({ actions: history });
     const controller = mount(true);
-    await vi.waitFor(() => expect(buttons('Refresh')).toHaveLength(1));
+    await vi.waitFor(() => expect(buttons('Disable')).toHaveLength(1));
     expect(toast).not.toHaveBeenCalled();
     history.push({
       id: 99, ruleId: 7, resourceId: 42, itemNumber: 369, eventType: 'issue.opened',
