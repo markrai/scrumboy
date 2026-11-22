@@ -86,11 +86,11 @@ The response describes a deterministic match against the saved rule. Its \`sampl
 
 After enabling a matching rule, \`reason\` becomes \`ready_for_new_events\`, while \`wouldExecute\` stays \`false\` because previews never execute. For a different sample event it becomes \`sample_does_not_match\`. If the repository has become unavailable the match is rejected. Preview does not fetch GitHub data, parse webhook payloads, mutate cards, send notifications or write any operational event.
 
-## Safety and next milestones
+## Safety and milestone progression
 
-- **M5.B:** Map authenticated, owner-bound provider events to stable event types, enforce project/repository association and deduplicate delivery. Never evaluate raw unauthenticated webhooks.
-- **M5.C:** Add a separately reviewed executor with explicit **new execution approval** at activation time, per-action permissions, idempotency, loop prevention, failure bounds and audit history. **Previously received events must not execute retroactively after an upgrade.**
-- **M5.D:** Add user-facing rule creation, preview and activation controls to project settings. The current milestone exposes the backend API only.
+- **M5.B (implemented):** Normalize signed GitHub events, enforce installation/repository/project association and deduplicate delivery. Never evaluate unauthenticated webhook bodies.
+- **M5.C (implemented):** Only rules enabled by a Maintainer before event admission may enqueue durable in-app notifications. There is **no separate execution approval**; idempotency, rule-version checks, bounded failure recovery and audit history apply. Previously received events never execute retroactively.
+- **M5.D (implemented):** Project Settings → Automations supports rule creation, sample-only preview, Enable/Disable, recent matches and in-app notification history. Live deployment acceptance remains pending.
 - **M5.E:** Full Go, frontend, migration, role/tenant, negative security and live staging acceptance. No release of automatic actions until this passes.
 
 The instance-owned GitHub App is currently administrator-managed; automated App creation and independent-instance qualification remain separate work. M5.A does not change public-board visibility.
