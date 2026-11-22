@@ -37,6 +37,7 @@ import (
 	"scrumboy/internal/httpapi/ratelimit"
 	"scrumboy/internal/integration"
 	"scrumboy/internal/integration/githubwebhook"
+	"scrumboy/internal/integration/githubmanifest"
 	"scrumboy/internal/mailer"
 	"scrumboy/internal/oidc"
 	"scrumboy/internal/publicorigin"
@@ -85,6 +86,7 @@ type Options struct {
 	GitHubProvider integration.Provider
 	GitHubAppSlug string
 	GitHubWebhook *githubwebhook.Service
+	GitHubManifest *githubmanifest.Service
 
 	OIDCService *oidc.Service // nil when OIDC is not configured
 
@@ -270,6 +272,7 @@ type Server struct {
 	githubProvider integration.Provider
 	githubAppSlug string
 	githubWebhook *githubwebhook.Service
+	githubManifest *githubmanifest.Service
 	githubWebhookCancel context.CancelFunc
 
 	passwordResetAdminLimiter   *ratelimit.Limiter // 10 resets/min per admin
@@ -839,6 +842,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		githubProvider: opts.GitHubProvider,
 		githubAppSlug: opts.GitHubAppSlug,
 		githubWebhook: opts.GitHubWebhook,
+		githubManifest: opts.GitHubManifest,
 		passwordResetAdminLimiter:      passwordResetAdminLimiter,
 		passwordResetRequestLimiter:    passwordResetRequestLimiter,
 		firstPasswordStartLimiter:      firstPasswordStartLimiter,
@@ -1205,6 +1209,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/oauth/") {
 		s.handleOAuth(w, r)
+		return
+	}
+
+	if r.URL.Path == "/api/integrations/github/manifest/callback" {
+		s.handleGitHubManifestCallback(w, r)
 		return
 	}
 

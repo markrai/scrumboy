@@ -47,6 +47,10 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		return
 	}
 	rest=rest[1:]
+	if len(rest)==2 && rest[0]=="manifest" && rest[1]=="start" {
+		s.handleGitHubManifestStart(w,r)
+		return
+	}
 	if len(rest)==1 && rest[0]=="webhooks" && r.Method==http.MethodGet {
 		if s.githubWebhook==nil || s.mode!="full" {
 			writeJSON(w,http.StatusOK,map[string]any{"configured":false})
@@ -93,6 +97,7 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		}
 		writeJSON(w,http.StatusOK,map[string]any{
 			"configured":s.githubProvider!=nil && s.mode=="full",
+			"manifestEnrollmentAvailable":s.githubManifest!=nil && s.githubManifest.Available() && s.githubProvider==nil && s.mode=="full",
 			"installUrl":installURL,
 			"connections":githubConnectionsJSON(installed),
 			"readiness":s.githubReadiness(true, githubActiveConnectionCount(installed)),
