@@ -34,8 +34,9 @@ type tagDeletionRESTRecorder struct {
 var (
 	_ tagapp.MineIDDeletionStore           = (*tagDeletionRESTRecorder)(nil)
 	_ tagapp.MineNameDeletionStore         = (*tagDeletionRESTRecorder)(nil)
-	_ tagapp.DurableProjectIDDeletionStore = (*tagDeletionRESTRecorder)(nil)
-	_ tagapp.LegacyRowDeletionStore        = (*tagDeletionRESTRecorder)(nil)
+	_ tagapp.DurableProjectIDDeletionStore   = (*tagDeletionRESTRecorder)(nil)
+	_ tagapp.TemporaryProjectIDDeletionStore = (*tagDeletionRESTRecorder)(nil)
+	_ tagapp.LegacyRowDeletionStore          = (*tagDeletionRESTRecorder)(nil)
 	_ tagapp.BoardScopedTagNameReadStore   = (*tagDeletionRESTRecorder)(nil)
 	_ tagapp.PersonalTagNameReadStore      = (*tagDeletionRESTRecorder)(nil)
 )
@@ -99,6 +100,18 @@ func (r *tagDeletionRESTRecorder) DeleteTag(
 	return r.mutationErr
 }
 
+func (r *tagDeletionRESTRecorder) DeleteTagForTemporaryProjectByID(
+	_ context.Context,
+	projectID, userID, tagID int64,
+	isAnonymousBoard bool,
+) error {
+	r.record(tagDeletionRESTCall{
+		method: "temporary-id", projectID: projectID, actorUserID: userID,
+		tagID: tagID, anonymousBoard: isAnonymousBoard,
+	})
+	return r.mutationErr
+}
+
 func (r *tagDeletionRESTRecorder) GetBoardScopedTagIDByName(
 	_ context.Context,
 	projectID int64,
@@ -122,6 +135,7 @@ func newTagDeletionRESTService(server *Server, recorder *tagDeletionRESTRecorder
 		MineID:        recorder,
 		MineName:      recorder,
 		DurableID:     recorder,
+		TemporaryID:   recorder,
 		Rows:          recorder,
 		BoardNames:    recorder,
 		PersonalNames: recorder,
@@ -215,7 +229,7 @@ func TestTagDeletionRESTHandlersDelegateToApplicationService(t *testing.T) {
 			client: fx.client,
 			path:   "/api/board/" + creatorSlug + "/tags/id/104",
 			wantCall: tagDeletionRESTCall{
-				method: "row-delete", actorUserID: fx.ownerID, tagID: 104,
+				method: "temporary-id", projectID: creatorProjectID, actorUserID: fx.ownerID, tagID: 104,
 			},
 			wantProjects:    []int64{creatorProjectID},
 			wantActorUserID: fx.ownerID,
@@ -225,7 +239,7 @@ func TestTagDeletionRESTHandlersDelegateToApplicationService(t *testing.T) {
 			client: anonymousClient,
 			path:   "/api/board/" + anonymousSlug + "/tags/id/105",
 			wantCall: tagDeletionRESTCall{
-				method: "row-delete", tagID: 105, anonymousBoard: true,
+				method: "temporary-id", projectID: anonymousProjectID, tagID: 105, anonymousBoard: true,
 			},
 			wantProjects: []int64{anonymousProjectID},
 		},

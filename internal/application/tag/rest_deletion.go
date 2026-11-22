@@ -33,6 +33,7 @@ type RESTDeletionServiceDependencies struct {
 	MineID        MineIDDeletionStore
 	MineName      MineNameDeletionStore
 	DurableID     DurableProjectIDDeletionStore
+	TemporaryID   TemporaryProjectIDDeletionStore
 	Rows          LegacyRowDeletionStore
 	BoardNames    BoardScopedTagNameReadStore
 	PersonalNames PersonalTagNameReadStore
@@ -45,6 +46,7 @@ type RESTDeletionService struct {
 	mineID        MineIDDeletionStore
 	mineName      MineNameDeletionStore
 	durableID     DurableProjectIDDeletionStore
+	temporaryID   TemporaryProjectIDDeletionStore
 	rows          LegacyRowDeletionStore
 	boardNames    BoardScopedTagNameReadStore
 	personalNames PersonalTagNameReadStore
@@ -62,6 +64,7 @@ func NewRESTDeletionService(deps RESTDeletionServiceDependencies) *RESTDeletionS
 		mineID:        deps.MineID,
 		mineName:      deps.MineName,
 		durableID:     deps.DurableID,
+		temporaryID:   deps.TemporaryID,
 		rows:          deps.Rows,
 		boardNames:    deps.BoardNames,
 		personalNames: deps.PersonalNames,
@@ -163,7 +166,9 @@ func (p *PreparedRESTProjectIDDeletion) Delete() error {
 			actorID = *p.actorID
 		}
 		isAnonymousBoard := p.project.Kind == AnonymousTemporaryBoard
-		if err := p.service.rows.DeleteTag(p.ctx, actorID, p.tagID, isAnonymousBoard); err != nil {
+		if err := p.service.temporaryID.DeleteTagForTemporaryProjectByID(
+			p.ctx, p.project.ProjectID, actorID, p.tagID, isAnonymousBoard,
+		); err != nil {
 			return err
 		}
 		p.service.publisher.PublishTagDeleted(p.ctx, p.project.ProjectID, "")
