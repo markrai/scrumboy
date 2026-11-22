@@ -80,6 +80,17 @@ func (f *restDeletionFake) DeleteTag(
 	return f.result(ctx, "row-delete")
 }
 
+func (f *restDeletionFake) DeleteTagForTemporaryProjectByID(
+	ctx context.Context,
+	projectID, userID, tagID int64,
+	isAnonymousBoard bool,
+) error {
+	f.record("temporary-id-delete", restDeletionCall{
+		ctx: ctx, projectID: projectID, actorID: userID, tagID: tagID, isAnonymousBoard: isAnonymousBoard,
+	})
+	return f.result(ctx, "temporary-id-delete")
+}
+
 func (f *restDeletionFake) GetBoardScopedTagIDByName(
 	ctx context.Context,
 	projectID int64,
@@ -132,6 +143,7 @@ func newRESTDeletionTestService(fake *restDeletionFake) *RESTDeletionService {
 		MineID:        fake,
 		MineName:      fake,
 		DurableID:     fake,
+		TemporaryID:   fake,
 		Rows:          fake,
 		BoardNames:    fake,
 		PersonalNames: fake,
@@ -240,8 +252,8 @@ func TestRESTDeletionProjectIDDispatchAndPublication(t *testing.T) {
 			if err := prepared.Delete(); err != nil {
 				t.Fatalf("Delete() error = %v", err)
 			}
-			assertRESTDeletionTrace(t, fake, "row-delete", "publish")
-			assertRESTDeletionMutation(t, fake.calls[0], ctx, 0, tt.wantActor, 73, "", tt.wantAnonymous)
+			assertRESTDeletionTrace(t, fake, "temporary-id-delete", "publish")
+			assertRESTDeletionMutation(t, fake.calls[0], ctx, 71, tt.wantActor, 73, "", tt.wantAnonymous)
 			assertRESTDeletionPublications(t, fake, ctx, "", 71)
 		})
 	}
@@ -256,8 +268,8 @@ func TestRESTDeletionProjectIDFailureSilence(t *testing.T) {
 		operation string
 	}{
 		{name: "durable", kind: DurableProject, actor: int64Pointer(79), operation: "durable-id-delete"},
-		{name: "creator temporary", kind: CreatorOwnedTemporaryBoard, actor: int64Pointer(83), operation: "row-delete"},
-		{name: "anonymous temporary", kind: AnonymousTemporaryBoard, operation: "row-delete"},
+		{name: "creator temporary", kind: CreatorOwnedTemporaryBoard, actor: int64Pointer(83), operation: "temporary-id-delete"},
+		{name: "anonymous temporary", kind: AnonymousTemporaryBoard, operation: "temporary-id-delete"},
 	}
 
 	for _, tt := range tests {

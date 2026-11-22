@@ -432,6 +432,7 @@ type storeAPI interface {
 	DeleteMyTagByName(ctx context.Context, projectID int64, userID int64, name string) ([]int64, error)
 	DeleteMyTagByID(ctx context.Context, userID, tagID int64) ([]int64, error)
 	DeleteTagForDurableProjectByID(ctx context.Context, projectID, userID, tagID int64) ([]int64, error)
+	DeleteTagForTemporaryProjectByID(ctx context.Context, projectID, userID, tagID int64, isAnonymousBoard bool) error
 	GetTagColor(ctx context.Context, userID int64, tagID int64) (*string, error)
 	DeleteTag(ctx context.Context, userID int64, tagID int64, isAnonymousBoard bool) error
 
@@ -1084,6 +1085,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		MineID:        st,
 		MineName:      st,
 		DurableID:     st,
+		TemporaryID:   st,
 		Rows:          st,
 		BoardNames:    st,
 		PersonalNames: st,
