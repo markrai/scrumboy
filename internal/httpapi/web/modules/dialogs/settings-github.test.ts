@@ -355,3 +355,81 @@ describe('GitHub project picker flow', () => {
         controller.abort();
     });
 });
+
+
+describe('GitHub event readiness', () => {
+    beforeEach(() => {
+        document.body.replaceChildren();
+        requests.mockReset();
+        toast.mockReset();
+        confirm.mockReset().mockResolvedValue(true);
+    });
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
+    it('shows a disabled receiver even when the GitHub App is configured', async () => {
+        requests.mockImplementation(async (path: string) => {
+            if (path.endsWith('/installations')) return [];
+            if (path === '/api/admin/integrations/github') {
+                return {
+                    configured: true,
+                    connections: [],
+                    installUrl: '',
+                    readiness: {
+                        state: 'events_unavailable',
+                        message: 'GitHub App configured, but incoming events are disabled.',
+                        appConfigured: true,
+                        webhookConfigured: false,
+                        webhookPath: '/api/integrations/github/webhook',
+                        externalReachability: 'unverified',
+                        subscriptions: 'unverified',
+                    },
+                };
+            }
+            return [];
+        });
+        const el = root();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        const controller = new AbortController();
+        bindGitHubSettingsTab(el, null, controller.signal);
+        await vi.waitFor(() => expect(el.querySelector('[data-github-readiness="events_unavailable"]')).not.toBeNull());
+        expect(el.textContent).toContain('SCRUMBOY_GITHUB_WEBHOOK_SECRET');
+        expect(el.textContent).toContain('/api/integrations/github/webhook');
+        expect(el.textContent).toContain('401');
+        expect(el.textContent).toContain('not automatically verified');
+        controller.abort();
+    });
+
+    it('shows a verified-since-restart event without claiming the endpoint stays reachable', async () => {
+        requests.mockImplementation(async (path: string) => {
+            if (path.endsWith('/installations')) return [];
+            if (path === '/api/admin/integrations/github') {
+                return {
+                    configured: true,
+                    connections: [],
+                    installUrl: '',
+                    readiness: {
+                        state: 'verified_delivery',
+                        message: 'A valid signed GitHub delivery reached this process.',
+                        appConfigured: true,
+                        webhookConfigured: true,
+                        webhookUrl: 'https://example.test/api/integrations/github/webhook',
+                        lastVerifiedAt: '2026-11-22T12:00:00Z',
+                    },
+                };
+            }
+            return [];
+        });
+        const el = root();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        const controller = new AbortController();
+        bindGitHubSettingsTab(el, null, controller.signal);
+        await vi.waitFor(() => expect(el.querySelector('[data-github-readiness="verified_delivery"]')).not.toBeNull());
+        expect(el.textContent).toContain('https://example.test/api/integrations/github/webhook');
+        expect(el.textContent).toContain('Last verified delivery since restart');
+        expect(el.textContent).toContain('not automatically verified');
+        controller.abort();
+    });
+});

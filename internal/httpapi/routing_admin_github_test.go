@@ -59,9 +59,9 @@ func TestRESTGitHubAppInstallationAdminLifecycle(t *testing.T){
  base:=ts.URL+"/api/admin/integrations/github"
  resp,body:=doJSON(t,viewerClient,http.MethodGet,base,nil,nil)
  if resp.StatusCode!=http.StatusForbidden{t.Fatalf("viewer admin access: %d %s",resp.StatusCode,body)}
- var status struct{Configured bool `json:"configured"`;InstallURL string `json:"installUrl"`;Connections []githubConnectionJSON `json:"connections"`}
+ var status struct{Configured bool `json:"configured"`;InstallURL string `json:"installUrl"`;Connections []githubConnectionJSON `json:"connections"`;Readiness struct {State string `json:"state"`;WebhookConfigured bool `json:"webhookConfigured"`;ExternalReachability string `json:"externalReachability"`;Subscriptions string `json:"subscriptions"`;WebhookPath string `json:"webhookPath"`} `json:"readiness"`}
  resp,body=doJSON(t,ownerClient,http.MethodGet,base,nil,&status)
- if resp.StatusCode!=http.StatusOK || !status.Configured || status.InstallURL!="https://github.com/apps/scrumboy-example/installations/new" {
+ if resp.StatusCode!=http.StatusOK || !status.Configured || status.InstallURL!="https://github.com/apps/scrumboy-example/installations/new" || status.Readiness.State!="events_unavailable" || status.Readiness.WebhookConfigured || status.Readiness.ExternalReachability!="unverified" || status.Readiness.Subscriptions!="unverified" || status.Readiness.WebhookPath!="/api/integrations/github/webhook" {
   t.Fatalf("status: %d %s %+v",resp.StatusCode,body,status)
  }
  var installs []integration.Installation

@@ -62,9 +62,10 @@ func TestAutomationRuleRESTAuthorizationAndNonExecutingPreview(t *testing.T){
     var list struct {
         Rules []store.IntegrationAutomationRule `json:"rules"`
         ExecutionAvailable bool `json:"executionAvailable"`
+        Readiness struct {State string `json:"state"`;WebhookConfigured bool `json:"webhookConfigured"`;WebhookURL string `json:"webhookUrl"`;WebhookPath string `json:"webhookPath"`} `json:"readiness"`
     }
     resp,body=doJSON(t,viewerClient,http.MethodGet,base,nil,&list)
-    if resp.StatusCode!=http.StatusOK||len(list.Rules)!=1||!list.ExecutionAvailable{
+    if resp.StatusCode!=http.StatusOK||len(list.Rules)!=1||!list.ExecutionAvailable||list.Readiness.State!="not_configured"||list.Readiness.WebhookConfigured||list.Readiness.WebhookURL!=""||list.Readiness.WebhookPath!=""{
         t.Fatalf("viewer list %d %s %+v",resp.StatusCode,body,list)
     }
     sample:=map[string]any{"resourceId":repo.ID,"eventType":"pull_request.merged"}

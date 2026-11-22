@@ -35,6 +35,7 @@ function fixtures(settings: {
   repositories?: any[];
   actions?: any[];
   matches?: any[];
+  readiness?: { state: string; message: string };
 } = {}) {
   const rules = settings.rules ?? [rule()];
   requests.mockImplementation(async (path: string, options?: { method?: string; body?: string }) => {
@@ -42,7 +43,7 @@ function fixtures(settings: {
       return settings.repositories ?? [{ id: 42, name: 'org/repo', availability: 'available' }];
     }
     if (path === base + '/automation-rules' && !options?.method) {
-      return { rules, executionAvailable: true };
+      return { rules, executionAvailable: true, readiness: settings.readiness };
     }
     if (path === base + '/automation-matches?limit=30') {
       return { matches: settings.matches ?? [] };
@@ -102,6 +103,18 @@ describe('project automations settings', () => {
     document.body.replaceChildren();
   });
   afterEach(() => { document.body.replaceChildren(); });
+
+  it('shows viewer-safe webhook readiness without another approval gate', async () => {
+    fixtures({ readiness: {
+      state: 'events_unavailable',
+      message: 'GitHub events are disabled on this Scrumboy instance. Ask the administrator to configure signed webhooks.',
+    } });
+    const controller = mount(false);
+    await vi.waitFor(() => expect(document.querySelector('[data-github-readiness="events_unavailable"]')).not.toBeNull());
+    expect(document.body.textContent).toContain('Ask the administrator to configure signed webhooks');
+    expect(buttons('Approve execution')).toHaveLength(0);
+    controller.abort();
+  });
 
   it('renders viewer-safe rules, previews, match and notification history', async () => {
     fixtures({
