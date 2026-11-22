@@ -1,7 +1,15 @@
 package httpapi
 
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -11,7 +19,7 @@ import (
 )
 
 func TestGitHubRuntimeActivationIsAtomicAndSingleUse(t *testing.T) {
-	server := &Server{mode:"full"}
+	server := &Server{mode:"full",logger:log.New(io.Discard,"",0)}
 	if provider,_,webhook:=server.githubSnapshot(); provider!=nil||webhook!=nil {
 		t.Fatal("unconfigured server exposed GitHub state")
 	}
@@ -38,6 +46,23 @@ func TestGitHubRuntimeActivationIsAtomicAndSingleUse(t *testing.T) {
 	close(start)
 	if err:=server.ActivateGitHub(provider,"scrumboy-owned",webhook);err!=nil{t.Fatal(err)}
 	wg.Wait()
+	unsigned := httptest.NewRequest(http.MethodPost, githubWebhookEndpoint, bytes.NewReader([]byte("{\"zen\":\"hello\"}")))
+	unsigned.Header.Set("Content-Type","application/json")
+	unsigned.Header.Set("X-GitHub-Event","ping")
+	rejected := httptest.NewRecorder()
+	server.ServeHTTP(rejected,unsigned)
+	if rejected.Code != http.StatusUnauthorized { t.Fatalf("unsigned hot-installed receiver returned %d",rejected.Code) }
+	body := []byte("{\"zen\":\"hello\"}")
+	signed := httptest.NewRequest(http.MethodPost, githubWebhookEndpoint, bytes.NewReader(body))
+	signed.Header.Set("Content-Type","application/json")
+	signed.Header.Set("X-GitHub-Event","ping")
+	mac := hmac.New(sha256.New,[]byte(strings.Repeat("w",40)))
+	_,_ = mac.Write(body)
+	signed.Header.Set("X-Hub-Signature-256","sha256="+hex.EncodeToString(mac.Sum(nil)))
+	accepted := httptest.NewRecorder()
+	server.ServeHTTP(accepted,signed)
+	if accepted.Code != http.StatusAccepted { t.Fatalf("valid signed event returned %d",accepted.Code) }
+	if state := server.githubReadiness(true,1)["state"];state!="verified_delivery" {t.Fatalf("signed readiness state %v",state)}
 	if err:=server.ActivateGitHub(provider,"second-app",webhook);!errors.Is(err,ErrGitHubAlreadyConfigured){
 		t.Fatalf("existing App overwritten: %v",err)
 	}

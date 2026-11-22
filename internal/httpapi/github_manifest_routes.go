@@ -3,6 +3,7 @@ package httpapi
 import (
  "errors"
  "fmt"
+ "html"
  "net/http"
 
  "scrumboy/internal/integration/githubmanifest"
@@ -55,5 +56,7 @@ func (s *Server) handleGitHubManifestCallback(w http.ResponseWriter,r *http.Requ
  }
  w.Header().Set("Content-Type","text/html; charset=utf-8")
  w.WriteHeader(http.StatusOK)
- _,_=fmt.Fprint(w,"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"no-referrer\"><title>GitHub App enrollment</title></head><body><main><h1>GitHub App registration received</h1><p>The instance has securely received your App credentials. Return to Scrumboy to complete installation setup.</p></main></body></html>")
+ _, slug, _ := s.githubSnapshot()
+ installURL := "https://github.com/apps/"+slug+"/installations/new"
+ _,_=fmt.Fprintf(w,"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"no-referrer\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>GitHub App connected</title></head><body><main><h1>GitHub App created</h1><p>Scrumboy securely saved your App credentials and activated the signed webhook receiver.</p><p><a href=\"%s\" rel=\"noopener noreferrer\">Install the App on your GitHub repositories</a></p><p>After installation, return to <a href=\"/\">Scrumboy</a>, open Settings → GitHub, and choose Connect and sync.</p><p>Live notifications also require a GitHub-reachable public HTTPS endpoint.</p></main></body></html>",html.EscapeString(installURL))
 }
