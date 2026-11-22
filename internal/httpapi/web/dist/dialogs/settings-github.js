@@ -28,8 +28,9 @@ function appendGitHubMark(parent) {
     }
     parent.append(mark);
 }
-function appendReadiness(parent, readiness {
-    if (!readiness || typeof readiness.message !== 'string') return;
+function appendReadiness(parent, readiness) {
+    if (!readiness || typeof readiness.message !== 'string')
+        return;
     const labels = {
         not_configured: 'GitHub not configured',
         events_unavailable: 'GitHub events unavailable',
@@ -59,7 +60,8 @@ function appendReadiness(parent, readiness {
     }
     if (typeof readiness.lastVerifiedAt === 'string') {
         const date = Date.parse(readiness.lastVerifiedAt);
-        if (Number.isFinite(date)) textNode(section, 'p', 'Last verified delivery since restart: ' + new Date(date).toLocaleString());
+        if (Number.isFinite(date))
+            textNode(section, 'p', 'Last verified delivery since restart: ' + new Date(date).toLocaleString());
     }
     parent.append(section);
 }
