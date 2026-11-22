@@ -93,7 +93,8 @@ function appendReadiness(parent, readiness) {
             'Subscribe the GitHub App to Issues and Pull request events.',
             'An unsigned POST returns 401 when the receiver is enabled and 404 when disabled. An HTML 200 indicates the request reached the frontend instead of the webhook handler.',
         ];
-        if (!readiness.webhookConfigured) instructions.unshift('For manually configured Apps, set SCRUMBOY_GITHUB_WEBHOOK_SECRET or SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE on your server, then restart Scrumboy. Guided setup saves the generated webhook secret automatically.');
+        if (!readiness.webhookConfigured)
+            instructions.unshift('For manually configured Apps, set SCRUMBOY_GITHUB_WEBHOOK_SECRET or SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE on your server, then restart Scrumboy. Guided setup saves the generated webhook secret automatically.');
         for (const instruction of instructions)
             textNode(steps, 'li', instruction);
         details.append(steps);
@@ -246,7 +247,8 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
                 textNode(advanced, 'summary', 'Advanced: manual GitHub App configuration');
                 advanced.append(configuration);
                 columns.append(advanced);
-            } else {
+            }
+            else {
                 columns.append(configuration);
             }
             onboarding.append(columns);
