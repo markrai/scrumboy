@@ -88,6 +88,8 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | `SCRUMBOY_GITHUB_WEBHOOK_SECRET` | empty | Either this or the file path for inbound webhooks | HMAC-SHA256 shared secret supplied via an environment variable |
 | `SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE` | empty | Either this or the inline secret for inbound webhooks | HMAC shared-secret file path, preferred for production secret mounts |
 
+Guided App Manifest setup (Full Mode with a canonical HTTPS `SCRUMBOY_PUBLIC_BASE_URL`) requires **none** of the GitHub App ID, PEM or webhook-secret environment variables. It stores an instance-owned App bundle under `DATA_DIR/.scrumboy-github-app/credentials.json` (private filesystem permissions). Keep host-level backups of that directory and restrict backup access; board exports do not include these credentials. Explicit manual App ID/PEM settings override an existing guided bundle. On Windows, restrict NTFS ACLs on the data directory.
+
 Use exactly **one** webhook secret source (minimum 32 bytes). Setting both fails startup without printing either secret. When neither is configured, the webhook receiver is disabled (404), but repository browsing still works. Environment values can appear in container inspection; protect operator access. See [GitHub webhook setup](github-m4-webhooks.md).
 
 ### Web Push (VAPID)

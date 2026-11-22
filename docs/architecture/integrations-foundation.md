@@ -6,7 +6,7 @@ M1 introduces a provider-neutral, database-backed foundation for connecting exte
 
 Every self-hosted Scrumboy Full Mode instance uses its own administrator-owned GitHub App, with server-local private-key and webhook-secret handling. One App supports its selected installations and repositories for that instance. There is no centrally managed Scrumboy Connect App, remote broker, shared key or hosted relay. App-global installation discovery is restricted to the instance Owner/Admin, while project authorization and public-board visibility are separate boundaries.
 
-S2.1 adds an owner-only App Manifest state and callback foundation, but no production credential sink is wired; it cannot create a live App until S2.2 completes safe credential persistence and activation. The existing direct adapter supports manual setup. A guided App Manifest setup wizard, readiness diagnostics and private-network fallback are future work under [#371](https://github.com/markrai/scrumboy/issues/371) and must not be described as released.
+S2.2 adds Owner-only manifest enrollment, a private atomic credential bundle under DATA_DIR, startup recovery, and synchronized hot activation of the GitHub provider and HMAC-verified webhook worker. The direct adapter also supports manual PEM setup; manual environment settings override, but never mutate, the guided bundle. An externally reachable webhook endpoint and full live registration/notification acceptance remain pending under [#371](https://github.com/markrai/scrumboy/issues/371).
 
 
 ## Ownership and authority
@@ -15,7 +15,7 @@ S2.1 adds an owner-only App Manifest state and callback foundation, but no produ
 - External resources belong to one connection and have stable provider-native identifiers. The provider and resource kind are constrained tokens, not hard-coded GitHub enums.
 - A project Maintainer may attach and detach existing resources from that project. Project Viewers and Contributors can read the project's associations, but cannot modify them; nonmembers cannot enumerate them.
 - Associations are scoped to durable projects, including projects their owners deliberately make publicly viewable. This milestone does not impose a GitHub-versus-Scrumboy visibility policy. Temporary and anonymous boards have no integration association surface.
-- Connections are not user credentials. The model deliberately does not persist PATs, private keys, installation tokens, or webhook secrets. Credential management belongs to M3, behind its own encryption and lifecycle design.
+- Connections are not user credentials. SQLite stores neither PATs, private keys, installation tokens nor webhook secrets. Guided App secrets are persisted only in a separate restrictive filesystem bundle under DATA_DIR and require protected volume backups; installation tokens remain process-local.
 
 ## Schema and identity
 

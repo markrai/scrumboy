@@ -6,7 +6,7 @@ M3 provides an opt-in GitHub App connection and repository reference workflow in
 
 A self-hosted Scrumboy Full Mode instance uses a **GitHub App owned by its administrator**, not a central Scrumboy Connect service. One administrator configures the App for their Scrumboy instance. Other Scrumboy project members can link permitted repositories and issues/PRs under the existing project roles without creating Apps or handling credentials. There is no shared broker, central webhook relay or dependency on scrumboy.com.
 
-**Current implementation:** The instance-owned direct GitHub App provider, repository discovery, issue/PR references and optional signed webhooks exist. The proposed GitHub App Manifest wizard and readiness diagnostics are **not implemented**; they are tracked in [#371](https://github.com/markrai/scrumboy/issues/371). The manual flow below remains the supported setup. An instance administrator must never share their PEM with another Scrumboy server or expose it to a browser.
+**Current implementation on PR #366:** Readiness diagnostics, an instance-owned GitHub App Manifest setup flow, protected file-based credential persistence, automatic provider/webhook activation, and existing manual configuration are implemented. **End-to-end registration against GitHub and public webhook delivery remain live acceptance requirements**, tracked in [#371](https://github.com/markrai/scrumboy/issues/371). The App belongs to the self-hosted administrator; there is no central Scrumboy service.
 
 ### Register an instance-owned GitHub App (current manual setup)
 
@@ -16,15 +16,28 @@ A self-hosted Scrumboy Full Mode instance uses a **GitHub App owned by its admin
 4. For real-time events, separately configure [the signed webhook endpoint](github-m4-webhooks.md) and subscribe to Issues and Pull request events. GitHub must reach the HTTPS endpoint from the public internet; private Tailscale-only addresses cannot accept GitHub deliveries. Manual repository and issue/PR refresh work without webhooks.
 
 
-### S2.1 Manifest enrollment foundation (not activated yet)
+### S2.2 Guided GitHub App setup (Full Mode)
 
-The S2.1 branch provides a time-limited, owner-bound GitHub App manifest registration handshake and server-side exchange of GitHub's one-time code. The manifest requests only Metadata, Issues and Pull requests read permissions and subscribes to installation, installation-repository, repository, issue and pull-request events. A single-use CSRF state expires after ten minutes, and callbacks require authentication as the same instance Owner account. Failure responses never disclose PEMs, webhook secrets or conversion codes.
+The instance **Owner** can open **Settings → GitHub → Set up GitHub** when no App is configured and `SCRUMBOY_PUBLIC_BASE_URL` is a canonical, pathless HTTPS origin. GitHub displays the App registration and permission review. The App is owned by that GitHub account, not by Scrumboy.com.
 
-**This is not yet a usable onboarding wizard.** The runtime does not supply the durable credential sink required by the enrollment service, so the create-App action is intentionally unavailable. S2.2 will wire secure atomic credential persistence, backup/restore policy, and provider activation before administrators are offered the new setup button. Existing manual configuration continues to work, and an already configured App cannot be silently overwritten.
+1. Scrumboy constructs the read-only App manifest and an expiring, Owner-bound enrollment state. The manifest requests Metadata, Issues and Pull requests read permissions and subscribes to installation, installation repositories, repository, Issues and Pull request events.
+2. After GitHub redirects back to the Scrumboy callback, the server exchanges the one-time code and validates the App ID, slug, RSA private key and webhook secret **without exposing them to the browser or database**.
+3. The credentials are written together as one private bundle and made durable before the GitHub provider and signed webhook worker are activated. The success page links directly to the new App installation flow. Back in Scrumboy, select **Connect and sync**.
+4. The next Scrumboy start loads the bundle and recreates the provider and webhook receiver. Setup does not need a container restart. It does not retroactively make a private-only webhook endpoint reachable.
+
+**Credentials and backup.** Guided credentials reside at `DATA_DIR/.scrumboy-github-app/credentials.json`. On POSIX, Scrumboy creates the directory with permissions `0700` and the file with `0600`, verifies permissions when loading, rejects linked directories and files, and refuses to overwrite an existing bundle. File contents include the GitHub App private key **and** the webhook secret as JSON, **not encrypted by Scrumboy**. Use encrypted host storage or volume encryption where required; restrict who can inspect host backups and containers. On Windows, verify and restrict inherited NTFS ACLs yourself; POSIX permission bits do not replace Windows access controls.
+
+Back up the **entire protected bundle** alongside the instance's SQLite database when making a host-level disaster-recovery backup. Scrumboy board exports, SQLite-only backups, and moving `app.db` alone **do not contain this secret bundle**. Restore the protected directory and file with the original restrictive permissions before restarting the server. If the bundle is corrupt, inaccessible or permissive, startup stops rather than silently discarding the App identity.
+
+**Interruption and rotation.** If GitHub registration finishes but Scrumboy shuts down after the bundle is saved, restart the server and the saved App is recovered. If the bundle was **not** saved, delete the incomplete GitHub App registration or complete a deliberate manual recovery; do not repeatedly create Apps without checking GitHub. For key rotation, generate a replacement private key from the App's GitHub settings and perform a controlled offline credential backup/update and restart. The guided setup is one-time enrollment and does **not** yet offer a live key rotation UI or overwrite an existing App.
+
+**Configuration precedence.** Explicit `SCRUMBOY_GITHUB_APP_ID` and `SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE` take precedence over any guided bundle without changing it. Remove both variables to reactivate the saved guided identity. Do not combine the managed bundle with `SCRUMBOY_GITHUB_WEBHOOK_SECRET` or `SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE`; the saved webhook secret is authoritative for the guided App. Manual App setup remains supported and is shown as an advanced option.
+
+**Network limitation.** A valid HTTPS origin is needed for the browser callback, but GitHub also needs to reach the webhook destination from the public internet to deliver events. Tailscale-only hosts can still use GitHub repository discovery, but cannot receive direct GitHub webhooks. A successful App registration is **not** evidence of event-delivery readiness. See [GitHub inbound webhooks](github-m4-webhooks.md).
 
 ## Local configuration (existing manual mode)
 
-The Scrumboy instance administrator configures these variables once. The proposed manifest wizard will remove this manual operator step, but is not yet implemented.
+The manual path is a supported fallback for deployments that already have an App or prefer operator-managed PEM mounts. Guided setup does not require manually setting these variables.
 
 The server accepts three environment variables:
 
@@ -85,7 +98,7 @@ In a durable project where an instance administrator connected the GitHub App an
 
 **Existing installations need to approve the two additional read permissions**. Scrumboy requests new short-lived tokens only when issue/PR lookup or search is used. Those tokens are minted with GitHub's `repository_ids` restricted to the exact provider repository ID associated with the selected project. The original metadata-only installation-discovery token remains separate. No issue/PR access token or private key is persisted in SQLite, the browser or a card.
 
-**Security boundary:** GitHub installations are instance-managed and can be discovered only by a Scrumboy Owner/Admin. Project Maintainers associate resources; project Contributors link cards. Neither a GitHub installation nor a Scrumboy public board makes private repository information available to unrelated users. The future setup wizard is tracked in #371.
+**Security boundary:** GitHub installations are instance-managed and can be discovered only by a Scrumboy Owner/Admin. Project Maintainers associate resources; project Contributors link cards. Neither a GitHub installation nor a Scrumboy public board makes private repository information available to unrelated users. Guided setup is Owner-only; operational delivery acceptance remains tracked in #371.
 
 Read-only project API (normal Scrumboy authentication and mutation header required):
 
@@ -133,7 +146,7 @@ Project Maintainers can `POST /api/board/{slug}/integrations/resources` with `{"
 
 ## Security and lifecycle
 
-- GitHub App private keys exist only in the operator's PEM file and the application process. GitHub App installation tokens exist only in memory, with expiry-aware refresh and cache invalidation. Tokens, PEM data and JWTs are never persisted in the integration database.
+- GitHub App private keys exist in an operator-managed PEM file **or** in the local protected guided-credential bundle, plus process memory. Installation tokens are ephemeral in memory, with expiry-aware refresh and cache invalidation. No tokens, PEM data or JWTs are stored in SQLite, card content, or browser responses.
 - On GitHub denial or revocation, Scrumboy invalidates the cached token and reports the failure; it does not delete or change synchronized references based on an unsuccessful or incomplete fetch.
 - On a **successful complete synchronization**, repositories missing from the installation's accessible set are marked **unavailable**. Their last-known metadata, Scrumboy resource IDs, project associations, and card references are retained. Existing links are displayed as unavailable and may be explicitly unlinked, but no new links or project associations may be added until GitHub access is restored. A subsequent complete scan that sees the same immutable GitHub repository ID restores availability without losing references. Repository renames retain the same stable ID.
 - Disconnecting locally deletes associated Scrumboy references and attempts to revoke the installation token currently cached by the process. It does not uninstall the App on GitHub or revoke other tokens issued elsewhere. To remove GitHub-side access altogether, uninstall the App or change its permissions in GitHub settings.

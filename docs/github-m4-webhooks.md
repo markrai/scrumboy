@@ -37,6 +37,8 @@ If only the App ID, App private key and slug are configured, webhooks remain **o
 - Signed installation `deleted` or `suspend` events atomically disable the local connection and mark its repositories unavailable without deleting existing references. Re-enable explicitly through the GitHub App UI and a manual **Connect and sync** after restoration.
 - GitHub webhooks can feed M5 notification rules **only after signature verification, installation/repository association and explicit rule enablement**. They cannot edit cards, change public-board visibility or modify GitHub issues and pull requests.
 
+When an App is created using the guided GitHub App Manifest flow, the generated webhook secret is saved automatically in the private `DATA_DIR/.scrumboy-github-app` bundle and the receiver is activated without restarting Scrumboy. The manual webhook secret variables are unnecessary for that App and must not conflict with a saved guided secret. A public HTTPS route is still required for GitHub-originated event delivery.
+
 ## Monitoring and failure handling
 
 The authenticated Owner/Admin `GET /api/admin/integrations/github` returns a redacted `readiness` object with `state`, `message`, `appConfigured`, `webhookConfigured`, `externalReachability: "unverified"`, `subscriptions: "unverified"`, `activeInstallations`, and `webhookPath`. If `SCRUMBOY_PUBLIC_BASE_URL` is a valid pathless HTTPS origin, the server also returns `webhookUrl`. No secret, key, or private filesystem path is exposed. The project-authorized `GET /api/board/{slug}/integrations/automation-rules` provides a reduced `readiness` without administrator URLs or installation counts.
