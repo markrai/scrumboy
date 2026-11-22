@@ -432,7 +432,8 @@ describe('GitHub event readiness', () => {
         expect(el.textContent).toContain('SCRUMBOY_GITHUB_WEBHOOK_SECRET');
         expect(el.textContent).toContain('/api/integrations/github/webhook');
         expect(el.textContent).toContain('401');
-        expect(el.textContent).toContain('not automatically verified');
+        expect(el.textContent).toContain('Public reachability');
+        expect(el.textContent).toContain('Not verified');
         controller.abort();
     });
 
@@ -462,8 +463,9 @@ describe('GitHub event readiness', () => {
         bindGitHubSettingsTab(el, null, controller.signal);
         await vi.waitFor(() => expect(el.querySelector('[data-github-readiness="verified_delivery"]')).not.toBeNull());
         expect(el.textContent).toContain('https://example.test/api/integrations/github/webhook');
-        expect(el.textContent).toContain('Last verified delivery since restart');
-        expect(el.textContent).toContain('not automatically verified');
+        expect(el.textContent).toContain('Last signed delivery since restart');
+        expect(el.textContent).toContain('Public reachability');
+        expect(el.textContent).toContain('Not verified');
         controller.abort();
     });
 });
