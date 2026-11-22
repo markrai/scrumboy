@@ -89,11 +89,11 @@ function appendReadiness(parent, readiness) {
         const steps = document.createElement('ol');
         steps.className = 'github-integration__diagnostic-steps';
         const instructions = [
-            'Set SCRUMBOY_GITHUB_WEBHOOK_SECRET or SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE on your server, then restart Scrumboy.',
             'Use a public HTTPS webhook destination. A private Tailscale URL is not directly reachable by GitHub.',
             'Subscribe the GitHub App to Issues and Pull request events.',
             'An unsigned POST returns 401 when the receiver is enabled and 404 when disabled. An HTML 200 indicates the request reached the frontend instead of the webhook handler.',
         ];
+        if (!readiness.webhookConfigured) instructions.unshift('For manually configured Apps, set SCRUMBOY_GITHUB_WEBHOOK_SECRET or SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE on your server, then restart Scrumboy. Guided setup saves the generated webhook secret automatically.');
         for (const instruction of instructions)
             textNode(steps, 'li', instruction);
         details.append(steps);
@@ -151,10 +151,17 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
             textNode(overview, 'p', 'Connect GitHub repositories to Scrumboy projects and reference them from individual cards.').className = 'github-onboarding__summary';
             const steps = document.createElement('div');
             steps.className = 'github-onboarding__steps';
-            for (const [number, heading, description] of [
-                ['1', 'Create a GitHub App', 'Install it on selected repositories with read-only metadata access.'],
-                ['2', 'Restart Scrumboy', 'After configuring the variables, return here to connect your installation.'],
-            ]) {
+            const setupStepItems = status.manifestEnrollmentAvailable
+                ? [
+                    ['1', 'Create your GitHub App', 'GitHub registers an App owned by you; Scrumboy stores its credentials automatically.'],
+                    ['2', 'Install repositories', 'Choose the repositories this App may access in GitHub.'],
+                    ['3', 'Connect and sync', 'Return to Scrumboy Settings and connect your App installation.'],
+                ]
+                : [
+                    ['1', 'Create a GitHub App', 'Install it on selected repositories with read-only metadata access.'],
+                    ['2', 'Restart Scrumboy', 'After configuring the variables, return here to connect your installation.'],
+                ];
+            for (const [number, heading, description] of setupStepItems) {
                 const step = document.createElement('div');
                 step.className = 'github-onboarding__step';
                 textNode(step, 'span', number).className = 'github-onboarding__step-number';
@@ -169,7 +176,7 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
                 const guided = document.createElement('div');
                 guided.className = 'github-onboarding__guided';
                 textNode(guided, 'strong', 'Guided GitHub App setup');
-                textNode(guided, 'p', 'Create an instance-owned GitHub App with read-only permissions. Credentials are returned directly to this server.');
+                textNode(guided, 'p', 'GitHub creates an App owned by you. Scrumboy securely stores the generated credentials and activates integration without restarting. Automatic events require a public HTTPS webhook destination.');
                 const start = action(guided, 'Set up GitHub', () => {
                     void (async () => {
                         start.disabled = true;
@@ -233,7 +240,15 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
                 textNode(card, 'p', item.description).className = 'github-onboarding__variable-description';
                 configuration.append(card);
             }
-            columns.append(configuration);
+            if (status.manifestEnrollmentAvailable) {
+                const advanced = document.createElement('details');
+                advanced.className = 'github-onboarding__manual';
+                textNode(advanced, 'summary', 'Advanced: manual GitHub App configuration');
+                advanced.append(configuration);
+                columns.append(advanced);
+            } else {
+                columns.append(configuration);
+            }
             onboarding.append(columns);
             appendReadiness(onboarding, status.readiness);
             root.append(onboarding);
