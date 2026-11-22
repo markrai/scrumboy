@@ -95,6 +95,7 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 			"configured":s.githubProvider!=nil && s.mode=="full",
 			"installUrl":installURL,
 			"connections":githubConnectionsJSON(installed),
+			"readiness":s.githubReadiness(true, githubActiveConnectionCount(installed)),
 		})
 		return
 	}

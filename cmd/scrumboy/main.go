@@ -211,16 +211,19 @@ func main() {
 		githubProvider = client
 	}
 	var inboundGitHub *githubwebhook.Service
-	if cfg.GitHubWebhookSecretFile != "" {
+	if cfg.GitHubWebhookSecretFile != "" || cfg.GitHubWebhookSecret != "" {
 		if cfg.ScrumboyMode != "full" || githubProvider == nil {
 			logger.Fatal("GitHub webhook secret requires configured GitHub App and Full Mode")
 		}
-		secretFile,readErr:=os.ReadFile(cfg.GitHubWebhookSecretFile)
-		if readErr!=nil {logger.Fatal("cannot read GitHub webhook secret file")}
-		secret:=[]byte(strings.TrimSpace(string(secretFile)))
+		secret, secretErr := resolveGitHubWebhookSecret(cfg.GitHubWebhookSecret, cfg.GitHubWebhookSecretFile)
+		if secretErr != nil {
+			logger.Fatal(secretErr)
+		}
 		var configureErr error
-		inboundGitHub,configureErr=githubwebhook.New(secret,st,githubProvider,logger)
-		if configureErr!=nil {logger.Fatal("invalid GitHub webhook secret configuration")}
+		inboundGitHub, configureErr = githubwebhook.New(secret, st, githubProvider, logger)
+		if configureErr != nil {
+			logger.Fatal("invalid GitHub webhook secret configuration")
+		}
 	}
 	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicOrigin: publicOrigin, Logger: logger, AssetFiles: assetJanitor})
 	srv := httpapi.NewServer(st, httpapi.Options{

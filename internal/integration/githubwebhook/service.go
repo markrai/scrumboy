@@ -13,6 +13,7 @@ import (
     "net/http"
     "strconv"
     "strings"
+    "sync/atomic"
     "time"
 
     "scrumboy/internal/integration"
@@ -42,6 +43,7 @@ type Service struct {
     provider integration.Provider
     logger *log.Logger
     done chan struct{}
+    lastVerifiedUnixNano atomic.Int64
 }
 
 func New(secret []byte, inbox Inbox, provider integration.Provider, logger *log.Logger) (*Service,error) {
@@ -55,6 +57,14 @@ func New(secret []byte, inbox Inbox, provider integration.Provider, logger *log.
 }
 
 func (s *Service) Done() <-chan struct{} {return s.done}
+
+func (s *Service) LastVerifiedAt() time.Time {
+    nanos := s.lastVerifiedUnixNano.Load()
+    if nanos == 0 {
+        return time.Time{}
+    }
+    return time.Unix(0, nanos).UTC()
+}
 
 func (s *Service) ServeHTTP(w http.ResponseWriter,r *http.Request) {
     w.Header().Set("Cache-Control","no-store")
@@ -106,6 +116,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter,r *http.Request) {
         http.Error(w,"invalid webhook payload",http.StatusBadRequest)
         return
     }
+    s.lastVerifiedUnixNano.Store(time.Now().UTC().UnixNano())
     eventType:=r.Header.Get("X-GitHub-Event")
     if eventType=="ping" {
         w.WriteHeader(http.StatusAccepted)

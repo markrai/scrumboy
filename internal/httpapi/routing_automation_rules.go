@@ -27,7 +27,7 @@ func (s *Server) handleProjectAutomationRules(w http.ResponseWriter,r *http.Requ
             rules,err:=s.store.ListIntegrationAutomationRules(ctx,actor,pc.Project.ID)
             if err!=nil{writeStoreErr(w,err,true);return}
             writeJSON(w,http.StatusOK,map[string]any{
-                "rules":rules,"executionAvailable":true,
+                "rules":rules,"executionAvailable":true,"readiness":s.githubReadiness(false, -1),
             })
         case http.MethodPost:
             var in store.CreateIntegrationAutomationRuleInput
