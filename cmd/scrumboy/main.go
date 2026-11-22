@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -24,7 +23,6 @@ import (
 	"scrumboy/internal/db"
 	"scrumboy/internal/httpapi"
 	"scrumboy/internal/integration"
-	"scrumboy/internal/integration/githubapp"
 	"scrumboy/internal/integration/githubwebhook"
 	"scrumboy/internal/mcp"
 	"scrumboy/internal/migrate"
@@ -191,42 +189,18 @@ func main() {
 	}
 
 
-	var githubProvider integration.Provider
-	if cfg.GitHubAppID != "" || cfg.GitHubAppPrivateKeyFile != "" {
-		if cfg.GitHubAppID == "" || cfg.GitHubAppPrivateKeyFile == "" {
-			logger.Fatal("GitHub App setup requires both SCRUMBOY_GITHUB_APP_ID and SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE")
+	var srv *httpapi.Server
+	github, githubErr := prepareGitHub(cfg, st, logger, func(provider integration.Provider, slug string, receiver *githubwebhook.Service) error {
+		if srv == nil {
+			return errors.New("server not ready")
 		}
-		appID, parseErr := strconv.ParseInt(cfg.GitHubAppID, 10, 64)
-		if parseErr != nil || appID <= 0 {
-			logger.Fatal("SCRUMBOY_GITHUB_APP_ID must be a positive integer")
-		}
-		keyBytes, readErr := os.ReadFile(cfg.GitHubAppPrivateKeyFile)
-		if readErr != nil {
-			logger.Fatal("cannot read GitHub App private key file")
-		}
-		client, clientErr := githubapp.New(appID, keyBytes, nil)
-		if clientErr != nil {
-			logger.Fatal("invalid GitHub App private key")
-		}
-		githubProvider = client
-	}
-	var inboundGitHub *githubwebhook.Service
-	if cfg.GitHubWebhookSecretFile != "" || cfg.GitHubWebhookSecret != "" {
-		if cfg.ScrumboyMode != "full" || githubProvider == nil {
-			logger.Fatal("GitHub webhook secret requires configured GitHub App and Full Mode")
-		}
-		secret, secretErr := resolveGitHubWebhookSecret(cfg.GitHubWebhookSecret, cfg.GitHubWebhookSecretFile)
-		if secretErr != nil {
-			logger.Fatal(secretErr)
-		}
-		var configureErr error
-		inboundGitHub, configureErr = githubwebhook.New(secret, st, githubProvider, logger)
-		if configureErr != nil {
-			logger.Fatal("invalid GitHub webhook secret configuration")
-		}
+		return srv.ActivateGitHub(provider, slug, receiver)
+	})
+	if githubErr != nil {
+		logger.Fatalf("GitHub App setup: %v", githubErr)
 	}
 	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicOrigin: publicOrigin, Logger: logger, AssetFiles: assetJanitor})
-	srv := httpapi.NewServer(st, httpapi.Options{
+	srv = httpapi.NewServer(st, httpapi.Options{
 		Logger:                logger,
 		MaxRequestBody:        cfg.MaxRequestBodyBytes,
 		MaxTrelloImportBody:   cfg.MaxTrelloImportBytes,
@@ -238,9 +212,10 @@ func main() {
 		AgoraHandler:          agora.New(mcpH, agora.Options{MaxRequestBytes: maxB}),
 		EncryptionKey:         encKey,
 		OIDCService:           oidcSvc,
-		GitHubProvider: githubProvider,
-		GitHubAppSlug: cfg.GitHubAppSlug,
-		GitHubWebhook: inboundGitHub,
+		GitHubProvider: github.provider,
+		GitHubAppSlug: github.appSlug,
+		GitHubWebhook: github.webhook,
+		GitHubManifest: github.manifest,
 		VAPIDPublicKey:        cfg.VAPIDPublicKey,
 		VAPIDPrivateKey:       cfg.VAPIDPrivateKey,
 		VAPIDSubscriber:       cfg.VAPIDSubscriber,
