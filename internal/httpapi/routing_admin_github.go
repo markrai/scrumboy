@@ -89,6 +89,8 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 	if len(rest)==0 && r.Method==http.MethodGet {
 		installed,err:=s.store.ListIntegrationConnections(s.requestContext(r),actorID)
 		if err!=nil {writeStoreErr(w,err,false);return}
+		owner,ownerErr:=s.store.GetUser(s.requestContext(r),actorID)
+		ownerCanEnroll:=ownerErr==nil && owner.SystemRole==store.SystemRoleOwner
 		installURL:=""
 		if provider!=nil && appSlug!="" {
 			if len(appSlug)<=100 && !strings.ContainsAny(appSlug,"/\\?#%&@ ") {
@@ -97,7 +99,7 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		}
 		writeJSON(w,http.StatusOK,map[string]any{
 			"configured":provider!=nil && s.mode=="full",
-			"manifestEnrollmentAvailable":s.githubManifest!=nil && s.githubManifest.Available() && provider==nil && s.mode=="full",
+			"manifestEnrollmentAvailable":ownerCanEnroll && s.githubManifest!=nil && s.githubManifest.Available() && provider==nil && s.mode=="full",
 			"installUrl":installURL,
 			"connections":githubConnectionsJSON(installed),
 			"readiness":s.githubReadiness(true, githubActiveConnectionCount(installed)),
