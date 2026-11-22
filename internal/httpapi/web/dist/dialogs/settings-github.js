@@ -65,7 +65,6 @@ function appendReadiness(parent, readiness) {
     }
     parent.append(section);
 }
-
 export function bindGitHubSettingsTab(root, initialSlug, signal) {
     const base = '/api/admin/integrations/github';
     let selectedProjectSlug = initialSlug;
