@@ -2,6 +2,13 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## [3.42.4] - 2026-11-22
+
+### Fixed
+
+- **Temporary-board tag deletion scope** - ID-based tag deletion now validates the target against the resolved project before removing tag rows or associated todo-tag relationships. Tag IDs outside the requested board return `404 Not Found` without modifying data. Association checks and deletion run in one transaction, preserving existing anonymous-board and personal-tag ownership rules.
+- **Tag deletion regression coverage** - Added store and HTTP tests for cross-project ID handling, successful same-board deletion, association preservation, transaction rollback, and refresh-event behavior.
+
 ## [3.42.3] - 2026-11-17
 
 ### Fixed

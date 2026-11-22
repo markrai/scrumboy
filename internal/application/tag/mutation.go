@@ -298,6 +298,10 @@ type DurableProjectIDDeletionStore interface {
 	) ([]int64, error)
 }
 
+type TemporaryProjectIDDeletionStore interface {
+	DeleteTagForTemporaryProjectByID(ctx context.Context, projectID, userID, tagID int64, isAnonymousBoard bool) error
+}
+
 // LegacyRowDeletionStore exposes the existing row-oriented delete operation.
 // Later orchestration derives isAnonymousBoard from the resolved project kind.
 type LegacyRowDeletionStore interface {
