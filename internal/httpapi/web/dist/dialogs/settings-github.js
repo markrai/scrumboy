@@ -177,10 +177,12 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
                             const enrollment = await apiFetch(base + '/manifest/start', { method: 'POST', signal });
                             if (!signal.aborted)
                                 submitGitHubManifest(enrollment);
-                        } catch {
+                        }
+                        catch {
                             if (!signal.aborted)
                                 showToast('GitHub App setup could not start. Check the instance configuration.');
-                        } finally {
+                        }
+                        finally {
                             if (!signal.aborted)
                                 start.disabled = false;
                         }
@@ -188,7 +190,6 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
                 });
                 overview.append(guided);
             }
-
             const guide = textNode(overview, 'a', 'Setup instructions');
             guide.className = 'github-onboarding__guide';
             guide.setAttribute('href', 'https://github.com/markrai/scrumboy/blob/main/docs/github-app.md');
