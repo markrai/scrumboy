@@ -2,34 +2,23 @@
 
 M3 provides an opt-in GitHub App connection and repository reference workflow in Scrumboy Full Mode. It registers GitHub repositories as external resources and lets project Maintainers associate them with durable projects, so Contributors can link cards to those repositories. M3.2 adds explicit, read-only GitHub issue and pull-request references and title search. It does **not** modify GitHub issues or pull requests, synchronize card content, or automatically change a Scrumboy card when GitHub state changes. Webhooks and optional automations have separate milestones.
 
-## Intended user experience: shared Scrumboy Connect GitHub App
+## Self-hosted GitHub App ownership
 
-**Product decision:** Scrumboy users will piggyback on the Scrumboy-managed **Scrumboy Connect** GitHub App. An ordinary user should **not** need to register a GitHub App, generate a private key, or configure an App ID to connect their own repositories.
+A self-hosted Scrumboy Full Mode instance uses a **GitHub App owned by its administrator**, not a central Scrumboy Connect service. One administrator configures the App for their Scrumboy instance. Other Scrumboy project members can link permitted repositories and issues/PRs under the existing project roles without creating Apps or handling credentials. There is no shared broker, central webhook relay or dependency on scrumboy.com.
 
-The intended flow is **Settings → GitHub → Connect GitHub → approve installation on your own account/organization → select repositories → link issues/PRs to a Scrumboy project**. A user grants GitHub access to the repositories they choose; their installation is separate from the maintainer's `markrai` installation and does not grant access to that account's repositories. Publishing a Scrumboy board remains the board owner's decision and must not bypass project authorization.
+**Current implementation:** The instance-owned direct GitHub App provider, repository discovery, issue/PR references and optional signed webhooks exist. The proposed GitHub App Manifest wizard and readiness diagnostics are **not implemented**; they are tracked in [#371](https://github.com/markrai/scrumboy/issues/371). The manual flow below remains the supported setup. An instance administrator must never share their PEM with another Scrumboy server or expose it to a browser.
 
-**This is the required product direction, not a working capability yet.** PR #366 currently implements a trusted, administrator-managed, direct-GitHub-App integration. It can discover every installation of the configured App and does not bind a GitHub identity/installation to an individual Scrumboy user or tenant. **Do not publish the shared App for unrelated Scrumboy users or advertise a self-service Connect GitHub flow until [the shared-App security gate](github-shared-app.md) is implemented and qualified.**
+### Register an instance-owned GitHub App (current manual setup)
 
-The GitHub App's **App ID and slug are public identifiers**; they do not authenticate a caller. The PEM private key and installation tokens must remain on infrastructure operated by the Scrumboy integration service, never in a browser, Scrumboy card, Git repository, or a downloadable self-hosted distribution.
+1. Create a GitHub App on an account or organization the Scrumboy **instance administrator** controls. Request **Metadata: Read-only**, **Issues: Read-only**, and **Pull requests: Read-only**. These support repository discovery, issue/PR references and event subscriptions. No GitHub write or Contents permission is needed for notifications.
+2. Install the App only on selected repositories. Record the App ID and slug, and generate its RSA private key (PEM).
+3. Keep the PEM file on the server outside the Git repository, SQLite database, cards, browser assets and general backups. Configure the server using the variables below, restart and use Settings → GitHub to connect and sync the installation.
+4. For real-time events, separately configure [the signed webhook endpoint](github-m4-webhooks.md) and subscribe to Issues and Pull request events. GitHub must reach the HTTPS endpoint from the public internet; private Tailscale-only addresses cannot accept GitHub deliveries. Manual repository and issue/PR refresh work without webhooks.
 
-For the target multi-user design and self-hosted support, see [Shared Scrumboy Connect architecture and rollout](github-shared-app.md).
 
-## Current trusted-operator setup (temporary M3 test mode)
+## Local configuration (existing manual mode)
 
-The steps below document the **existing direct integration**, which is useful for isolated Vega qualification and trusted instance administrators. They are **not** the intended setup instructions for ordinary Scrumboy users when the shared-App experience ships.
-
-### Register a GitHub App for an isolated operator deployment
-
-1. For current operator-only tests, register a GitHub App owned by an account or organization you control, or use the privately provisioned Scrumboy test App on infrastructure you administer. **End users must not create their own Apps under the target shared-App design.**
-2. Grant **Metadata: Read-only** for installation and repository discovery. To enable M3.2 issue/PR references and search, also grant **Issues: Read-only** and **Pull requests: Read-only**. Existing GitHub App installations must approve the expanded permissions. No write scopes, account permissions, organization permissions, or Contents scope are required.
-3. Install the App on selected repositories. For a first test, select a disposable repository. Webhooks can remain disabled until M4 provides a validated webhook receiver.
-4. Record the App ID and App slug. Generate and download the GitHub App RSA private key (a PEM file).
-
-Never commit the PEM file to a repository, place its content into a Scrumboy card, or send it to the browser.
-
-## Local configuration (trusted operator tests only)
-
-**Not required for ordinary users in the intended shared-App flow.** These variables configure the existing direct-mode backend and must not be filled using a shared private key on arbitrary user-operated Scrumboy servers.
+The Scrumboy instance administrator configures these variables once. The proposed manifest wizard will remove this manual operator step, but is not yet implemented.
 
 The server accepts three environment variables:
 
@@ -90,7 +79,7 @@ In a durable project where an instance administrator connected the GitHub App an
 
 **Existing installations need to approve the two additional read permissions**. Scrumboy requests new short-lived tokens only when issue/PR lookup or search is used. Those tokens are minted with GitHub's `repository_ids` restricted to the exact provider repository ID associated with the selected project. The original metadata-only installation-discovery token remains separate. No issue/PR access token or private key is persisted in SQLite, the browser or a card.
 
-**Current implementation and required next step:** M3.2 supports **trusted instance-administrator-managed connections only**. For broad user adoption, Scrumboy will use the shared **Scrumboy Connect** App, not require users to create their own Apps. That **requires** a separately authenticated, ownership-bound installation flow and server-side credential broker, described in [the shared-App design](github-shared-app.md). Neither the direct-mode code nor this documentation change implements that broker. Do not share the App's PEM key, accept arbitrary installation IDs as authorization, or expose the shared installation directory to unrelated tenants.
+**Security boundary:** GitHub installations are instance-managed and can be discovered only by a Scrumboy Owner/Admin. Project Maintainers associate resources; project Contributors link cards. Neither a GitHub installation nor a Scrumboy public board makes private repository information available to unrelated users. The future setup wizard is tracked in #371.
 
 Read-only project API (normal Scrumboy authentication and mutation header required):
 
@@ -143,7 +132,7 @@ Project Maintainers can `POST /api/board/{slug}/integrations/resources` with `{"
 - On a **successful complete synchronization**, repositories missing from the installation's accessible set are marked **unavailable**. Their last-known metadata, Scrumboy resource IDs, project associations, and card references are retained. Existing links are displayed as unavailable and may be explicitly unlinked, but no new links or project associations may be added until GitHub access is restored. A subsequent complete scan that sees the same immutable GitHub repository ID restores availability without losing references. Repository renames retain the same stable ID.
 - Disconnecting locally deletes associated Scrumboy references and attempts to revoke the installation token currently cached by the process. It does not uninstall the App on GitHub or revoke other tokens issued elsewhere. To remove GitHub-side access altogether, uninstall the App or change its permissions in GitHub settings.
 - Provider API access is deliberately fixed to GitHub's public API. GitHub Enterprise Server is not supported in M3.
-- Shared-App end-user installation, self-hosted service-to-service authorization, and per-user installation binding are **planned and not yet implemented**; the existing instance-global administrator connection model is not a safe substitute for them.
+- There is no central GitHub App broker, hosted relay, or service-to-service enrollment. Keep App private keys local to the instance and limit installation and project access independently.
 
 For provider API details see the [GitHub App REST API documentation](https://docs.github.com/en/rest/apps/apps), [installation API](https://docs.github.com/en/rest/apps/installations) and [installation-token guide](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
 

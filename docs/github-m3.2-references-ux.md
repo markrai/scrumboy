@@ -1,6 +1,6 @@
 # M3.2: Todo References UX refinement
 
-This change is part of cumulative PR #366 and remains **trusted administrator-managed GitHub App mode only**. It does not implement shared-App M3.3.C or grant unrelated users access to the installation.
+This change is part of cumulative PR #366 and remains **trusted administrator-managed GitHub App mode only**. It does not implement the planned App Manifest onboarding wizard or give unrelated users access to the instance-owned installation.
 
 ## Phases
 
@@ -16,7 +16,7 @@ This change is part of cumulative PR #366 and remains **trusted administrator-ma
 2. Return to **Details**, enter a title, and save. Open the created Todo → References; the selected repository and issue/PR must now appear as real persisted references. Verify that the Todo title/body were not altered by GitHub and that no GitHub write occurred.
 3. Filter by type, open/closed status and title (without a Search click); select another item. Reopen the Todo to verify persistence and then unlink the item.
 4. Check Viewer mode (cached references visible, no link/edit actions), unrelated project membership, unavailable repositories and a deliberately disconnected provider. Error handling should not remove previous references or silently create duplicate Todos.
-5. Record test revision, digest and redacted acceptance evidence. Do not qualify user self-service Scrumboy Connect until the M3.3.C security gate passes.
+5. Record test revision, digest and redacted acceptance evidence. The App Manifest setup wizard is tracked in #371 and is not implemented or live-qualified.
 
 ## Boundaries
 

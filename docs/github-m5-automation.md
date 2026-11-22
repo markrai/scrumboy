@@ -93,7 +93,7 @@ After enabling a matching rule, \`reason\` becomes \`ready_for_new_events\`, whi
 - **M5.D:** Add user-facing rule creation, preview and activation controls to project settings. The current milestone exposes the backend API only.
 - **M5.E:** Full Go, frontend, migration, role/tenant, negative security and live staging acceptance. No release of automatic actions until this passes.
 
-M3.3.C's browser/session GitHub connection and cross-tenant qualification remain deferred, not complete. M5.A does not activate that shared-App feature and does not change public-board visibility.
+The instance-owned GitHub App is currently administrator-managed; automated App creation and independent-instance qualification remain separate work. M5.A does not change public-board visibility.
 
 ## M5.B: authenticated event matching (read-only)
 
@@ -101,7 +101,7 @@ M3.3.C's browser/session GitHub connection and cross-tenant qualification remain
 
 ### GitHub App event subscriptions and mapping
 
-The Scrumboy Connect App's GitHub settings must subscribe to **Issues** and **Pull request** events, in addition to the existing Installation, Installation repositories and Repository events. The webhook secret remains server-side and all event types share the existing signed webhook endpoint. These new subscriptions must be enabled separately by the operator; configuration or public connection flows are not changed here.
+The instance-owned GitHub App's settings must subscribe to **Issues** and **Pull request** events, in addition to the existing Installation, Installation repositories and Repository events. The webhook secret remains server-side and all event types share the existing signed webhook endpoint. These new subscriptions must be enabled separately by the operator; configuration or public connection flows are not changed here.
 
 | Verified GitHub event | Normalized M5 event |
 | --- | --- |
@@ -139,7 +139,7 @@ The existing admin-only webhook status endpoint \`GET /api/admin/integrations/gi
 
 M5.A's \`execution_approved_at\` still has a database constraint requiring \`NULL\`. **M5.A/B were deliberately non-executing.** The current implementation authorizes future notifications when a Maintainer enables a rule; migration 098 ensures events admitted before the upgrade are not backfilled.
 
-The public shared-App browser/session binding and live multi-tenant staging remain blocked by deferred M3.3.C. M5.B is a backend metadata-processing milestone, **not** general availability.
+Independent-instance isolation and live signed-delivery testing remain pending. M5.B is a backend metadata-processing milestone, **not** general availability.
 
 ## M5.C–E: enabling a rule authorizes in-app notifications
 
@@ -155,7 +155,7 @@ The project rule list and preview endpoints retain `executionAvailable:true` for
 
 ### Diagnosing a real GitHub issue with no notification
 
-1. Confirm the installed GitHub App is subscribed to **Issues** events and that its configured webhook destination reaches the exact Scrumboy deployment being tested. One shared GitHub App webhook destination does not automatically deliver events to every self-hosted/test instance.
+1. Confirm the installed GitHub App is subscribed to **Issues** events and that its configured webhook destination reaches the exact Scrumboy deployment being tested. Each instance-owned GitHub App must have a reachable webhook destination; a private-only Tailscale address cannot receive direct GitHub deliveries.
 2. Create a **new** issue after the rule was enabled. Previously received webhook events are never backfilled.
 3. Open **Settings → Automations**, refresh, and check **Recent matches**. If empty, first investigate GitHub webhook delivery, installation/repository ownership, and rule event matching. A successful preview is not evidence that a live webhook arrived.
 4. If the match exists, check **Notification history** and the action's **Audit details**. Completed means an in-app history record was created. Failed or cancelled actions expose bounded status/reason details. This milestone does not produce desktop/push alerts or a notification-center badge.
@@ -168,4 +168,4 @@ Project Viewers, Contributors and Maintainers may view rules, previews, matches,
 
 The tab calls only project-scoped authenticated APIs: `/integrations/resources`, `/integrations/automation-rules`, `/integrations/automation-rules/{id}/preview`, `/integrations/automation-matches`, `/integrations/automation-actions`, and `/integrations/automation-actions/{id}/audit`. Audits are append-only transition records; previews are strictly read-only.
 
-**Remaining release gates:** Complete M5.E two-tenant live webhook and browser qualification, replay/revocation/restart/retry exercises, failure-path tests and final CI. The deferred M3.3.C shared GitHub App browser authorization remains a separate public rollout blocker. PR #366 stays open and non-draft until these gates pass.
+**Remaining release gates:** Complete M5.E two-tenant live webhook and browser qualification, replay/revocation/restart/retry exercises, failure-path tests and final CI. Independent-instance isolation and the planned App Manifest wizard are tracked in #371; live webhook acceptance remains a rollout blocker. PR #366 stays open and non-draft until these gates pass.

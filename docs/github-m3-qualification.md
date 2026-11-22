@@ -42,73 +42,17 @@ This is the release gate for the live GitHub App integration before automatic Gi
 8. Inspect request metadata in test logs/fakes: GitHub issue/PR tokens must request only read permissions and `repository_ids` restricted to the associated repository ID. Do not expose tokens, PEM contents or JWTs in logs or responses.
 9. Remove GitHub App access to the disposable repository, verify cached linked item metadata remains visible as unavailable, then restore the installation's access and test refresh. No GitHub-side or card-content mutation occurs.
 
-**Shared-App product requirement:** Ordinary users must eventually connect their own selected GitHub repositories through the shared Scrumboy Connect App **without creating an App or receiving the shared PEM key**. The existing M3.2 direct mode is restricted to trusted instance administrators and is **not qualified** for unrelated tenants. See [shared-App implementation and acceptance gate](github-shared-app.md); do not declare the shared experience supported until that separate gate passes.
+**Self-hosted product requirement:** An instance administrator owns one GitHub App per instance. Project members do not create Apps, supply PEM keys or manage webhooks. App Manifest onboarding is planned in [#371](https://github.com/markrai/scrumboy/issues/371); it is not yet released.
 
-## Scenario E: shared-App release gate (required; implementation NOT started)
+## Scenario E: independent-instance isolation (live acceptance pending)
 
-- [ ] Host the one shared Scrumboy Connect App's private key solely in the trusted Scrumboy integration service. Never distribute it to self-hosted Scrumboy instances.
-- [ ] Authenticate the actual GitHub installer/account and bind each installation ID to an authorized Scrumboy user, tenant and project context; reject spoofed `installation_id` and callback/replay attacks.
-- [ ] Allow a user to select only their own authorized installation and its selected repositories. Ensure an unrelated Scrumboy user cannot list another installation's account names, repository metadata or issue/PR search results.
-- [ ] Enforce project-level Scrumboy role checks, server-to-service authentication, scoped backend access and revocation independently of GitHub App permissions, including on self-hosted deployments.
-- [ ] Test at least two unrelated GitHub accounts with separate installations, including private repositories and negative cross-account/cross-tenant attempts; verify the maintainer's `markrai` repositories never appear for another user.
-- [ ] Verify GitHub uninstall/suspension, account disconnect, repository removal, private-key rotation and token expiry do not leak credentials or silently destroy card references.
-- [ ] Document the privacy boundaries: Scrumboy project members may see metadata that a project administrator deliberately associates with their project, but installing the App alone never shares the maintainer's repositories.
-- [ ] Complete end-to-end hosted and self-hosted qualification before documenting `Connect GitHub` as available to ordinary users.
+- [ ] Deploy two independent Scrumboy instances, each with its own GitHub App and installation, and demonstrate no cross-instance installation discovery, repository metadata access or event matching.
+- [ ] Confirm only instance Owners/Admins configure installation connections; project Maintainers associate repositories and project Contributors link cards, with public/anonymous routes denied.
+- [ ] Confirm two GitHub accounts' repositories, issues and pull requests cannot be enumerated across unrelated Scrumboy installations, including private resources.
+- [ ] Verify App suspension/uninstall, repository removal, key rotation and token expiry do not leak credentials or silently delete card references.
+- [ ] Verify genuine signed GitHub issues and pull request webhooks reach the instance's public HTTPS destination; unsigned/forged requests fail. The rule must be enabled before event admission.
+- [ ] Verify no calls to scrumboy.com or a centrally operated broker are required, and capture redacted acceptance evidence.
 
-**Status:** Architecture decision documented only. Scenario E is not passed by the existing M3.2 automated tests or Vega's trusted-owner test installation.
-
-## Scenario F: isolated broker qualification (implemented; live acceptance pending)
-
-- [x] Separate executable requiring TLS 1.3, client CA verification and exact client certificate fingerprint pinning.
-- [x] Explicit expiring server-owned grants for installation and repository ID; no global installation listing, repository URL parameters, token export or generic GitHub API path.
-- [x] Bounded JSON, rate budgets and canonical result validation with cross-instance, cross-repository, expired-grant, provider-error and spoofed client identity tests.
-- [ ] Verify broker server and client TLS connection against test certificates on isolated infrastructure; confirm unpinned clients cannot connect.
-- [ ] Qualify a disposable installation and repository with a short-lived operator grant; verify safe success, denial, expiry and restart-driven revocation.
-- [ ] Replace the temporary operator-snapshot grant source with durable verified user-to-installation ownership and online revocation before any general release.
-- [ ] Integrate a verified identity-bound instance client; run two-tenant end-to-end tests without publishing credentials.
-
-**Status:** Code and automated tests added. No publicly usable central shared-App service, self-hosted enrollment or end-user connection flow is implemented. See [broker staging documentation](github-broker.md).
-
-## Scenario G: M3.3.B durable verified ownership (backend code implemented; acceptance pending)
-
-- [x] Separate broker ownership SQLite database and explicit user-bound request mode; no static-grant fallback, no App PEM exposure.
-- [x] Internal coordinator takes one-time GitHub OAuth verification and intersects authenticated-user repository IDs with installation resources before atomic persistence.
-- [x] Enforce instance, local user, installation and repository identity on every lookup. Reject forged subjects, wrong providers, duplicate IDs, missing metadata and unverified calls.
-- [x] Replace removed repositories atomically, retain per-instance/user isolation, persist across process restarts, and support live user/installation/instance/repository revocation.
-- [x] Provisional 24-hour expiration and deny-by-default startup; zero user-owned grants when configured but not enrolled.
-- [x] mTLS-only user/install/repository revocation endpoints with one-time OAuth state invalidation and per-subject completion/revocation serialization.
-- [x] Add bounded, mTLS-only OAuth begin/complete endpoints to the user-bound broker for operator qualification, with secret-bearing code exchange only on the central broker.
-- [ ] Implement verified Scrumboy session/authenticated-user initiation and browser-bound OAuth callback; operator mTLS endpoints alone are not proof of the end user's session.
-- [ ] Wire verified self-hosted instances to the user-bound broker, enforce project membership at the instance boundary, and prevent fabricated `userId` access.
-- [ ] Qualify real GitHub installation revocation, user membership loss and reauthorization; determine secure automatic refresh behavior.
-- [ ] Complete a two-tenant end-to-end staging test before enabling any public Connect GitHub button.
-
-**Status:** The core persistence/authorization service is implemented; this is **not** live M3.3.B or public user connection acceptance. See [broker modes](github-broker.md).
-
-## Scenario H: M3.3.D self-hosted transport (implemented; live acceptance pending)
-
-- [x] Self-hosted instance client with TLS 1.3, registered client certificate, verified server CA, no redirects, bounded responses and fixed read-only issue/PR/OAuth broker endpoints.
-- [x] Broker-side SQLite registry of approved client certificate fingerprints with immediate per-certificate revocation and persistent restart-safe isolation.
-- [x] Operator-only register, rotate (maximum two active certificates), revoke and atomic instance-disconnect operations. The shared GitHub App PEM and installation tokens never leave the central broker.
-- [x] Separate `-dynamic-clients` user-bound mode, with no fallback to legacy operator grants or client-identity snapshots.
-- [ ] Complete authenticated Scrumboy user/session and project authorization integration before exposing client operations to ordinary users (**M3.3.C deferred, not passed**).
-- [ ] Qualify self-hosted instance registration, private repository authorization, certificate rotation/revocation and cross-account failures against two unrelated GitHub installations.
-- [ ] Design safe self-service instance enrollment, distributed rate budgets and broker rate-limit/revocation handling before production rollout.
-
-**Status:** M3.3.D foundational code implemented, with live and public-release acceptance still pending. See [self-hosted setup](github-self-hosted.md).
-
-## Scenario I: M3.3.E operational broker safeguards (implementation complete; live acceptance pending)
-
-- [x] User-bound broker requires atomic on-disk fixed-window rate admission for every read-only issue/PR and OAuth operation, alongside local process budgets.
-- [x] Enforce instance and global limits across processes accessing one SQLite file; fail closed on missing database, clock rollback and budget exhaustion.
-- [x] Keep redacted per-minute operation counts (24-hour retention) and transactional security history for verified bindings and certificate/connection changes (30-day retention).
-- [x] Provide bounded operator-only activity retrieval, no public audit API and no secret-bearing payloads in event rows.
-- [x] Regression tests for shared budget exhaustion, restart persistence, wrong-instance access, audit rollback, private-data omission and retention.
-- [ ] Qualify multi-host deployment with a genuinely shared transactional budget backend and upstream GitHub rate-limit behavior.
-- [ ] Qualify real broker restarts, restored SQLite data, operator audit review, certificate rotation and two-tenant live failure cases.
-- [ ] Complete **M3.3.C** user/session-bound callbacks and authorization before any shared-App public release (**deferred, not accepted**).
-
-**Status:** The operational code is implemented for a broker deployment using one authoritative SQLite file. Multi-host coordination, live acceptance and ordinary-user rollout are **not** complete. See [broker safeguards](github-broker.md).
 
 ## Automated tests and CI
 - `go test ./internal/integration/... ./internal/store/... ./internal/httpapi/... ./internal/mcp/... ./internal/migrate/...`
@@ -137,6 +81,6 @@ M4 may be developed on this PR, but the M3 acceptance checkbox stays open until 
 - [x] Unit and integration tests covering invalid signatures, malformed/unknown events, duplicates, revoked installations, stale claims, transient database errors, project boundaries and non-execution.
 - [ ] Confirm latest Go, frontend, security and migration CI runs all pass.
 - [ ] Validate live two-tenant GitHub webhooks, installed App permissions, revocation, replay and process restart behavior in staging before public rollout.
-- [ ] Finish deferred M3.3.C browser-session authorization before ordinary users can connect to Scrumboy Connect.
+- [ ] Complete independent-instance and signed webhook live acceptance before general release.
 
-**Non-negotiable:** \`execution_approved_at\` remains NULL, no action executor is wired, and enabling a rule does not authorize any automated action.
+**Non-negotiable:** The legacy `execution_approved_at` column grants no permission. Only an enabled rule receiving a future signed, authorized event can produce an in-app notification. No GitHub or card writes are executed.

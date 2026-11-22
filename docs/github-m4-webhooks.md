@@ -9,7 +9,7 @@ The GitHub App must already be configured and the Scrumboy instance must run in 
 1. Generate a strong random secret, for example `openssl rand -hex 32`. Store the resulting printable value in a host file, outside both the source tree and Scrumboy data/backups. Restrict the host file permissions to the Scrumboy process.
 2. In GitHub App settings, enable **Webhook → Active** and paste **the exact same secret** into the Webhook Secret field. A trailing newline in the file is trimmed at startup; internal whitespace is significant.
 3. Configure a **publicly reachable HTTPS** endpoint: `https://YOUR-SCRUMBOY-HOST/api/integrations/github/webhook`. GitHub cannot deliver to a private Tailscale-only port or to Vega's localhost HTTP port 9447. Use a protected staging HTTPS host for initial live acceptance.
-4. Subscribe only to the **Installation**, **Installation repositories** and **Repository** events. This functionality requires no additional repository write permissions beyond the existing GitHub App's metadata-read access.
+4. Subscribe to **Installation**, **Installation repositories**, and **Repository** events for M4, and also **Issues** and **Pull request** for M5 notifications. Read-only Issues/Pull requests permissions suffice; no write permissions are required.
 5. Mount the secret file read-only inside Docker and set `SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE` to the **container path**. The private key is a different file, still controlled through `SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE`.
 6. Restart the isolated instance, then send a GitHub **ping** and an installation-repository event to verify delivery. Never deploy untested changes directly to a production database.
 
