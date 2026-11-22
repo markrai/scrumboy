@@ -153,6 +153,10 @@ A webhook event is eligible only when it passed raw-body HMAC verification, maps
 
 The project rule list and preview endpoints retain `executionAvailable:true` for API compatibility. Preview always returns `sampleOnly:true` and `wouldExecute:false`. A matching enabled rule reports `reason:"ready_for_new_events"`; a disabled one reports `reason:"rule_disabled"`. Preview **never** creates a GitHub event or in-app notification, and it does not verify delivery to this particular deployment.
 
+### Readiness diagnostics (S1)
+
+Settings → GitHub (instance Owner/Admin) distinguishes App configured, webhook receiver disabled, missing installation, awaiting a signed delivery, and a signed event received since the process started. Project members see reduced status in Settings → Automations without the administrator webhook URL or installation counts. `lastVerifiedAt` resets on restart; a verified ping does not prove that Issues or Pull request subscriptions are enabled. See [M4 operator guide](github-m4-webhooks.md).
+
 ### Diagnosing a real GitHub issue with no notification
 
 1. Confirm the installed GitHub App is subscribed to **Issues** events and that its configured webhook destination reaches the exact Scrumboy deployment being tested. Each instance-owned GitHub App must have a reachable webhook destination; a private-only Tailscale address cannot receive direct GitHub deliveries.

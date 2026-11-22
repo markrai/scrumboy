@@ -136,6 +136,6 @@ Project Maintainers can `POST /api/board/{slug}/integrations/resources` with `{"
 
 For provider API details see the [GitHub App REST API documentation](https://docs.github.com/en/rest/apps/apps), [installation API](https://docs.github.com/en/rest/apps/installations) and [installation-token guide](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
 
-## Optional GitHub webhook receiver (M4)
+## Optional GitHub webhook receiver and readiness (S1/M4)
 
-M4 adds an independent, opt-in **inbound** webhook receiver. The M3 integration and its normal manual repository refresh work without this feature. For signed webhook setup, HTTPS staging, failure semantics and administration, see [GitHub inbound webhooks](github-m4-webhooks.md).
+M4 adds an independent, opt-in **inbound** webhook receiver. Repository browsing and explicit refresh still work without it. S1 surfaces a redacted readiness status in Settings → GitHub and project Automations. **An App being configured does not imply GitHub events can arrive.** The receiver accepts `SCRUMBOY_GITHUB_WEBHOOK_SECRET` or `SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE`, never both. It reports a canonical webhook URL when a pathless HTTPS `SCRUMBOY_PUBLIC_BASE_URL` is set. GitHub event subscriptions and external reachability remain unverified until genuine signed delivery is observed. See [GitHub inbound webhooks](github-m4-webhooks.md).

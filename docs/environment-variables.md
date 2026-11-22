@@ -78,6 +78,18 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | `SCRUMBOY_ASSET_INSTANCE_BUDGET_MB` | 10240          | Optional  | Note-image storage budget per instance, MiB (`0` disables)     |
 
 
+### GitHub integration (Full Mode, optional)
+
+| Variable | Default | Required? | Purpose |
+| --- | --- | --- | --- |
+| `SCRUMBOY_GITHUB_APP_ID` | empty | Required for GitHub App integration | Numeric instance-owned GitHub App ID |
+| `SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE` | empty | Required for GitHub App integration | Path to the App's RSA private-key PEM |
+| `SCRUMBOY_GITHUB_APP_SLUG` | empty | Optional | App slug for the installation URL |
+| `SCRUMBOY_GITHUB_WEBHOOK_SECRET` | empty | Either this or the file path for inbound webhooks | HMAC-SHA256 shared secret supplied via an environment variable |
+| `SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE` | empty | Either this or the inline secret for inbound webhooks | HMAC shared-secret file path, preferred for production secret mounts |
+
+Use exactly **one** webhook secret source (minimum 32 bytes). Setting both fails startup without printing either secret. When neither is configured, the webhook receiver is disabled (404), but repository browsing still works. Environment values can appear in container inspection; protect operator access. See [GitHub webhook setup](github-m4-webhooks.md).
+
 ### Web Push (VAPID)
 
 
