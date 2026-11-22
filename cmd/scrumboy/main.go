@@ -195,7 +195,7 @@ func main() {
 			return errors.New("server not ready")
 		}
 		return srv.ActivateGitHub(provider, slug, receiver)
-	})
+	}, nil)
 	if githubErr != nil {
 		logger.Fatalf("GitHub App setup: %v", githubErr)
 	}

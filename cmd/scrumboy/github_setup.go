@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 
@@ -25,7 +26,7 @@ type githubStartup struct {
 
 type githubActivation func(integration.Provider, string, *githubwebhook.Service) error
 
-func prepareGitHub(cfg config.Config, inbox githubwebhook.Inbox, logger *log.Logger, activate githubActivation) (githubStartup, error) {
+func prepareGitHub(cfg config.Config, inbox githubwebhook.Inbox, logger *log.Logger, activate githubActivation, manifestClient *http.Client) (githubStartup, error) {
 	var result githubStartup
 	manual := cfg.GitHubAppID != "" || cfg.GitHubAppPrivateKeyFile != ""
 	if manual {
@@ -98,7 +99,7 @@ func prepareGitHub(cfg config.Config, inbox githubwebhook.Inbox, logger *log.Log
 	if !githubmanifest.ValidOrigin(cfg.PublicBaseURL) || activate == nil {
 		return result, nil
 	}
-	result.manifest = githubmanifest.New(nil, func(ctx context.Context, creds githubmanifest.Credentials) error {
+	result.manifest = githubmanifest.New(manifestClient, func(ctx context.Context, creds githubmanifest.Credentials) error {
 		provider, err := githubapp.New(creds.AppID, creds.PrivateKey, nil)
 		if err != nil {
 			return errors.New("received GitHub App credentials were invalid")
