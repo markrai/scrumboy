@@ -29,7 +29,8 @@ function appendGitHubMark(parent) {
     parent.append(mark);
 }
 function appendReadiness(parent, readiness) {
-    if (!readiness || typeof readiness.message !== 'string') return;
+    if (!readiness || typeof readiness.message !== 'string')
+        return;
     const labels = {
         not_configured: 'GitHub not configured',
         events_unavailable: 'GitHub events unavailable',
@@ -53,7 +54,6 @@ function appendReadiness(parent, readiness) {
     textNode(header, 'strong', labels[readiness.state] || 'GitHub event status');
     textNode(header, 'p', summaries[readiness.state] || readiness.message);
     section.append(header);
-
     const details = document.createElement('details');
     details.className = 'github-integration__diagnostics';
     textNode(details, 'summary', 'Connection details and troubleshooting');
@@ -63,8 +63,10 @@ function appendReadiness(parent, readiness) {
         const item = document.createElement('div');
         textNode(item, 'dt', name);
         const cell = textNode(item, 'dd', '');
-        if (isCode) textNode(cell, 'code', value);
-        else cell.textContent = value;
+        if (isCode)
+            textNode(cell, 'code', value);
+        else
+            cell.textContent = value;
         grid.append(item);
     };
     fact('App credentials', readiness.appConfigured ? 'Configured' : 'Not configured');
@@ -78,10 +80,10 @@ function appendReadiness(parent, readiness) {
     }
     if (typeof readiness.lastVerifiedAt === 'string') {
         const date = Date.parse(readiness.lastVerifiedAt);
-        if (Number.isFinite(date)) fact('Last signed delivery since restart', new Date(date).toLocaleString());
+        if (Number.isFinite(date))
+            fact('Last signed delivery since restart', new Date(date).toLocaleString());
     }
     details.append(grid);
-
     if (readiness.appConfigured) {
         textNode(details, 'h5', 'What to check');
         const steps = document.createElement('ol');
@@ -92,7 +94,8 @@ function appendReadiness(parent, readiness) {
             'Subscribe the GitHub App to Issues and Pull request events.',
             'An unsigned POST returns 401 when the receiver is enabled and 404 when disabled. An HTML 200 indicates the request reached the frontend instead of the webhook handler.',
         ];
-        for (const instruction of instructions) textNode(steps, 'li', instruction);
+        for (const instruction of instructions)
+            textNode(steps, 'li', instruction);
         details.append(steps);
     }
     section.append(details);
@@ -172,11 +175,14 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
                         start.disabled = true;
                         try {
                             const enrollment = await apiFetch(base + '/manifest/start', { method: 'POST', signal });
-                            if (!signal.aborted) submitGitHubManifest(enrollment);
+                            if (!signal.aborted)
+                                submitGitHubManifest(enrollment);
                         } catch {
-                            if (!signal.aborted) showToast('GitHub App setup could not start. Check the instance configuration.');
+                            if (!signal.aborted)
+                                showToast('GitHub App setup could not start. Check the instance configuration.');
                         } finally {
-                            if (!signal.aborted) start.disabled = false;
+                            if (!signal.aborted)
+                                start.disabled = false;
                         }
                     })();
                 });
