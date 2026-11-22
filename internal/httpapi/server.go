@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -269,6 +270,8 @@ type Server struct {
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service
+	githubMu sync.RWMutex
+	githubClosed bool
 	githubProvider integration.Provider
 	githubAppSlug string
 	githubWebhook *githubwebhook.Service
@@ -1218,11 +1221,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Path == "/api/integrations/github/webhook" {
-		if s.mode != "full" || s.githubWebhook == nil {
+		_, _, receiver := s.githubSnapshot()
+		if s.mode != "full" || receiver == nil {
 			http.NotFound(w, r)
 			return
 		}
-		s.githubWebhook.ServeHTTP(w, r)
+		receiver.ServeHTTP(w, r)
 		return
 	}
 
@@ -1295,6 +1299,11 @@ func (s *Server) ShutdownPublicStreams() {
 // Once a worker observes close-context cancellation, it starts no further
 // queued item or send attempt. Call from main on shutdown.
 func (s *Server) Close(ctx context.Context) {
+	s.githubMu.Lock()
+	s.githubClosed = true
+	githubCancel := s.githubWebhookCancel
+	githubWorker := s.githubWebhook
+	s.githubMu.Unlock()
 	s.ShutdownPublicStreams()
 	// The reminder scheduler is a producer for the webhook and mail workers, so it
 	// stops and finishes publishing before they are sealed; otherwise a tick that
@@ -1337,8 +1346,8 @@ func (s *Server) Close(ctx context.Context) {
 	if s.durableWebhookCancel != nil {
 		s.durableWebhookCancel()
 	}
-	if s.githubWebhookCancel != nil {
-		s.githubWebhookCancel()
+	if githubCancel != nil {
+		githubCancel()
 	}
 	if s.transactionalMailCancel != nil {
 		s.transactionalMailCancel()
@@ -1353,7 +1362,7 @@ func (s *Server) Close(ctx context.Context) {
 	}{
 		{"webhook", s.webhookDone},
 		{"durable webhook", s.durableWebhookDone},
-		{"github inbound", func() <-chan struct{} { if s.githubWebhook != nil && s.githubWebhookCancel != nil { return s.githubWebhook.Done() }; return nil }()},
+		{"github inbound", func() <-chan struct{} { if githubWorker != nil && githubCancel != nil { return githubWorker.Done() }; return nil }()},
 		{"transactional mail", s.transactionalMailDone},
 		{"notification mail", s.notificationMailDone},
 	} {

@@ -11,11 +11,12 @@ import (
 )
 
 func (s *Server) githubItemProvider(w http.ResponseWriter) (integration.IssuePullRequestProvider,bool) {
-    if s.mode!="full" || s.githubProvider==nil {
+    active, _, _ := s.githubSnapshot()
+    if s.mode!="full" || active==nil {
         writeError(w,http.StatusServiceUnavailable,"CAPABILITY_UNAVAILABLE","GitHub App is not configured",nil)
         return nil,false
     }
-    p,ok:=s.githubProvider.(integration.IssuePullRequestProvider)
+    p,ok:=active.(integration.IssuePullRequestProvider)
     if !ok {
         writeError(w,http.StatusServiceUnavailable,"CAPABILITY_UNAVAILABLE","GitHub issue and PR search is unavailable",nil)
         return nil,false
@@ -70,11 +71,12 @@ func (s *Server) handleProjectGitHubBrowse(w http.ResponseWriter, r *http.Reques
     }
     repo, err := s.store.GetGitHubProjectRepository(s.requestContext(r), actor, pc.Project.ID, resourceID, false)
     if err != nil { writeStoreErr(w, err, true); return }
-    if s.mode != "full" || s.githubProvider == nil {
+    active, _, _ := s.githubSnapshot()
+    if s.mode != "full" || active == nil {
         writeError(w, http.StatusServiceUnavailable, "CAPABILITY_UNAVAILABLE", "GitHub App is not configured", nil)
         return
     }
-    provider, ok := s.githubProvider.(integration.IssuePullRequestBrowser)
+    provider, ok := active.(integration.IssuePullRequestBrowser)
     if !ok {
         writeError(w, http.StatusServiceUnavailable, "CAPABILITY_UNAVAILABLE", "GitHub browsing is unavailable", nil)
         return

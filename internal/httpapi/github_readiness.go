@@ -21,8 +21,9 @@ func githubActiveConnectionCount(connections []store.IntegrationConnection) int 
 }
 
 func (s *Server) githubReadiness(admin bool, activeConnections int) map[string]any {
-    appConfigured := s.mode == "full" && s.githubProvider != nil
-    webhookConfigured := appConfigured && s.githubWebhook != nil
+    provider, _, receiver := s.githubSnapshot()
+    appConfigured := s.mode == "full" && provider != nil
+    webhookConfigured := appConfigured && receiver != nil
     readiness := map[string]any{
         "appConfigured": appConfigured,
         "webhookConfigured": webhookConfigured,
@@ -33,7 +34,7 @@ func (s *Server) githubReadiness(admin bool, activeConnections int) map[string]a
     }
     lastVerified := time.Time{}
     if webhookConfigured {
-        lastVerified = s.githubWebhook.LastVerifiedAt()
+        lastVerified = receiver.LastVerifiedAt()
         if !lastVerified.IsZero() {
             readiness["lastVerifiedAt"] = lastVerified.Format(time.RFC3339)
         }

@@ -47,20 +47,21 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		return
 	}
 	rest=rest[1:]
+	provider, appSlug, webhook := s.githubSnapshot()
 	if len(rest)==2 && rest[0]=="manifest" && rest[1]=="start" {
 		s.handleGitHubManifestStart(w,r)
 		return
 	}
 	if len(rest)==1 && rest[0]=="webhooks" && r.Method==http.MethodGet {
-		if s.githubWebhook==nil || s.mode!="full" {
+		if webhook==nil || s.mode!="full" {
 			writeJSON(w,http.StatusOK,map[string]any{"configured":false})
 			return
 		}
-		counts,err:=s.githubWebhook.Summary(s.requestContext(r))
+		counts,err:=webhook.Summary(s.requestContext(r))
 		if err!=nil {writeInternal(w,err);return}
-		dead,err:=s.githubWebhook.Dead(s.requestContext(r),actorID)
+		dead,err:=webhook.Dead(s.requestContext(r),actorID)
 		if err!=nil {writeStoreErr(w,err,false);return}
-		automation,err:=s.githubWebhook.AutomationSummary(s.requestContext(r))
+		automation,err:=webhook.AutomationSummary(s.requestContext(r))
         if err!=nil && !errors.Is(err,store.ErrNotFound){writeInternal(w,err);return}
         writeJSON(w,http.StatusOK,map[string]any{
             "configured":true,"counts":counts,"deadDeliveries":dead,
@@ -69,7 +70,7 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		return
 	}
 	if len(rest)==3 && rest[0]=="webhooks" && rest[2]=="retry" && r.Method==http.MethodPost {
-		if s.githubWebhook==nil || s.mode!="full" {
+		if webhook==nil || s.mode!="full" {
 			writeError(w,http.StatusServiceUnavailable,"CAPABILITY_UNAVAILABLE","GitHub webhooks are not configured",nil)
 			return
 		}
@@ -78,7 +79,7 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 			writeValidationError(w,"invalid delivery id","invalid_delivery_id",map[string]any{"field":"deliveryId"})
 			return
 		}
-		if err:=s.githubWebhook.Retry(s.requestContext(r),actorID,id);err!=nil {
+		if err:=webhook.Retry(s.requestContext(r),actorID,id);err!=nil {
 			writeStoreErr(w,err,false)
 			return
 		}
@@ -89,28 +90,27 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 		installed,err:=s.store.ListIntegrationConnections(s.requestContext(r),actorID)
 		if err!=nil {writeStoreErr(w,err,false);return}
 		installURL:=""
-		if s.githubProvider!=nil && s.githubAppSlug!="" {
-			slug:=s.githubAppSlug
-			if len(slug)<=100 && !strings.ContainsAny(slug,"/\\?#%&@ ") {
-				installURL="https://github.com/apps/"+slug+"/installations/new"
+		if provider!=nil && appSlug!="" {
+			if len(appSlug)<=100 && !strings.ContainsAny(appSlug,"/\\?#%&@ ") {
+				installURL="https://github.com/apps/"+appSlug+"/installations/new"
 			}
 		}
 		writeJSON(w,http.StatusOK,map[string]any{
-			"configured":s.githubProvider!=nil && s.mode=="full",
-			"manifestEnrollmentAvailable":s.githubManifest!=nil && s.githubManifest.Available() && s.githubProvider==nil && s.mode=="full",
+			"configured":provider!=nil && s.mode=="full",
+			"manifestEnrollmentAvailable":s.githubManifest!=nil && s.githubManifest.Available() && provider==nil && s.mode=="full",
 			"installUrl":installURL,
 			"connections":githubConnectionsJSON(installed),
 			"readiness":s.githubReadiness(true, githubActiveConnectionCount(installed)),
 		})
 		return
 	}
-	if s.githubProvider==nil || s.mode!="full" {
+	if provider==nil || s.mode!="full" {
 		writeError(w,http.StatusServiceUnavailable,"CAPABILITY_UNAVAILABLE","GitHub App is not configured",nil)
 		return
 	}
 	ctx:=s.requestContext(r)
 	if len(rest)==1 && rest[0]=="installations" && r.Method==http.MethodGet {
-		items,err:=s.githubProvider.Installations(ctx)
+		items,err:=provider.Installations(ctx)
 		if err!=nil{s.githubProviderError(w,err);return}
 		writeJSON(w,http.StatusOK,items)
 		return
@@ -121,7 +121,7 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 			writeValidationError(w,"invalid installationId","invalid_installation_id",map[string]any{"field":"installationId"})
 			return
 		}
-		installations,err:=s.githubProvider.Installations(ctx)
+		installations,err:=provider.Installations(ctx)
 		if err!=nil{s.githubProviderError(w,err);return}
 		var installation integration.Installation
 		for _,item:=range installations {
@@ -131,7 +131,7 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 			writeError(w,http.StatusNotFound,"NOT_FOUND","GitHub installation is not available to this App",nil)
 			return
 		}
-		repos,err:=s.githubProvider.Resources(ctx,strconv.FormatInt(id,10))
+		repos,err:=provider.Resources(ctx,strconv.FormatInt(id,10))
 		if err!=nil{s.githubProviderError(w,err);return}
 		conn,err:=s.store.SyncGitHubInstallation(ctx,actorID,installation,repos)
 		if err!=nil{writeStoreErr(w,err,false);return}
@@ -178,7 +178,7 @@ func (s *Server) handleAdminIntegrations(w http.ResponseWriter,r *http.Request,a
 			if err:=s.store.DeleteGitHubInstallation(ctx,actorID,id,confirmation.Impact);err!=nil{writeStoreErr(w,err,false);return}
 			installationID,_:=strconv.ParseInt(conn.ExternalAccountID,10,64)
 			revokeCtx,cancel:=context.WithTimeout(ctx,3*time.Second)
-			revokeErr:=s.githubProvider.Revoke(revokeCtx,strconv.FormatInt(installationID,10))
+			revokeErr:=provider.Revoke(revokeCtx,strconv.FormatInt(installationID,10))
 			cancel()
 			if revokeErr!=nil {
 				s.logger.Printf("warning: could not revoke cached GitHub installation token after local disconnect")

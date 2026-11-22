@@ -23,7 +23,8 @@ func (s *Server) handleGitHubManifestStart(w http.ResponseWriter,r *http.Request
  if s.mode!="full"{writeError(w,http.StatusNotFound,"NOT_FOUND","not found",nil);return}
  id,ok:=s.manifestOwner(r)
  if !ok{writeError(w,http.StatusForbidden,"FORBIDDEN","instance owner required",nil);return}
- if s.githubProvider!=nil{writeError(w,http.StatusConflict,"INTEGRATION_CONFIGURED","An instance-owned GitHub App is already configured; manual configuration remains active",nil);return}
+ provider, _, _ := s.githubSnapshot()
+ if provider!=nil{writeError(w,http.StatusConflict,"INTEGRATION_CONFIGURED","An instance-owned GitHub App is already configured; manual configuration remains active",nil);return}
  if s.githubManifest==nil || !s.githubManifest.Available(){writeError(w,http.StatusServiceUnavailable,"INTEGRATION_UNAVAILABLE","Guided GitHub App setup is not enabled on this server",nil);return}
  reg,err:=s.githubManifest.Begin(id,s.publicBaseURL)
  if err!=nil{
@@ -43,7 +44,8 @@ func (s *Server) handleGitHubManifestCallback(w http.ResponseWriter,r *http.Requ
  if s.mode!="full" || s.githubManifest==nil || !s.githubManifest.Available(){http.NotFound(w,r);return}
  ownerID,ok:=s.manifestOwner(r)
  if !ok{http.Error(w,"Sign in as the instance owner to complete GitHub App setup",http.StatusForbidden);return}
- if s.githubProvider!=nil{http.Error(w,"GitHub App is already configured",http.StatusConflict);return}
+ provider, _, _ := s.githubSnapshot()
+ if provider!=nil{http.Error(w,"GitHub App is already configured",http.StatusConflict);return}
  if len(r.URL.Query()["code"])!=1 || len(r.URL.Query()["state"])!=1{http.Error(w,"Invalid or expired enrollment session",http.StatusBadRequest);return}
  err:=s.githubManifest.Complete(s.requestContext(r),ownerID,r.URL.Query().Get("state"),r.URL.Query().Get("code"))
  if err!=nil{
