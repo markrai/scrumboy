@@ -18,7 +18,7 @@ A self-hosted Scrumboy Full Mode instance uses a **GitHub App owned by its admin
 
 ### S2.1 Manifest enrollment foundation (not activated yet)
 
-The S2.1 branch provides a time-limited, owner-bound GitHub App manifest registration handshake and server-side exchange of GitHub's one-time code. The manifest requests only Metadata, Issues and Pull requests read permissions and subscribes to installation, installation-repository, repository, issue and pull-request events. A single-use CSRF state expires after ten minutes, and callbacks must retain the same instance-owner session. Failure responses never disclose PEMs, webhook secrets or conversion codes.
+The S2.1 branch provides a time-limited, owner-bound GitHub App manifest registration handshake and server-side exchange of GitHub's one-time code. The manifest requests only Metadata, Issues and Pull requests read permissions and subscribes to installation, installation-repository, repository, issue and pull-request events. A single-use CSRF state expires after ten minutes, and callbacks require authentication as the same instance Owner account. Failure responses never disclose PEMs, webhook secrets or conversion codes.
 
 **This is not yet a usable onboarding wizard.** The runtime does not supply the durable credential sink required by the enrollment service, so the create-App action is intentionally unavailable. S2.2 will wire secure atomic credential persistence, backup/restore policy, and provider activation before administrators are offered the new setup button. Existing manual configuration continues to work, and an already configured App cannot be silently overwritten.
 
