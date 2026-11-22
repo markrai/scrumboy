@@ -29,8 +29,7 @@ function appendGitHubMark(parent) {
     parent.append(mark);
 }
 function appendReadiness(parent, readiness) {
-    if (!readiness || typeof readiness.message !== 'string')
-        return;
+    if (!readiness || typeof readiness.message !== 'string') return;
     const labels = {
         not_configured: 'GitHub not configured',
         events_unavailable: 'GitHub events unavailable',
@@ -38,31 +37,65 @@ function appendReadiness(parent, readiness) {
         awaiting_verified_event: 'Awaiting verified GitHub event',
         verified_delivery: 'Signed GitHub event received',
     };
+    const summaries = {
+        not_configured: 'Configure an instance-owned GitHub App to link repositories.',
+        events_unavailable: 'Repository browsing is available, but automatic events are disabled.',
+        installation_required: 'Install the App on selected repositories, then connect the installation.',
+        awaiting_verified_event: 'The receiver is ready, but no signed GitHub event has arrived since restart.',
+        verified_delivery: 'A signed GitHub event reached this instance. Ongoing delivery is not yet verified.',
+    };
     const section = document.createElement('section');
     section.className = 'github-integration__readiness';
     section.setAttribute('role', 'status');
     section.setAttribute('data-github-readiness', String(readiness.state || 'unknown'));
-    textNode(section, 'strong', labels[readiness.state] || 'GitHub event status');
-    textNode(section, 'p', readiness.message);
-    if (readiness.state === 'events_unavailable') {
-        textNode(section, 'p', 'Set SCRUMBOY_GITHUB_WEBHOOK_SECRET or SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE on the server. Keep the secret private and restart Scrumboy.');
-    }
+    const header = document.createElement('div');
+    header.className = 'github-integration__readiness-summary';
+    textNode(header, 'strong', labels[readiness.state] || 'GitHub event status');
+    textNode(header, 'p', summaries[readiness.state] || readiness.message);
+    section.append(header);
+
+    const details = document.createElement('details');
+    details.className = 'github-integration__diagnostics';
+    textNode(details, 'summary', 'Connection details and troubleshooting');
+    const grid = document.createElement('dl');
+    grid.className = 'github-integration__diagnostic-grid';
+    const fact = (name, value, isCode = false) => {
+        const item = document.createElement('div');
+        textNode(item, 'dt', name);
+        const cell = textNode(item, 'dd', '');
+        if (isCode) textNode(cell, 'code', value);
+        else cell.textContent = value;
+        grid.append(item);
+    };
+    fact('App credentials', readiness.appConfigured ? 'Configured' : 'Not configured');
+    fact('Webhook receiver', readiness.webhookConfigured ? 'Enabled' : 'Disabled');
+    fact('Public reachability', 'Not verified');
+    fact('GitHub event subscriptions', 'Not verified');
     if (readiness.appConfigured) {
-        const destination = typeof readiness.webhookUrl === 'string' && readiness.webhookUrl
+        const target = typeof readiness.webhookUrl === 'string' && readiness.webhookUrl
             ? readiness.webhookUrl : String(readiness.webhookPath || '/api/integrations/github/webhook');
-        textNode(section, 'p', 'GitHub webhook destination (not externally verified):');
-        textNode(section, 'code', destination);
-        if (!readiness.webhookUrl) {
-            textNode(section, 'p', 'Set SCRUMBOY_PUBLIC_BASE_URL to a public HTTPS origin to display the full URL. Private Tailscale addresses are not reachable from GitHub.');
-        }
-        textNode(section, 'p', 'Unsigned POST: 401 when enabled, 404 when disabled. A 200 HTML response indicates the reverse proxy reached the app frontend, not the webhook receiver.');
-        textNode(section, 'p', 'GitHub event subscriptions and public reachability are not automatically verified.');
+        fact('Webhook destination', target, true);
     }
     if (typeof readiness.lastVerifiedAt === 'string') {
         const date = Date.parse(readiness.lastVerifiedAt);
-        if (Number.isFinite(date))
-            textNode(section, 'p', 'Last verified delivery since restart: ' + new Date(date).toLocaleString());
+        if (Number.isFinite(date)) fact('Last signed delivery since restart', new Date(date).toLocaleString());
     }
+    details.append(grid);
+
+    if (readiness.appConfigured) {
+        textNode(details, 'h5', 'What to check');
+        const steps = document.createElement('ol');
+        steps.className = 'github-integration__diagnostic-steps';
+        const instructions = [
+            'Set SCRUMBOY_GITHUB_WEBHOOK_SECRET or SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE on your server, then restart Scrumboy.',
+            'Use a public HTTPS webhook destination. A private Tailscale URL is not directly reachable by GitHub.',
+            'Subscribe the GitHub App to Issues and Pull request events.',
+            'An unsigned POST returns 401 when the receiver is enabled and 404 when disabled. An HTML 200 indicates the request reached the frontend instead of the webhook handler.',
+        ];
+        for (const instruction of instructions) textNode(steps, 'li', instruction);
+        details.append(steps);
+    }
+    section.append(details);
     parent.append(section);
 }
 export function bindGitHubSettingsTab(root, initialSlug, signal) {

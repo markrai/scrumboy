@@ -8166,6 +8166,103 @@ button.omni-tag-pill:focus-visible {
   border-color: color-mix(in srgb, var(--success) 25%, var(--border));
 }
 
+
+.github-integration__readiness {
+  margin: 14px 0 10px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  border-radius: var(--radius-10);
+  overflow: hidden;
+}
+
+.github-integration__readiness-summary {
+  padding: 14px 16px;
+  border-left: 3px solid var(--accent);
+}
+
+.github-integration__readiness[data-github-readiness="events_unavailable"] .github-integration__readiness-summary,
+.github-integration__readiness[data-github-readiness="installation_required"] .github-integration__readiness-summary {
+  border-left-color: var(--warning, var(--accent));
+}
+
+.github-integration__readiness-summary strong {
+  display: block;
+  font-size: var(--fs-14);
+  margin-bottom: 5px;
+}
+
+.github-integration__readiness-summary p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+
+.github-integration__diagnostics {
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-13);
+}
+
+.github-integration__diagnostics summary {
+  cursor: pointer;
+  padding: 10px 16px;
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.github-integration__diagnostics summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.github-integration__diagnostic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 6px 16px 12px;
+}
+
+.github-integration__diagnostic-grid > div {
+  min-width: 0;
+}
+
+.github-integration__diagnostic-grid dt {
+  color: var(--muted);
+  font-size: var(--fs-12);
+  margin-bottom: 4px;
+}
+
+.github-integration__diagnostic-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.github-integration__diagnostic-grid code {
+  display: inline-block;
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-all;
+  font-size: var(--fs-12);
+}
+
+.github-integration__diagnostics h5 {
+  margin: 0;
+  padding: 8px 16px 0;
+  font-size: var(--fs-13);
+}
+
+.github-integration__diagnostic-steps {
+  padding: 4px 24px 14px 36px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.github-integration__diagnostic-steps li + li {
+  margin-top: 5px;
+}
+
 .github-integration__toolbar {
   justify-content: space-between;
   flex-wrap: wrap;

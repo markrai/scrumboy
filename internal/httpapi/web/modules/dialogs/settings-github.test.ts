@@ -395,6 +395,11 @@ describe('GitHub event readiness', () => {
         const controller = new AbortController();
         bindGitHubSettingsTab(el, null, controller.signal);
         await vi.waitFor(() => expect(el.querySelector('[data-github-readiness="events_unavailable"]')).not.toBeNull());
+        const details = el.querySelector<HTMLDetailsElement>('.github-integration__diagnostics');
+        expect(details).not.toBeNull();
+        expect(details?.open).toBe(false);
+        expect(details?.querySelector('summary')?.textContent).toBe('Connection details and troubleshooting');
+        expect(el.querySelectorAll('.github-integration__diagnostic-grid dt').length).toBeGreaterThanOrEqual(4);
         expect(el.textContent).toContain('SCRUMBOY_GITHUB_WEBHOOK_SECRET');
         expect(el.textContent).toContain('/api/integrations/github/webhook');
         expect(el.textContent).toContain('401');
