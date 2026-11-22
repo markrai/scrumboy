@@ -50,6 +50,7 @@ type AutomationData = {
   repositories: Repository[];
   matches: AutomationMatch[];
   actions: AutomationAction[];
+  readiness?: { state: string; message: string };
 };
 
 const eventChoices: ReadonlyArray<[string, string]> = [
@@ -101,7 +102,7 @@ function labeledSelect(parent: HTMLElement, name: string, options: ReadonlyArray
   return select;
 }
 
-function validRules(value: unknown): value is { rules: AutomationRule[]; executionAvailable: boolean } {
+function validRules(value: unknown): value is { rules: AutomationRule[]; executionAvailable: boolean; readiness?: { state: string; message: string } } {
   if (!value || typeof value !== 'object') return false;
   const result = value as Record<string, unknown>;
   if (typeof result.executionAvailable !== 'boolean' || !Array.isArray(result.rules)) return false;
@@ -178,6 +179,11 @@ export function bindAutomationTab(options: { slug: string; canManage: boolean; s
       return;
     }
     const snapshot = data;
+    if (snapshot.readiness && typeof snapshot.readiness.message === 'string') {
+      const indicator = append(root, 'p', snapshot.readiness.message, 'settings-automations__notice');
+      indicator.setAttribute('role', 'status');
+      indicator.setAttribute('data-github-readiness', String(snapshot.readiness.state || 'unknown'));
+    }
     append(root, 'p', 'Enabling a rule starts notifications for future verified GitHub events. Disabling it stops notifications. Preview checks the rule without sending a GitHub event.', 'settings-automations__notice');
     const repositories = snapshot.repositories.filter(repo => repo.availability === 'available');
     const repositoryNames = new Map(snapshot.repositories.map(repo => [repo.id, repo.name]));
@@ -314,6 +320,7 @@ export function bindAutomationTab(options: { slug: string; canManage: boolean; s
         rules: rules.rules,
         matches: (matches as { matches: AutomationMatch[] }).matches,
         actions: nextActions,
+        readiness: rules.readiness,
       };
       previews.clear();
     } catch (error) {

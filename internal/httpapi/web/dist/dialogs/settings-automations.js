@@ -125,6 +125,11 @@ export function bindAutomationTab(options) {
             return;
         }
         const snapshot = data;
+        if (snapshot.readiness && typeof snapshot.readiness.message === 'string') {
+            const indicator = append(root, 'p', snapshot.readiness.message, 'settings-automations__notice');
+            indicator.setAttribute('role', 'status');
+            indicator.setAttribute('data-github-readiness', String(snapshot.readiness.state || 'unknown'));
+        }
         append(root, 'p', 'Enabling a rule starts notifications for future verified GitHub events. Disabling it stops notifications. Preview checks the rule without sending a GitHub event.', 'settings-automations__notice');
         const repositories = snapshot.repositories.filter(repo => repo.availability === 'available');
         const repositoryNames = new Map(snapshot.repositories.map(repo => [repo.id, repo.name]));
@@ -264,6 +269,7 @@ export function bindAutomationTab(options) {
                 rules: rules.rules,
                 matches: matches.matches,
                 actions: nextActions,
+                readiness: rules.readiness,
             };
             previews.clear();
         }

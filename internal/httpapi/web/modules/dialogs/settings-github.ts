@@ -33,6 +33,42 @@ function appendGitHubMark(parent) {
     parent.append(mark);
 }
 
+function appendReadiness(parent: HTMLElement, readiness: any): void {
+    if (!readiness || typeof readiness.message !== 'string') return;
+    const labels: Record<string, string> = {
+        not_configured: 'GitHub not configured',
+        events_unavailable: 'GitHub events unavailable',
+        installation_required: 'Installation required',
+        awaiting_verified_event: 'Awaiting verified GitHub event',
+        verified_delivery: 'Signed GitHub event received',
+    };
+    const section = document.createElement('section');
+    section.className = 'github-integration__readiness';
+    section.setAttribute('role', 'status');
+    section.setAttribute('data-github-readiness', String(readiness.state || 'unknown'));
+    textNode(section, 'strong', labels[readiness.state] || 'GitHub event status');
+    textNode(section, 'p', readiness.message);
+    if (readiness.state === 'events_unavailable') {
+        textNode(section, 'p', 'Set SCRUMBOY_GITHUB_WEBHOOK_SECRET or SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE on the server. Keep the secret private and restart Scrumboy.');
+    }
+    if (readiness.appConfigured) {
+        const destination = typeof readiness.webhookUrl === 'string' && readiness.webhookUrl
+            ? readiness.webhookUrl : String(readiness.webhookPath || '/api/integrations/github/webhook');
+        textNode(section, 'p', 'GitHub webhook destination (not externally verified):');
+        textNode(section, 'code', destination);
+        if (!readiness.webhookUrl) {
+            textNode(section, 'p', 'Set SCRUMBOY_PUBLIC_BASE_URL to a public HTTPS origin to display the full URL. Private Tailscale addresses are not reachable from GitHub.');
+        }
+        textNode(section, 'p', 'Unsigned POST: 401 when enabled, 404 when disabled. A 200 HTML response indicates the reverse proxy reached the app frontend, not the webhook receiver.');
+        textNode(section, 'p', 'GitHub event subscriptions and public reachability are not automatically verified.');
+    }
+    if (typeof readiness.lastVerifiedAt === 'string') {
+        const date = Date.parse(readiness.lastVerifiedAt);
+        if (Number.isFinite(date)) textNode(section, 'p', 'Last verified delivery since restart: ' + new Date(date).toLocaleString());
+    }
+    parent.append(section);
+}
+
 export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | null, signal: AbortSignal): void {
     const base = '/api/admin/integrations/github';
     let selectedProjectSlug = initialSlug;
@@ -126,6 +162,7 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
             }
             columns.append(configuration);
             onboarding.append(columns);
+            appendReadiness(onboarding, status.readiness);
             root.append(onboarding);
             return;
         }
@@ -148,6 +185,7 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
         badge.className = 'github-integration__status github-integration__status--ready';
         badge.setAttribute('role', 'status');
         panel.append(header);
+        appendReadiness(panel, status.readiness);
 
         const toolbar = document.createElement('div');
         toolbar.className = 'github-integration__toolbar';
