@@ -107,6 +107,35 @@ describe('GitHub compact onboarding', () => {
         controller.abort();
     });
 
+    it('prepares the registration form only when a secure credential sink is available', async () => {
+        const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(function (this: HTMLFormElement) {
+            expect(this.method).toBe('post');
+            expect(this.action).toMatch(/^https:\/\/github\.com\/settings\/apps\/new\?state=[a-f0-9]{64}$/);
+            expect(new FormData(this).get('manifest')).toBe('{"public":false}');
+        });
+        try {
+            requests.mockImplementation(async (path: string) => {
+                if (path === '/api/admin/integrations/github') {
+                    return { configured: false, manifestEnrollmentAvailable: true, connections: [], installUrl: '' };
+                }
+                if (path.endsWith('/manifest/start')) {
+                    return { action: 'https://github.com/settings/apps/new?state=' + 'a'.repeat(64), manifest: '{"public":false}' };
+                }
+                return {};
+            });
+            const el = root();
+            const { bindGitHubSettingsTab } = await import('./settings-github.js');
+            const controller = new AbortController();
+            bindGitHubSettingsTab(el, null, controller.signal);
+            await vi.waitFor(() => expect(Array.from(el.querySelectorAll('button')).some(button => button.textContent === 'Set up GitHub')).toBe(true));
+            Array.from(el.querySelectorAll('button')).find(button => button.textContent === 'Set up GitHub')?.click();
+            await vi.waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+            controller.abort();
+        } finally {
+            submit.mockRestore();
+        }
+    });
+
     it('copies the GitHub App variable name on click', async () => {
         const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
         const writeText = vi.fn().mockResolvedValue(undefined);

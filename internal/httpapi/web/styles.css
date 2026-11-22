@@ -7937,6 +7937,26 @@ button.omni-tag-pill:focus-visible {
   line-height: 1.45;
 }
 
+.github-onboarding__guided {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-10);
+  background: var(--panel2);
+}
+
+.github-onboarding__guided strong {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.github-onboarding__guided p {
+  color: var(--muted);
+  font-size: var(--fs-13);
+  line-height: 1.45;
+  margin: 0 0 10px;
+}
+
 .github-onboarding__steps {
   display: grid;
   gap: 12px;

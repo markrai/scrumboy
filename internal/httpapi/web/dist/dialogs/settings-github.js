@@ -98,6 +98,25 @@ function appendReadiness(parent, readiness) {
     section.append(details);
     parent.append(section);
 }
+function submitGitHubManifest(registration) {
+    const target = registration?.action;
+    const manifest = registration?.manifest;
+    if (typeof target !== 'string' || !/^https:\/\/github\.com\/settings\/apps\/new\?state=[a-f0-9]{64}$/.test(target) ||
+        typeof manifest !== 'string' || manifest.length > 16384) {
+        throw new Error('Invalid GitHub App manifest enrollment response');
+    }
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = target;
+    const field = document.createElement('input');
+    field.type = 'hidden';
+    field.name = 'manifest';
+    field.value = manifest;
+    form.append(field);
+    document.body.append(form);
+    form.submit();
+    form.remove();
+}
 export function bindGitHubSettingsTab(root, initialSlug, signal) {
     const base = '/api/admin/integrations/github';
     let selectedProjectSlug = initialSlug;
@@ -143,6 +162,27 @@ export function bindGitHubSettingsTab(root, initialSlug, signal) {
                 steps.append(step);
             }
             overview.append(steps);
+            if (status.manifestEnrollmentAvailable) {
+                const guided = document.createElement('div');
+                guided.className = 'github-onboarding__guided';
+                textNode(guided, 'strong', 'Guided GitHub App setup');
+                textNode(guided, 'p', 'Create an instance-owned GitHub App with read-only permissions. Credentials are returned directly to this server.');
+                const start = action(guided, 'Set up GitHub', () => {
+                    void (async () => {
+                        start.disabled = true;
+                        try {
+                            const enrollment = await apiFetch(base + '/manifest/start', { method: 'POST', signal });
+                            if (!signal.aborted) submitGitHubManifest(enrollment);
+                        } catch {
+                            if (!signal.aborted) showToast('GitHub App setup could not start. Check the instance configuration.');
+                        } finally {
+                            if (!signal.aborted) start.disabled = false;
+                        }
+                    })();
+                });
+                overview.append(guided);
+            }
+
             const guide = textNode(overview, 'a', 'Setup instructions');
             guide.className = 'github-onboarding__guide';
             guide.setAttribute('href', 'https://github.com/markrai/scrumboy/blob/main/docs/github-app.md');

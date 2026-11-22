@@ -16,6 +16,12 @@ A self-hosted Scrumboy Full Mode instance uses a **GitHub App owned by its admin
 4. For real-time events, separately configure [the signed webhook endpoint](github-m4-webhooks.md) and subscribe to Issues and Pull request events. GitHub must reach the HTTPS endpoint from the public internet; private Tailscale-only addresses cannot accept GitHub deliveries. Manual repository and issue/PR refresh work without webhooks.
 
 
+### S2.1 Manifest enrollment foundation (not activated yet)
+
+The S2.1 branch provides a time-limited, owner-bound GitHub App manifest registration handshake and server-side exchange of GitHub's one-time code. The manifest requests only Metadata, Issues and Pull requests read permissions and subscribes to installation, installation-repository, repository, issue and pull-request events. A single-use CSRF state expires after ten minutes, and callbacks must retain the same instance-owner session. Failure responses never disclose PEMs, webhook secrets or conversion codes.
+
+**This is not yet a usable onboarding wizard.** The runtime does not supply the durable credential sink required by the enrollment service, so the create-App action is intentionally unavailable. S2.2 will wire secure atomic credential persistence, backup/restore policy, and provider activation before administrators are offered the new setup button. Existing manual configuration continues to work, and an already configured App cannot be silently overwritten.
+
 ## Local configuration (existing manual mode)
 
 The Scrumboy instance administrator configures these variables once. The proposed manifest wizard will remove this manual operator step, but is not yet implemented.

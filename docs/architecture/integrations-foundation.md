@@ -6,7 +6,7 @@ M1 introduces a provider-neutral, database-backed foundation for connecting exte
 
 Every self-hosted Scrumboy Full Mode instance uses its own administrator-owned GitHub App, with server-local private-key and webhook-secret handling. One App supports its selected installations and repositories for that instance. There is no centrally managed Scrumboy Connect App, remote broker, shared key or hosted relay. App-global installation discovery is restricted to the instance Owner/Admin, while project authorization and public-board visibility are separate boundaries.
 
-The existing direct adapter supports manual setup. A guided App Manifest setup wizard, readiness diagnostics and private-network fallback are future work under [#371](https://github.com/markrai/scrumboy/issues/371) and must not be described as released.
+S2.1 adds an owner-only App Manifest state and callback foundation, but no production credential sink is wired; it cannot create a live App until S2.2 completes safe credential persistence and activation. The existing direct adapter supports manual setup. A guided App Manifest setup wizard, readiness diagnostics and private-network fallback are future work under [#371](https://github.com/markrai/scrumboy/issues/371) and must not be described as released.
 
 
 ## Ownership and authority
