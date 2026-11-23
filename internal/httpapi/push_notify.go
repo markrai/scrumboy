@@ -3,8 +3,11 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
+
+	"scrumboy/internal/safehttp"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 
@@ -20,6 +23,7 @@ type pushNotifier struct {
 	subscriber      string // VAPID JWT sub claim (e.g. mailto:ops@example.com)
 	enabled         bool
 	debug           bool
+	httpClient      *http.Client
 }
 
 func newPushNotifier(st storeAPI, logger *log.Logger, vapidPublic, vapidPrivate, subscriber string, enabled, debug bool) *pushNotifier {
@@ -31,6 +35,7 @@ func newPushNotifier(st storeAPI, logger *log.Logger, vapidPublic, vapidPrivate,
 		subscriber:      subscriber,
 		enabled:         enabled,
 		debug:           debug,
+		httpClient:      newPushHTTPClient(),
 	}
 }
 
@@ -97,7 +102,12 @@ func (p *pushNotifier) handle(ctx context.Context, e eventbus.Event) {
 		return
 	}
 
+	client := p.httpClient
+	if client == nil {
+		client = newPushHTTPClient()
+	}
 	opts := &webpush.Options{
+		HTTPClient:      client,
 		Subscriber:      p.subscriber,
 		VAPIDPublicKey:  p.vapidPublicKey,
 		VAPIDPrivateKey: p.vapidPrivateKey,
@@ -105,6 +115,12 @@ func (p *pushNotifier) handle(ctx context.Context, e eventbus.Event) {
 	}
 
 	for _, sub := range subs {
+		if !safehttp.ValidPublicHTTPSEndpoint(sub.Endpoint) {
+			if p.debug {
+				p.logger.Printf("push: blocked subscription user=%d subscription=%d", assigneeID, sub.ID)
+			}
+			continue
+		}
 		wsub := &webpush.Subscription{
 			Endpoint: sub.Endpoint,
 			Keys: webpush.Keys{
@@ -114,27 +130,24 @@ func (p *pushNotifier) handle(ctx context.Context, e eventbus.Event) {
 		}
 		resp, err := webpush.SendNotificationWithContext(ctx, body, wsub, opts)
 		if err != nil {
-			p.logger.Printf("push: send user=%d endpoint=%s err=%v", assigneeID, truncateEndpoint(sub.Endpoint), err)
-			_ = p.store.DeletePushSubscriptionByEndpoint(ctx, sub.Endpoint)
+			p.logger.Printf("push: delivery transport failure user=%d subscription=%d", assigneeID, sub.ID)
 			continue
 		}
 		if resp != nil {
-			_ = resp.Body.Close()
+			if resp.Body != nil {
+				_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+				_ = resp.Body.Close()
+			}
 			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
 				if p.debug {
-					p.logger.Printf("push: prune subscription status=%d endpoint=%s", resp.StatusCode, truncateEndpoint(sub.Endpoint))
+					p.logger.Printf("push: expired subscription user=%d subscription=%d status=%d", assigneeID, sub.ID, resp.StatusCode)
 				}
 				_ = p.store.DeletePushSubscriptionByEndpoint(ctx, sub.Endpoint)
+			} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				p.logger.Printf("push: delivery unsuccessful user=%d subscription=%d status=%d", assigneeID, sub.ID, resp.StatusCode)
 			} else if p.debug {
-				p.logger.Printf("push: sent user=%d todo=%d status=%d", assigneeID, domain.TodoID, resp.StatusCode)
+				p.logger.Printf("push: delivered user=%d subscription=%d todo=%d status=%d", assigneeID, sub.ID, domain.TodoID, resp.StatusCode)
 			}
 		}
 	}
-}
-
-func truncateEndpoint(ep string) string {
-	if len(ep) <= 64 {
-		return ep
-	}
-	return ep[:32] + "…" + ep[len(ep)-16:]
 }

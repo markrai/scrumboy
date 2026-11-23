@@ -30,6 +30,8 @@ func TestIsForbiddenIP(t *testing.T) {
 		"::ffff:10.1.2.3",
 		"::ffff:169.254.169.254",
 		"::ffff:100.64.0.1",
+		"64:ff9b:1:fffe::a9fe:a9fe",
+		"64:ff9b:1:ffff:ffff:ffff:ffff:ffff",
 	}
 	for _, raw := range forbidden {
 		ip := net.ParseIP(raw)

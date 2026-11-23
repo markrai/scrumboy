@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
+
+	"scrumboy/internal/safehttp"
 )
 
 // PushSubscription is a stored Web Push subscription (one row per browser/device endpoint).
@@ -23,6 +26,9 @@ type PushSubscription struct {
 func (s *Store) UpsertPushSubscription(ctx context.Context, userID int64, endpoint, p256dh, auth string, userAgent *string) error {
 	if endpoint == "" || p256dh == "" || auth == "" {
 		return errors.New("push subscription: endpoint, p256dh, and auth required")
+	}
+	if !safehttp.ValidPublicHTTPSEndpoint(endpoint) {
+		return fmt.Errorf("%w: invalid_push_endpoint", ErrValidation)
 	}
 	now := time.Now().UTC().UnixMilli()
 	ua := sql.NullString{}
