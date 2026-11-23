@@ -319,7 +319,7 @@ type Todo struct {
 	Rank             int64
 	EstimationPoints *int64
 	AssigneeUserID   *int64
-	// CreatedByUserID is immutable historical attribution, not current membership or authorization.
+	// CreatedByUserID is historical attribution, not current membership or authorization. It is set at creation and can only be reassigned by a project maintainer (UpdateTodoInput.CreatedByUserIDPresent).
 	// It is NULL for unauthenticated creation, pre-migration rows, and deleted creators.
 	CreatedByUserID *int64
 	SprintID        *int64 // NULL = backlog; non-NULL = in that sprint

@@ -438,8 +438,13 @@ type UpdateTodoInput struct {
 	KeepTags             bool
 	KeepEstimationPoints bool
 	KeepAssigneeUserID   bool
-	DueAt                *time.Time // nil means clear when DueAtPresent is true
-	DueAtPresent         bool       // false preserves the existing due date
+	// CreatedByUserID reassigns the creator attribution when
+	// CreatedByUserIDPresent is set. Maintainer-only; the creator cannot be
+	// cleared and the target user must exist.
+	CreatedByUserID        *int64
+	CreatedByUserIDPresent bool
+	DueAt                  *time.Time // nil means clear when DueAtPresent is true
+	DueAtPresent           bool       // false preserves the existing due date
 	// CustomFields is a sparse patch keyed by field key; a nil value clears
 	// that field. Keys not present are untouched.
 	CustomFields CustomFieldValues
@@ -618,7 +623,7 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	if scopeEnforced {
 		switch editScope {
 		case TodoEditBodyOnly:
-			if len(in.CustomFields) > 0 {
+			if len(in.CustomFields) > 0 || in.CreatedByUserIDPresent {
 				return Todo{}, ErrUnauthorized
 			}
 			if len(in.Body) > 20000 {
@@ -724,6 +729,29 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		} else {
 			if actorRole != RoleMaintainer {
 				return Todo{}, ErrUnauthorized
+			}
+		}
+	}
+
+	creatorChanged := false
+	if in.CreatedByUserIDPresent {
+		if in.CreatedByUserID == nil || *in.CreatedByUserID <= 0 {
+			return Todo{}, fmt.Errorf("%w: createdByUserId cannot be cleared", ErrValidation)
+		}
+		if isAnonymousBoard {
+			return Todo{}, fmt.Errorf("%w: creator cannot be changed in anonymous mode", ErrValidation)
+		}
+		creatorChanged = !sameInt64Ptr(existing.CreatedByUserID, in.CreatedByUserID)
+		if creatorChanged {
+			if !ok || userID == 0 || actorRole != RoleMaintainer {
+				return Todo{}, ErrUnauthorized
+			}
+			var creatorExists bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)`, *in.CreatedByUserID).Scan(&creatorExists); err != nil {
+				return Todo{}, fmt.Errorf("check creator exists: %w", err)
+			}
+			if !creatorExists {
+				return Todo{}, fmt.Errorf("%w: creator does not exist", ErrValidation)
 			}
 		}
 	}
@@ -856,6 +884,22 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 			return Todo{}, fmt.Errorf("update todo: %w", err)
 		}
 	}
+	if creatorChanged {
+		if _, err := tx.ExecContext(ctx, `UPDATE todos SET created_by_user_id = ? WHERE id = ?`, *in.CreatedByUserID, todoID); err != nil {
+			return Todo{}, fmt.Errorf("update todo creator: %w", err)
+		}
+		actorID, hasActor := UserIDFromContext(ctx)
+		var actorUserID *int64
+		if hasActor {
+			actorUserID = &actorID
+		}
+		if err := insertAuditEventTx(ctx, tx, existing.ProjectID, actorUserID, "todo_creator_changed", "todo", &todoID, map[string]any{
+			"before": existing.CreatedByUserID,
+			"after":  *in.CreatedByUserID,
+		}); err != nil {
+			return Todo{}, fmt.Errorf("audit todo_creator_changed: %w", err)
+		}
+	}
 	if err := syncTodoAssetsTx(ctx, tx, existing.ProjectID, todoID, in.Body, nowMs); err != nil {
 		return Todo{}, err
 	}
@@ -977,6 +1021,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	if len(tagsAdded) > 0 || len(tagsRemoved) > 0 {
 		changedFields = append(changedFields, "tags")
 	}
+	if creatorChanged {
+		changedFields = append(changedFields, "creator")
+	}
 	if len(changedFields) > 0 {
 		meta := map[string]any{"changed_fields": changedFields}
 		for _, f := range changedFields {
@@ -1043,6 +1090,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	existing.Title = in.Title
 	existing.Body = in.Body
 	existing.AssigneeUserID = cloneInt64Ptr(in.AssigneeUserID)
+	if creatorChanged {
+		existing.CreatedByUserID = cloneInt64Ptr(in.CreatedByUserID)
+	}
 	existing.EstimationPoints = cloneInt64Ptr(in.EstimationPoints)
 	existing.PriorityKey = cloneStringPtr(effectivePriorityKey)
 	if dueAtChanged {

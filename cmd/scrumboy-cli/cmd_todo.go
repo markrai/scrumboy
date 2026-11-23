@@ -437,6 +437,7 @@ type fieldFlags struct {
 	assignee, sprint, priority, due   string
 	fields                            stringSlice
 	column                            string
+	creator                           string
 	fs                                *flag.FlagSet
 }
 
@@ -446,6 +447,7 @@ func (f *fieldFlags) bind(fs *flag.FlagSet, forUpdate bool) {
 		fs.StringVar(&f.title, "title", "", "new title")
 		fs.StringVar(&f.appendBody, "append", "", "append text to the body")
 		fs.BoolVar(&f.clearTags, "clear-tags", false, "remove all tags")
+		fs.StringVar(&f.creator, "creator", "", "reassign the creator to this user id or 'me' (maintainers only)")
 	} else {
 		fs.StringVar(&f.column, "column", "", "workflow column key (default: first column)")
 	}
@@ -527,6 +529,16 @@ func (f *fieldFlags) collect(c *cmdCtx) (map[string]any, error) {
 			return nil, err
 		}
 		out["assigneeUserId"] = v
+	}
+	if f.isSet("creator") {
+		if isNone(f.creator) {
+			return nil, usagef("--creator cannot be cleared; pass a user id or 'me'")
+		}
+		v, err := resolveAssignee(c, f.creator)
+		if err != nil {
+			return nil, err
+		}
+		out["createdByUserId"] = v
 	}
 	if f.isSet("sprint") {
 		if isNone(f.sprint) {
