@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -106,6 +107,21 @@ func TestPushNotifier_GeneratesExpectedVAPIDRequest(t *testing.T) {
 	}))
 	defer pushService.Close()
 
+	const pushEndpoint = "https://push.example.com/subscription"
+	testClient := pushService.Client()
+	transport, ok := testClient.Transport.(*http.Transport)
+	if !ok || transport.TLSClientConfig == nil {
+		t.Fatal("local TLS test client missing transport configuration")
+	}
+	transport = transport.Clone()
+	transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	transport.TLSClientConfig.ServerName = "127.0.0.1"
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, network, pushService.Listener.Addr().String())
+	}
+	testClient.Transport = transport
+
 	vapidPrivate, vapidPublic, err := webpush.GenerateVAPIDKeys()
 	if err != nil {
 		t.Fatalf("generate VAPID keys: %v", err)
@@ -131,7 +147,7 @@ func TestPushNotifier_GeneratesExpectedVAPIDRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := st.UpsertPushSubscription(ctx, user.ID, pushService.URL, receiverPublic, base64.RawURLEncoding.EncodeToString(authSecret), nil); err != nil {
+	if err := st.UpsertPushSubscription(ctx, user.ID, pushEndpoint, receiverPublic, base64.RawURLEncoding.EncodeToString(authSecret), nil); err != nil {
 		t.Fatalf("store subscription: %v", err)
 	}
 
@@ -140,7 +156,7 @@ func TestPushNotifier_GeneratesExpectedVAPIDRequest(t *testing.T) {
 		t.Fatalf("prepare whitespace-padded VAPID configuration: %+v", prepared.status)
 	}
 	notifier := newPushNotifier(st, log.New(os.Stderr, "", 0), prepared.publicKey, prepared.privateKey, prepared.subscriber, true, false)
-	notifier.httpClient = pushService.Client()
+	notifier.httpClient = testClient
 	assignee := user.ID
 	eventPayload, err := json.Marshal(eventbus.TodoAssignedPayload{
 		ProjectID:     project.ID,
@@ -205,8 +221,8 @@ func TestPushNotifier_GeneratesExpectedVAPIDRequest(t *testing.T) {
 	if strings.Contains(claims["sub"].(string), "mailto:mailto:") {
 		t.Fatalf("VAPID sub contains a nested mailto prefix: %q", claims["sub"])
 	}
-	if got := claims["aud"]; got != pushService.URL {
-		t.Fatalf("VAPID aud = %#v, want %q", got, pushService.URL)
+	if got := claims["aud"]; got != "https://push.example.com" {
+		t.Fatalf("VAPID aud = %#v, want %q", got, "https://push.example.com")
 	}
 	exp, ok := claims["exp"].(float64)
 	if !ok {
