@@ -1,0 +1,118 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+const testAssetID = "11111111-2222-4333-8444-555555555555"
+
+// assetServer is a fake /mcp/assets backend: GET serves one image, POST records the upload.
+type assetServer struct {
+	*httptest.Server
+	uploads []struct {
+		path, auth, name, ct string
+		data                 []byte
+	}
+}
+
+func newAssetServer(t *testing.T, img []byte) *assetServer {
+	t.Helper()
+	as := &assetServer{}
+	as.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/mcp/assets/"+testAssetID:
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(img)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/mcp/assets/"):
+			f, hdr, err := r.FormFile("file")
+			if err != nil {
+				t.Errorf("form file: %v", err)
+				http.Error(w, "bad", 400)
+				return
+			}
+			data, _ := io.ReadAll(f)
+			as.uploads = append(as.uploads, struct {
+				path, auth, name, ct string
+				data                 []byte
+			}{r.URL.RequestURI(), r.Header.Get("Authorization"), hdr.Filename, r.Header.Get("Content-Type"), data})
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{"assetId": "99999999-2222-4333-8444-555555555555", "url": "/api/assets/99999999-2222-4333-8444-555555555555", "mimeType": "image/png", "sizeBytes": len(data)})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"error":{"code":"NOT_FOUND","message":"not found"}}`)
+		}
+	}))
+	t.Cleanup(as.Close)
+	return as
+}
+
+func TestAssetGetPutCopy(t *testing.T) {
+	img := []byte("\x89PNG fake image bytes")
+	as := newAssetServer(t, img)
+	h := newHarness(t, as.URL, nil)
+	dir := t.TempDir()
+
+	// get: accepts a bare id or a link, writes <id>.png, never overwrites.
+	out := filepath.Join(dir, "got.png")
+	if code := h.run("asset", "get", "/api/assets/"+testAssetID, "-o", out); code != 0 {
+		t.Fatalf("get exit %d: %s", code, h.err)
+	}
+	if got, _ := os.ReadFile(out); !bytes.Equal(got, img) {
+		t.Fatalf("downloaded %q", got)
+	}
+	if code := h.run("asset", "get", testAssetID, "-o", out); code == 0 {
+		t.Fatal("get overwrote an existing file")
+	}
+	h.out.Reset()
+	if code := h.run("asset", "get", testAssetID, "-o", "-"); code != 0 || !bytes.Equal(h.out.Bytes(), img) {
+		t.Fatalf("get to stdout: exit %d, %q", code, h.out)
+	}
+
+	// put: multipart upload to the project, optional ?todo=, prints the new URL.
+	h.out.Reset()
+	if code := h.run("asset", "put", out, "-p", "tech", "--todo", "5"); code != 0 {
+		t.Fatalf("put exit %d: %s", code, h.err)
+	}
+	if strings.TrimSpace(h.out.String()) != "/api/assets/99999999-2222-4333-8444-555555555555" {
+		t.Fatalf("put printed %q", h.out)
+	}
+	up := as.uploads[0]
+	if up.path != "/mcp/assets/tech?todo=5" || up.auth != "Bearer sb_test" || up.name != "got.png" || !bytes.Equal(up.data, img) || !strings.HasPrefix(up.ct, "multipart/form-data") {
+		t.Fatalf("upload %+v", up)
+	}
+
+	// copy: download then upload under the source id + extension.
+	h.out.Reset()
+	if code := h.run("asset", "copy", "https://example.test/api/assets/"+testAssetID, "-p", "tech"); code != 0 {
+		t.Fatalf("copy exit %d: %s", code, h.err)
+	}
+	cp := as.uploads[1]
+	if cp.path != "/mcp/assets/tech" || cp.name != testAssetID+".png" || !bytes.Equal(cp.data, img) {
+		t.Fatalf("copy upload %+v", cp)
+	}
+}
+
+func TestAssetErrors(t *testing.T) {
+	as := newAssetServer(t, nil)
+	h := newHarness(t, as.URL, nil)
+	if code := h.run("asset", "get", "not-an-id"); code != 2 {
+		t.Fatalf("bad ref exit %d", code)
+	}
+	if code := h.run("asset", "get", "00000000-0000-4000-8000-000000000000", "-o", "-"); code != 1 || !strings.Contains(h.err.String(), "NOT_FOUND") {
+		t.Fatalf("missing asset exit %d: %s", code, h.err)
+	}
+	if code := h.run("asset", "put", "x.png"); code != 2 || !strings.Contains(h.err.String(), "no project") {
+		t.Fatalf("put without -p exit %d: %s", code, h.err)
+	}
+	if id, err := assetID("https://h/api/assets/" + strings.ToUpper(testAssetID) + "?x=" + "22222222-2222-4333-8444-555555555555"); err != nil || id != testAssetID {
+		t.Fatalf("assetID = %q, %v", id, err)
+	}
+}

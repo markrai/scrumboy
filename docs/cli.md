@@ -119,6 +119,7 @@ Commands (run `scrumboy-cli <command> -h` for flags):
 | `dashboard` | `summary`, `todos` |
 | `metrics` | `burndown`, `backlog` |
 | `admin` | `users`, `service-account`, `service-token` (owner/admin role) |
+| `asset` | `get`, `put`, `copy` (inline images, over `/mcp/assets/*`) |
 | `tool` | any server tool by name |
 
 - A todo is `slug/12`, `slug#12`, or `12` together with `-p`.
@@ -147,10 +148,17 @@ Commands (run `scrumboy-cli <command> -h` for flags):
   scrumboy-cli tool metrics_getBurndown --input '{"projectSlug":"demo"}'
   ```
 
+Inline images belong to one project and are not tools. `asset get <id|url>`
+downloads one, `asset put <file> -p slug [--todo N]` uploads one and prints its
+`/api/assets/<id>` URL, and `asset copy <id|url> -p slug` does both in one step.
+To move a todo to another board, copy each image it embeds and rewrite the body
+with the printed URLs. These use the server's bearer-only `/mcp/assets/*`
+routes (see [`docs/mcp.md`](mcp.md)); they need a server that has inline images
+enabled and a build that includes those routes.
+
 Not covered, because the server exposes them only over its browser (REST)
-API: inline image upload, `.sbz` backup/restore,
-public-board publication, and API token management (`/api/me/tokens` needs a
-session cookie).
+API: `.sbz` backup/restore, public-board publication, and API token management
+(`/api/me/tokens` needs a session cookie).
 
 ## Releasing
 

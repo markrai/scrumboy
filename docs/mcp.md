@@ -147,6 +147,8 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
 
 **OAuth 2.1 (full mode only):** `/mcp/rpc` is the sole OAuth protected resource. Clients discover its Scrumboy authorization server through the path-derived RFC 9728 metadata URL in the 401 challenge. See **[`docs/oauth.md`](oauth.md)** for DCR, PKCE, resource binding, authorize/token/revoke, and token lifetimes. `/mcp` never accepts these OAuth tokens.
 
+**Inline images over bearer auth:** `/mcp/assets/{uuid}` (`GET`, download) and `/mcp/assets/{projectSlug}` (`POST` multipart `file`, optional `?todo={localId}`, upload) serve the same images, role rules, size limits and rate limits as `/api/assets/{uuid}` and `POST /api/board/{slug}/assets`, but authenticate only with `Authorization: Bearer` (an `sb_` API token or an OAuth access token for the `/mcp/rpc` resource). The session cookie is ignored there, so a browser cannot drive them cross-site. They exist so clients such as `scrumboy-cli` can move images between projects; they return 404 when inline images are disabled. OAuth access tokens carry no scopes, so any client already authorized for `/mcp/rpc` can also use these routes for every project the user can access; revoke a client's grant to remove that access.
+
 ## Capabilities
 
 **Legacy (recommended for a quick probe):**
