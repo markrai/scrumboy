@@ -62,7 +62,7 @@ func TestGuestRoleBoardAccess(t *testing.T) {
 		t.Fatalf("Guest tag permissions: %+v", tag)
 	}
 	if err := st.UpdateProjectMemberRole(f.ownerCtx, f.owner.ID, f.temp.ID, id, RoleContributor); err != nil {
-		t.Fatalf("add temporary membership: %v", err)
+		t.Fatalf("update Guest role on temporary board: %v", err)
 	}
 	if err := st.UpdateProjectMemberRole(f.ownerCtx, f.owner.ID, f.durable.ID, id, RoleContributor); !errors.Is(err, ErrValidation) {
 		t.Fatalf("promote guest membership: %v", err)
