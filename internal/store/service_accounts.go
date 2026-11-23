@@ -98,13 +98,6 @@ func rejectRestrictedLinkAccess(ctx context.Context, q sqlRowQueryer, p Project)
 	if !ok {
 		return nil
 	}
-	guest, err := isGuest(ctx, q, userID)
-	if err != nil {
-		return err
-	}
-	if guest {
-		return ErrNotFound
-	}
 	blocked, err := serviceLinkAccessBlocked(ctx, q, p.ID, userID)
 	if err != nil {
 		return err

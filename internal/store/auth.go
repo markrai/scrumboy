@@ -709,7 +709,7 @@ func (s *Store) UpdateUserRole(ctx context.Context, requesterID, targetUserID in
 	}
 
 	if newRole == SystemRoleGuest {
-		if err := validateGuestRoleChange(ctx, tx, targetUserID); err != nil {
+		if err := validateGuestRoleChange(ctx, tx, requesterID, targetUserID); err != nil {
 			return err
 		}
 	}

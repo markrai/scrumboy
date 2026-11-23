@@ -25,6 +25,11 @@ func TestGuestRoleREST(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	temporary, err := f.store.CreateAnonymousBoard(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	rolePath := fmt.Sprintf("/api/admin/users/%d/role", f.user.ID)
 	resp, body := doJSON(t, f.ownerClient, http.MethodPatch, f.ts.URL+rolePath, map[string]string{"role": "guest"}, nil)
 	if resp.StatusCode != http.StatusOK {
@@ -46,6 +51,8 @@ func TestGuestRoleREST(t *testing.T) {
 		{http.MethodPost, "/api/projects", map[string]string{"name": "Denied"}, http.StatusForbidden},
 		{http.MethodGet, "/api/board/" + assigned.Slug, nil, http.StatusOK},
 		{http.MethodGet, "/api/board/" + other.Slug, nil, http.StatusNotFound},
+		{http.MethodGet, "/api/board/" + temporary.Slug, nil, http.StatusOK},
+		{http.MethodPost, "/api/board/" + temporary.Slug + "/todos", map[string]string{"title": "Shared card"}, http.StatusCreated},
 		{http.MethodGet, "/anon", nil, http.StatusForbidden},
 	} {
 		resp, body := doJSON(t, f.userClient, tc.method, f.ts.URL+tc.path, tc.data, nil)

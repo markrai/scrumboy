@@ -69,7 +69,7 @@ func (s *Store) EnsureMaintainerMembership(ctx context.Context, projectID int64,
 	_, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO project_members (project_id, user_id, role, created_at)
 		SELECT ?, ?, ?, ?
-		WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = ? AND is_service <> 0)
+		WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = ? AND (is_service <> 0 OR system_role = 'guest'))
 	`, projectID, userID, RoleMaintainer, nowMs, userID)
 	if err != nil {
 		return fmt.Errorf("ensure maintainer membership: %w", err)

@@ -2424,7 +2424,8 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
           });
           await renderSettingsModal();
         } catch (err: any) {
-          showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.toast.roleChangeFailed" }));
+          const feedback = btn.closest("td")?.querySelector<HTMLElement>("[data-role-feedback]");
+          if (feedback) feedback.textContent = apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.toast.roleChangeFailed" });
           btn.disabled = false;
         }
       }, { signal });
@@ -3051,6 +3052,7 @@ async function renderUsersTabContent(): Promise<string> {
             <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
             ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
           </div>
+          <div data-role-feedback role="alert"></div>
         `;
       }
 

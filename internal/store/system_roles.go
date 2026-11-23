@@ -151,27 +151,42 @@ func validateGuestMembership(ctx context.Context, tx *sql.Tx, projectID, userID 
 	return nil
 }
 
-func validateGuestRoleChange(ctx context.Context, tx *sql.Tx, userID int64) error {
+func validateGuestRoleChange(ctx context.Context, tx *sql.Tx, requesterID, userID int64) error {
 	rows, err := tx.QueryContext(ctx, `
-SELECT p.name, p.slug
+SELECT CASE WHEN own.user_id IS NOT NULL THEN p.name END, pm.role, p.expires_at IS NOT NULL
 FROM project_members pm
 JOIN projects p ON p.id = pm.project_id
+LEFT JOIN project_members own ON own.project_id = pm.project_id AND own.user_id = ?
 WHERE pm.user_id = ? AND (pm.role <> 'viewer' OR p.expires_at IS NOT NULL)
-ORDER BY p.name, p.slug`, userID)
+ORDER BY p.name, p.id`, requesterID, userID)
 	if err != nil {
 		return fmt.Errorf("check guest role memberships: %w", err)
 	}
 	defer rows.Close()
 	var boards []string
+	hidden := 0
 	for rows.Next() {
-		var name, slug string
-		if err := rows.Scan(&name, &slug); err != nil {
+		var name sql.NullString
+		var role string
+		var temporary bool
+		if err := rows.Scan(&name, &role, &temporary); err != nil {
 			return fmt.Errorf("scan guest role membership: %w", err)
 		}
-		boards = append(boards, fmt.Sprintf("%s (%s)", name, slug))
+		if !name.Valid {
+			hidden++
+			continue
+		}
+		action := "change to Viewer or remove membership"
+		if temporary {
+			action = "remove temporary board membership"
+		}
+		boards = append(boards, fmt.Sprintf("%s (%s): %s", name.String, role, action))
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("list guest role memberships: %w", err)
+	}
+	if hidden > 0 {
+		boards = append(boards, fmt.Sprintf("additional memberships on boards outside your membership: %d", hidden))
 	}
 	if len(boards) > 0 {
 		return fmt.Errorf("%w: resolve these board memberships before assigning Guest: %s", ErrConflict, strings.Join(boards, ", "))

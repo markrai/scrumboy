@@ -25,12 +25,24 @@ func TestGuestRoleBoardAccess(t *testing.T) {
 	if err := st.AddProjectMember(f.ownerCtx, f.owner.ID, f.temp.ID, id, RoleViewer); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AddProjectMember(f.ownerCtx, f.owner.ID, f.durable.ID, id, RoleContributor); err != nil {
+	if err := st.AddProjectMember(f.ownerCtx, f.owner.ID, f.durable.ID, id, RoleMaintainer); err != nil {
+		t.Fatal(err)
+	}
+	plNewTodo(t, st, ctx, f.durable.ID, "Tagged card", "personal")
+	otherCtx := WithUserID(context.Background(), f.admin.ID)
+	private, err := st.CreateProject(otherCtx, "Confidential")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddProjectMember(otherCtx, f.admin.ID, private.ID, id, RoleContributor); err != nil {
 		t.Fatal(err)
 	}
 	err = st.UpdateUserRole(f.ownerCtx, f.owner.ID, id, SystemRoleGuest)
-	if !errors.Is(err, ErrConflict) || !strings.Contains(err.Error(), f.temp.Slug) || !strings.Contains(err.Error(), f.durable.Slug) {
+	if !errors.Is(err, ErrConflict) || !strings.Contains(err.Error(), "remove temporary board membership") || !strings.Contains(err.Error(), f.durable.Name+" (maintainer)") || !strings.Contains(err.Error(), "outside your membership: 1") || strings.Contains(err.Error(), private.Name) || strings.Contains(err.Error(), private.Slug) {
 		t.Fatalf("incompatible memberships: %v", err)
+	}
+	if err := st.RemoveProjectMember(otherCtx, f.admin.ID, private.ID, id); err != nil {
+		t.Fatal(err)
 	}
 	if err := st.RemoveProjectMember(f.ownerCtx, f.owner.ID, f.temp.ID, id); err != nil {
 		t.Fatal(err)
@@ -43,6 +55,13 @@ func TestGuestRoleBoardAccess(t *testing.T) {
 	}
 	if err := st.UpdateUserRole(f.ownerCtx, f.owner.ID, id, SystemRoleGuest); err != nil {
 		t.Fatal(err)
+	}
+	tags, err := st.listTagCounts(ctx, f.durable.ID, &id, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag := plFindTag(tags, "personal"); tag == nil || tag.DeleteScope() != "none" {
+		t.Fatalf("Guest tag permissions: %+v", tag)
 	}
 	if err := st.AddProjectMember(f.ownerCtx, f.owner.ID, f.temp.ID, id, RoleViewer); !errors.Is(err, ErrValidation) {
 		t.Fatalf("add temporary membership: %v", err)
@@ -57,10 +76,10 @@ func TestGuestRoleBoardAccess(t *testing.T) {
 		t.Fatal("guest created a todo on an assigned board")
 	}
 	for _, project := range []Project{f.anon, f.temp, oldTemporary} {
-		if _, err := st.GetProjectContextBySlug(ctx, project.Slug, ModeFull); !errors.Is(err, ErrNotFound) {
+		if _, err := st.GetProjectContextBySlug(ctx, project.Slug, ModeFull); err != nil {
 			t.Fatalf("read temporary board %q: %v", project.Slug, err)
 		}
-		if _, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "No edits"}, ModeFull); !errors.Is(err, ErrNotFound) {
+		if _, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "No edits"}, ModeFull); err != nil {
 			t.Fatalf("write temporary board %q: %v", project.Slug, err)
 		}
 	}
@@ -161,5 +180,27 @@ func TestGuestDashboardIgnoresArchivedAssignmentsOutsideMembership(t *testing.T)
 		if err != nil || len(items) != 1 || items[0].LocalID != todo.LocalID {
 			t.Fatalf("%s dashboard: %+v, %v", sort, items, err)
 		}
+	}
+}
+
+func TestGuestLegacyCreatorBackfill(t *testing.T) {
+	f := newServiceProjectFixture(t)
+	ctx := WithUserID(context.Background(), f.human.ID)
+	project, err := f.st.CreateProject(ctx, "Legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.db.Exec("DELETE FROM project_members WHERE project_id = ?", project.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.UpdateUserRole(f.ownerCtx, f.owner.ID, f.human.ID, SystemRoleGuest); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.ensureProjectHasMaintainer(ctx, project.ID); err != nil {
+		t.Fatal(err)
+	}
+	role, err := f.st.GetProjectRole(ctx, project.ID, f.human.ID)
+	if err != nil || role != "" {
+		t.Fatalf("implicit membership: %q, %v", role, err)
 	}
 }

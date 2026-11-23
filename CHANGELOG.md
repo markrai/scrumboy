@@ -2,6 +2,10 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## Unreleased
+
+- Added an Owner-assigned Guest system role for people who need Viewer access to assigned regular boards. Guests can collaborate through temporary board links. Rolling back to a version without Guest support restores ordinary User privileges to these accounts, including board creation.
+
 ## [3.42.6] - 2026-11-23
 
 ### Improved
