@@ -62,6 +62,15 @@ export function resolveAgendaColor(raw: string | null | undefined): string {
   return sanitizeHexColor(raw, AGENDA_DEFAULT_LANE_COLOR) || AGENDA_DEFAULT_LANE_COLOR;
 }
 
+function deviceAgendaTimezone(): string | null {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof zone === 'string' && zone.trim() ? zone.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function listAgendaTimezones(savedTimezone: string): string[] {
   const zones = new Set<string>([DEFAULT_AGENDA_TIMEZONE]);
   zones.add(resolveAgendaTimezone(savedTimezone));
@@ -79,12 +88,8 @@ export function listAgendaTimezones(savedTimezone: string): string[] {
     }
   }
 
-  try {
-    const local = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (typeof local === 'string' && local.trim()) zones.add(local);
-  } catch {
-    // Ignore environments that cannot resolve a local timezone.
-  }
+  const deviceZone = deviceAgendaTimezone();
+  if (deviceZone) zones.add(deviceZone);
 
   return [...zones].sort((a, b) => a.localeCompare(b));
 }
@@ -137,6 +142,8 @@ function renderTimelinePreferenceHTML(): string {
 
 function renderCalendarTabHTML(data: CalendarSourcesResponse): string {
   const sources = data.sources ?? [];
+  const deviceZone = deviceAgendaTimezone();
+  const offerDeviceTimezone = deviceZone && deviceZone !== resolveAgendaTimezone(data.agendaTimezone);
   const listHTML =
     sources.length === 0
       ? `<div class="muted" data-i18n-text="settings.calendar.list.empty">No calendar feeds yet.</div>`
@@ -186,6 +193,8 @@ function renderCalendarTabHTML(data: CalendarSourcesResponse): string {
         <select class="input" id="agendaTimezoneInput">${renderTimezoneOptions(data.agendaTimezone)}</select>
       </label>
       <p class="muted" data-i18n-text="settings.calendar.timezone.hint">Used for today's events. All members see Agenda in this timezone.</p>
+       <p class="muted" data-i18n-text="settings.calendar.timezone.dstHint">Daylight saving time adjusts automatically when the selected region observes it.</p>
+       ${offerDeviceTimezone ? `<button class="btn btn--sm" type="button" id="agendaTimezoneUseDevice">${escapeHTML(t('settings.calendar.timezone.useDevice', { zone: deviceZone }))}</button>` : ''}
     </div>
     ${renderTimelinePreferenceHTML()}
     <div class="settings-section">
@@ -349,22 +358,32 @@ export function bindCalendarTabInteractions(options: BindCalendarTabOptions): vo
   );
 
   const timezoneSelect = document.getElementById('agendaTimezoneInput') as HTMLSelectElement | null;
+  const saveTimezone = async (timezone: string): Promise<void> => {
+    try {
+      await apiFetch(`/api/board/${slug}/settings`, {
+        method: 'PATCH',
+        body: JSON.stringify({ agendaTimezone: timezone }),
+      });
+      showToast(t('settings.calendar.toast.timezoneUpdated'));
+      clearCalendarSettingsCache();
+      await rerender();
+    } catch (err: unknown) {
+      showToast(apiErrorMessageOrRaw(err, { fallbackKey: 'settings.calendar.toast.timezoneFailed' }));
+      await rerender();
+    }
+  };
   timezoneSelect?.addEventListener(
     'change',
     async () => {
-      const timezone = resolveAgendaTimezone(timezoneSelect.value);
-      try {
-        await apiFetch(`/api/board/${slug}/settings`, {
-          method: 'PATCH',
-          body: JSON.stringify({ agendaTimezone: timezone }),
-        });
-        showToast(t('settings.calendar.toast.timezoneUpdated'));
-        clearCalendarSettingsCache();
-        await rerender();
-      } catch (err: unknown) {
-        showToast(apiErrorMessageOrRaw(err, { fallbackKey: 'settings.calendar.toast.timezoneFailed' }));
-        await rerender();
-      }
+      await saveTimezone(resolveAgendaTimezone(timezoneSelect.value));
+    },
+    { signal },
+  );
+  document.getElementById('agendaTimezoneUseDevice')?.addEventListener(
+    'click',
+    async () => {
+      const zone = deviceAgendaTimezone();
+      if (zone) await saveTimezone(zone);
     },
     { signal },
   );

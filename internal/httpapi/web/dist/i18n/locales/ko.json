@@ -502,6 +502,8 @@
   "settings.calendar.enableHint": "Today's events from ICS feeds appear in a read-only Agenda lane. All members see the same Agenda.",
   "settings.calendar.timezone.label": "Board timezone",
   "settings.calendar.timezone.hint": "Used for today's events. All members see Agenda in this timezone.",
+  "settings.calendar.timezone.dstHint": "선택한 지역에서 일광 절약 시간제를 시행하면 자동으로 조정됩니다.",
+  "settings.calendar.timezone.useDevice": "기기 시간대 사용 ({zone})",
   "settings.calendar.timeline.label": "Start of day",
   "settings.calendar.timeline.hint": "Agenda initially scrolls here unless an earlier event exists.",
   "settings.calendar.nowLine.label": "Prominent now line",

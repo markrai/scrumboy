@@ -728,3 +728,44 @@ func paddedICS(minBytes int, summary string) []byte {
 	}
 	return []byte(prefix + strings.Repeat("x", n) + suffix)
 }
+
+
+func TestExpandWeeklyMeetingKeepsLocalTimeAcrossDST(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(`BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:weekly-dst
+DTSTART;TZID=America/New_York:20260301T090000
+DTEND;TZID=America/New_York:20260301T100000
+RRULE:FREQ=WEEKLY;COUNT=3
+SUMMARY:Weekly meeting
+END:VEVENT
+END:VCALENDAR
+`)
+	start := time.Date(2026, 3, 1, 0, 0, 0, 0, loc)
+	end := time.Date(2026, 3, 22, 0, 0, 0, 0, loc)
+	events, err := Expand(body, loc, start, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []time.Time{
+		time.Date(2026, 3, 1, 14, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 8, 13, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 15, 13, 0, 0, 0, time.UTC),
+	}
+	if len(events) != len(expected) {
+		t.Fatalf("got %d events, want %d: %+v", len(events), len(expected), events)
+	}
+	for i, want := range expected {
+		if !events[i].StartsAt.Equal(want) {
+			t.Fatalf("event %d start = %s, want %s", i, events[i].StartsAt, want)
+		}
+		if local := events[i].StartsAt.In(loc); local.Hour() != 9 || local.Minute() != 0 {
+			t.Fatalf("event %d local start = %s, want 09:00", i, local)
+		}
+	}
+}
