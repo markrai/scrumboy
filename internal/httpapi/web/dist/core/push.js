@@ -81,7 +81,7 @@ export async function maybeAutoSubscribePushAfterLogin(userId) {
         return;
     }
     const prior = getAutosubState(userId);
-    if (prior === AUTOSUB_STATE_DONE || prior === AUTOSUB_STATE_DENIED) {
+    if (prior === AUTOSUB_STATE_DENIED) {
         return;
     }
     try {
@@ -98,13 +98,20 @@ export async function maybeAutoSubscribePushAfterLogin(userId) {
         return;
     }
     try {
-        if (await isPushSubscribed()) {
-            setAutosubState(userId, AUTOSUB_STATE_DONE);
+        const reg = await ensureServiceWorkerRegistration();
+        const existing = await reg?.pushManager.getSubscription();
+        if (existing) {
+            if (await persistPushSubscription(existing)) {
+                setAutosubState(userId, AUTOSUB_STATE_DONE);
+            }
             return;
         }
     }
     catch {
-        /* ignore - treat as transient, do not persist */
+        return;
+    }
+    if (prior === AUTOSUB_STATE_DONE) {
+        return;
     }
     if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
         setAutosubState(userId, AUTOSUB_STATE_DENIED);
@@ -133,6 +140,20 @@ export async function maybeAutoSubscribePushAfterLogin(userId) {
         }
     }
     /* granted but subscribe failed (e.g. SW registration, push subscribe) - retry later */
+}
+async function persistPushSubscription(sub) {
+    const json = sub.toJSON();
+    if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+        return false;
+    }
+    await apiFetch('/api/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify({
+            endpoint: json.endpoint,
+            keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+        }),
+    });
+    return true;
 }
 /** True if this browser has an active push subscription for our SW. */
 export async function isPushSubscribed() {
@@ -187,21 +208,25 @@ export async function subscribeToPush() {
     if (!reg) {
         return false;
     }
-    const sub = await reg.pushManager.subscribe({
+    const existing = await reg.pushManager.getSubscription();
+    const sub = existing ?? await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
     });
-    const json = sub.toJSON();
-    if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-        return false;
+    try {
+        if (!(await persistPushSubscription(sub))) {
+            if (!existing) {
+                await sub.unsubscribe().catch(() => false);
+            }
+            return false;
+        }
     }
-    await apiFetch('/api/push/subscribe', {
-        method: 'POST',
-        body: JSON.stringify({
-            endpoint: json.endpoint,
-            keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-        }),
-    });
+    catch (err) {
+        if (!existing) {
+            await sub.unsubscribe().catch(() => false);
+        }
+        throw err;
+    }
     try {
         localStorage.setItem(LS_PUSH, '1');
     }

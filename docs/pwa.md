@@ -55,13 +55,19 @@ curl -sS -D- http://127.0.0.1:8080/api/push/vapid-public-key
 
 Prefer signed-in **`GET /api/auth/status`** (`pushConfigured`, `push.state` / `push.reason`) over the presence-oriented startup `web push: …` banner alone.
 
+## Outbound delivery requirements
+
+Web Push sends encrypted notifications from the Scrumboy server to the browser vendor's public HTTPS push-service URL, not back to Scrumboy's own origin. The server must resolve and connect directly to public HTTPS destinations. Private, loopback, link-local, and metadata IP destinations are blocked, redirects are rejected, and outbound `HTTP_PROXY`/`HTTPS_PROXY` settings are not used. Reverse proxies such as Caddy and Nginx handling inbound requests are unaffected. Proxy-only egress, split-horizon DNS returning private addresses, and some DNS64/NAT64-only environments may require network changes.
+
+A temporary delivery failure does not remove an existing subscription. The browser re-posts an existing subscription after sign-in so a missing server record can recover. Only a push-service `404` or `410` response removes an expired server subscription.
+
 ## Auto-subscribe after sign-in
 
 After sign-in (full mode, same origin), the SPA checks **`GET /api/auth/status`**. If **`pushConfigured: true`**, `maybeAutoSubscribePushAfterLogin`:
 
 1. Checks browser support (`serviceWorker`, `PushManager`).
 2. Fetches **`GET /api/push/vapid-public-key`**.
-3. Attempts **`subscribeToPush()`** unless a **per-user** autosub outcome is already in **localStorage** (`scrumboy_push_autosub_v1_u{userId}`): **`done`** or **`denied`**. Transient failures and dismissed prompts (`default` permission) do not lock the path.
+3. Re-posts any existing browser subscription for that signed-in user, even when the local autosub outcome is already **`done`**, repairing missing server records without prompting. New subscriptions are attempted only if no durable autosub outcome is recorded. **`denied`** continues to suppress automatic attempts. Transient failures and dismissed prompts (`default` permission) do not lock the path.
 
 This is **per browser / per device**, not a server-side default. The legacy global key **`scrumboy_push_autosub_v1`** is no longer read.
 

@@ -93,7 +93,7 @@ func TestPushNotifier_GeneratesExpectedVAPIDRequest(t *testing.T) {
 		bodyLength      int64
 	}
 	captured := make(chan capturedRequest, 1)
-	pushService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	pushService := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured <- capturedRequest{
 			method:          r.Method,
 			authorization:   r.Header.Get("Authorization"),
@@ -140,6 +140,7 @@ func TestPushNotifier_GeneratesExpectedVAPIDRequest(t *testing.T) {
 		t.Fatalf("prepare whitespace-padded VAPID configuration: %+v", prepared.status)
 	}
 	notifier := newPushNotifier(st, log.New(os.Stderr, "", 0), prepared.publicKey, prepared.privateKey, prepared.subscriber, true, false)
+	notifier.httpClient = pushService.Client()
 	assignee := user.ID
 	eventPayload, err := json.Marshal(eventbus.TodoAssignedPayload{
 		ProjectID:     project.ID,

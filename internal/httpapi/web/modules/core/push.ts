@@ -84,7 +84,7 @@ export async function maybeAutoSubscribePushAfterLogin(userId: number): Promise<
   }
 
   const prior = getAutosubState(userId);
-  if (prior === AUTOSUB_STATE_DONE || prior === AUTOSUB_STATE_DENIED) {
+  if (prior === AUTOSUB_STATE_DENIED) {
     return;
   }
 
@@ -102,12 +102,19 @@ export async function maybeAutoSubscribePushAfterLogin(userId: number): Promise<
   }
 
   try {
-    if (await isPushSubscribed()) {
-      setAutosubState(userId, AUTOSUB_STATE_DONE);
+    const reg = await ensureServiceWorkerRegistration();
+    const existing = await reg?.pushManager.getSubscription();
+    if (existing) {
+      if (await persistPushSubscription(existing)) {
+        setAutosubState(userId, AUTOSUB_STATE_DONE);
+      }
       return;
     }
   } catch {
-    /* ignore - treat as transient, do not persist */
+    return;
+  }
+  if (prior === AUTOSUB_STATE_DONE) {
+    return;
   }
 
   if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
@@ -139,6 +146,21 @@ export async function maybeAutoSubscribePushAfterLogin(userId: number): Promise<
     }
   }
   /* granted but subscribe failed (e.g. SW registration, push subscribe) - retry later */
+}
+
+async function persistPushSubscription(sub: PushSubscription): Promise<boolean> {
+  const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+    return false;
+  }
+  await apiFetch('/api/push/subscribe', {
+    method: 'POST',
+    body: JSON.stringify({
+      endpoint: json.endpoint,
+      keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+    }),
+  });
+  return true;
 }
 
 /** True if this browser has an active push subscription for our SW. */
@@ -192,22 +214,24 @@ export async function subscribeToPush(): Promise<boolean> {
   if (!reg) {
     return false;
   }
-  const sub = await reg.pushManager.subscribe({
+  const existing = await reg.pushManager.getSubscription();
+  const sub = existing ?? await reg.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
   });
-  const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
-  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-    return false;
+  try {
+    if (!(await persistPushSubscription(sub))) {
+      if (!existing) {
+        await sub.unsubscribe().catch(() => false);
+      }
+      return false;
+    }
+  } catch (err) {
+    if (!existing) {
+      await sub.unsubscribe().catch(() => false);
+    }
+    throw err;
   }
-
-  await apiFetch('/api/push/subscribe', {
-    method: 'POST',
-    body: JSON.stringify({
-      endpoint: json.endpoint,
-      keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-    }),
-  });
 
   try {
     localStorage.setItem(LS_PUSH, '1');

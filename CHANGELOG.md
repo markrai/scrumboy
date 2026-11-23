@@ -2,6 +2,14 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## [3.42.5] - 2026-11-23
+
+### Fixed
+
+- **Web Push endpoint and outbound delivery controls** - New subscriptions must use valid public HTTPS endpoints; existing endpoints are screened again before delivery. Push requests use a dedicated bounded HTTP client with safe address resolution, direct public-IP dialing, and no redirects or ambient outbound proxies.
+- **Subscription lifecycle resilience** - Delivery failures, DNS or TLS errors, blocked destinations, and nonterminal HTTP responses retain the subscription. Only push-service `404` and `410` responses remove expired subscriptions; endpoint-bearing errors are excluded from logs. Existing subscriptions remain removable through the unsubscribe API.
+- **Browser subscription recovery** - Existing browser subscriptions are re-registered at sign-in to heal missing server records, and failed new registrations clean up locally created subscriptions.
+
 ## [3.42.4] - 2026-11-22
 
 ### Fixed
