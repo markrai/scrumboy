@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -38,13 +39,10 @@ func TestGuestRoleBoardAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = st.UpdateUserRole(f.ownerCtx, f.owner.ID, id, SystemRoleGuest)
-	if !errors.Is(err, ErrConflict) || !strings.Contains(err.Error(), "remove temporary board membership") || !strings.Contains(err.Error(), f.durable.Name+" (maintainer)") || !strings.Contains(err.Error(), "outside your membership: 1") || strings.Contains(err.Error(), private.Name) || strings.Contains(err.Error(), private.Slug) {
+	if !errors.Is(err, ErrConflict) || strings.Contains(err.Error(), "remove temporary board membership") || !strings.Contains(err.Error(), f.durable.Name+" (maintainer)") || !strings.Contains(err.Error(), "outside your membership: 1") || strings.Contains(err.Error(), private.Name) || strings.Contains(err.Error(), private.Slug) {
 		t.Fatalf("incompatible memberships: %v", err)
 	}
 	if err := st.RemoveProjectMember(otherCtx, f.admin.ID, private.ID, id); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.RemoveProjectMember(f.ownerCtx, f.owner.ID, f.temp.ID, id); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UpdateProjectMemberRole(f.ownerCtx, f.owner.ID, f.durable.ID, id, RoleViewer); err != nil {
@@ -63,7 +61,7 @@ func TestGuestRoleBoardAccess(t *testing.T) {
 	if tag := plFindTag(tags, "personal"); tag == nil || tag.DeleteScope() != "none" {
 		t.Fatalf("Guest tag permissions: %+v", tag)
 	}
-	if err := st.AddProjectMember(f.ownerCtx, f.owner.ID, f.temp.ID, id, RoleViewer); !errors.Is(err, ErrValidation) {
+	if err := st.UpdateProjectMemberRole(f.ownerCtx, f.owner.ID, f.temp.ID, id, RoleContributor); err != nil {
 		t.Fatalf("add temporary membership: %v", err)
 	}
 	if err := st.UpdateProjectMemberRole(f.ownerCtx, f.owner.ID, f.durable.ID, id, RoleContributor); !errors.Is(err, ErrValidation) {
@@ -86,14 +84,38 @@ func TestGuestRoleBoardAccess(t *testing.T) {
 	if _, err := st.GetProjectContextBySlug(context.Background(), oldTemporary.Slug, ModeFull); err != nil {
 		t.Fatalf("signed-out read of temporary link: %v", err)
 	}
-	if items, err := st.ListProjects(ctx); err != nil || len(items) != 1 || items[0].Project.Slug != f.durable.Slug {
-		t.Fatalf("REST board list: %+v, %v", items, err)
+	projects, err := st.ListProjects(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if items, _, err := st.ListProjectSummaries(ctx, 10, nil); err != nil || len(items) != 1 || items[0].Slug != f.durable.Slug {
-		t.Fatalf("MCP board list: %+v, %v", items, err)
+	summaries, _, err := st.ListProjectSummaries(ctx, 10, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if data, err := st.ExportAllProjects(ctx, ModeFull); err != nil || len(data.Projects) != 0 {
+	var restSlugs, mcpSlugs []string
+	for _, item := range projects {
+		restSlugs = append(restSlugs, item.Project.Slug)
+	}
+	for _, item := range summaries {
+		mcpSlugs = append(mcpSlugs, item.Slug)
+	}
+	want := []string{f.durable.Slug, f.temp.Slug, oldTemporary.Slug}
+	slices.Sort(want)
+	for _, listed := range [][]string{restSlugs, mcpSlugs} {
+		slices.Sort(listed)
+		if !slices.Equal(listed, want) {
+			t.Fatalf("listed %v, want %v", listed, want)
+		}
+	}
+	if data, err := st.ExportAllProjects(ctx, ModeFull); err != nil || len(data.Projects) != 1 || data.Projects[0].Slug != oldTemporary.Slug {
 		t.Fatalf("backup export: %+v, %v", data, err)
+	}
+
+	if err := st.ClaimTemporaryBoard(f.ownerCtx, f.temp.ID, f.owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if role, err := st.GetProjectRole(ctx, f.temp.ID, id); err != nil || role != RoleViewer {
+		t.Fatalf("claimed board membership: %s, %v", role, err)
 	}
 
 	data, err := st.ExportAllProjects(f.ownerCtx, ModeFull)

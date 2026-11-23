@@ -388,9 +388,7 @@ function ensureProjectsI18nBinding(): void {
 
 function renderProjectsContent(projects: Project[]): void {
   const showBoardCreation = canCreateBoards(getUser());
-  if (!showBoardCreation) {
-    setProjectsTab("projects");
-  } else if (!getProjectsTab()) {
+  if (!getProjectsTab()) {
     setProjectsTab(localStorage.getItem("projectsTab") || "projects");
   }
 
@@ -412,10 +410,10 @@ function renderProjectsContent(projects: Project[]): void {
         <span class="projects-tab__label" data-i18n-text="projects.tabs.projects">${escapeHTML(t("projects.tabs.projects"))}</span>
         <span class="chip__count">${durableProjects.length}</span>
       </button>
-      ${showBoardCreation ? `<button class="chip ${getProjectsTab() === "temporary" ? "chip--active" : ""}" data-projects-tab="temporary">
+      <button class="chip ${getProjectsTab() === "temporary" ? "chip--active" : ""}" data-projects-tab="temporary">
         <span class="projects-tab__label" data-i18n-text="${temporaryLabelKey}">${escapeHTML(t(temporaryLabelKey))}</span>
         <span class="chip__count">${temporaryBoards.length}</span>
-      </button>` : ""}
+      </button>
     </div>
   `;
 

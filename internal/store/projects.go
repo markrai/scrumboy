@@ -382,10 +382,7 @@ WHERE (
   (p.expires_at IS NOT NULL AND p.creator_user_id = ?) OR
   (p.expires_at IS NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?)) OR
   (p.expires_at IS NOT NULL AND p.creator_user_id IS NOT NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?))
-) AND p.import_batch_id IS NULL
-  AND (p.expires_at IS NULL OR NOT EXISTS (
-    SELECT 1 FROM users WHERE id = ? AND system_role = 'guest'
-  ))`
+) AND p.import_batch_id IS NULL`
 	visibleProjectsOrderBy = `ORDER BY p.updated_at DESC, p.id DESC`
 )
 
@@ -412,7 +409,7 @@ func visibleProjectsQuery(selectColumns string, withCursor, withLimit bool) stri
 }
 
 func visibleProjectsArgs(userID int64) []any {
-	return []any{userID, userID, userID, userID, userID, userID}
+	return []any{userID, userID, userID, userID, userID}
 }
 
 func (s *Store) ListProjects(ctx context.Context) ([]ProjectListEntry, error) {

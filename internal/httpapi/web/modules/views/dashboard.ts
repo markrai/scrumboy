@@ -1,4 +1,3 @@
-import { canCreateBoards } from "../user-capabilities.js";
 import { app, settingsDialog } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { formatDate, formatLongDateWithWeekday, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
@@ -113,10 +112,10 @@ function renderTopTabs(): string {
         <span class="dashboard-tab__label" data-i18n-text="dashboard.tabs.projects">${escapeHTML(t("dashboard.tabs.projects"))}</span>
         <span class="chip__count">${durableProjects.length}</span>
       </button>
-      ${canCreateBoards(getUser()) ? `<button class="chip" id="temporaryTabBtn" type="button">
+      <button class="chip" id="temporaryTabBtn" type="button">
         <span class="dashboard-tab__label" data-i18n-text="${temporaryLabelKey}">${escapeHTML(t(temporaryLabelKey))}</span>
         <span class="chip__count">${temporaryBoards.length}</span>
-      </button>` : ""}
+      </button>
     </div>
   `;
 }

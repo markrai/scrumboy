@@ -122,7 +122,7 @@ WITH todos AS NOT MATERIALIZED (
   SELECT t.* FROM main.todos t
   JOIN projects p ON p.id = t.project_id
   JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
-  WHERE p.expires_at IS NULL AND p.import_batch_id IS NULL
+  WHERE p.import_batch_id IS NULL
 )
 `
 

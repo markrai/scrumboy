@@ -17,7 +17,7 @@
 | **User** | Default system role for newly created users (admin-created accounts and non-bootstrap OIDC provisioned users). | No instance-wide user management. Project access only via project membership. |
 | **Guest** | An Owner assigns Guest in Settings → Users or through the admin API. | Read-only access to assigned regular boards. Can open and edit temporary boards by shared link. Cannot create, import, or claim boards. |
 
-System-role updates through the admin API accept `admin`, `user`, and `guest`. An Owner can assign Guest after incompatible board memberships are resolved. Settings identifies conflicting boards where the Owner is also a member and gives only a count for other boards. A Guest can only hold Viewer memberships on regular boards.
+System-role updates through the admin API accept `admin`, `user`, and `guest`. An Owner can assign Guest after incompatible board memberships are resolved. Settings identifies conflicting boards where the Owner is also a member and gives only a count for other boards. On regular boards a Guest can only hold a Viewer membership. Temporary board memberships survive conversion to Guest. Normal listing and export rules apply, including export of temporary boards the account created. If a creator claims a temporary board, its Guest members become Viewers.
 
 Guest permissions apply to the signed-in account. Direct creation, Trello and backup import, and temporary board claims require permission to create boards. Public board links follow the [public-board setting](public-boards.md), and signed-out visitors can still use `/anon`.
 

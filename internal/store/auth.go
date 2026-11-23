@@ -327,6 +327,13 @@ WHERE id = ?
 		return err
 	}
 
+	if _, err := tx.ExecContext(ctx, `
+UPDATE project_members SET role = 'viewer'
+WHERE project_id = ? AND role <> 'viewer'
+  AND user_id IN (SELECT id FROM users WHERE system_role = 'guest')`, projectID); err != nil {
+		return fmt.Errorf("apply regular board guest permissions: %w", err)
+	}
+
 	// Only after a successful one-row conversion: guarantee the claimer is a maintainer.
 	// Upsert (not INSERT OR IGNORE) so a pre-existing lower-role membership is promoted.
 	if _, err := tx.ExecContext(ctx, `

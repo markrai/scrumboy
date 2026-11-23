@@ -468,14 +468,12 @@ func exportableProjectsSelector(ctx context.Context, mode Mode, authEnabled bool
 			return "", nil, ErrUnauthorized
 		}
 		return `(
-  (expires_at IS NOT NULL AND creator_user_id = ? AND NOT EXISTS (
-    SELECT 1 FROM users WHERE id = ? AND system_role = 'guest'
-  )) OR
+  (expires_at IS NOT NULL AND creator_user_id = ?) OR
   (expires_at IS NULL AND EXISTS (
     SELECT 1 FROM project_members pm
     WHERE pm.project_id = projects.id AND pm.user_id = ? AND pm.role = 'maintainer'
   ))
-)`, []any{userID, userID, userID}, nil
+)`, []any{userID, userID}, nil
 	}
 
 	// Pre-bootstrap: export all projects
