@@ -316,7 +316,7 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "errors.VALIDATION_ERROR.invalid_sprint_id": "Please choose a valid sprint.",
   "errors.VALIDATION_ERROR.invalid_sprint_name": "Please enter a valid sprint name.",
   "errors.VALIDATION_ERROR.invalid_system_role": "Please choose a valid system role.",
-  "errors.VALIDATION_ERROR.invalid_tag": "Please enter a valid tag.",
+  "errors.VALIDATION_ERROR.invalid_tag": "Tags: letters, numbers, hyphens only.",
   "errors.VALIDATION_ERROR.invalid_tag_color": "Please choose a valid tag color.",
   "errors.VALIDATION_ERROR.invalid_tag_id": "Please choose a valid tag.",
   "errors.VALIDATION_ERROR.invalid_tag_name": "Please enter a valid tag name.",
