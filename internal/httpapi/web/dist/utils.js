@@ -96,10 +96,35 @@ function escapeHTML(s) {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
 }
+let toastTimer;
 function showToast(msg) {
     toast.textContent = msg;
+    // A modal <dialog> lives in the browser top layer and paints over any z-index, which hid errors raised
+    // while a dialog was open. A manual popover joins the top layer too; re-showing puts it above the dialog.
+    const el = toast;
+    if (typeof el.showPopover === "function" && typeof el.hidePopover === "function") {
+        try {
+            if (el.matches(":popover-open"))
+                el.hidePopover();
+            el.showPopover();
+        }
+        catch {
+            // Popover unsupported or element not a popover: fall back to the plain fixed-position toast.
+        }
+    }
     toast.classList.add("toast--show");
-    setTimeout(() => toast.classList.remove("toast--show"), 2500);
+    if (toastTimer !== undefined)
+        clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+        toast.classList.remove("toast--show");
+        try {
+            if (el.matches(":popover-open"))
+                el.hidePopover?.();
+        }
+        catch {
+            // ignore
+        }
+    }, 2500);
 }
 /**
  * Process an image file: validate size (max 1MB), crop to center square, resize to 128x128 PNG.

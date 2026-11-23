@@ -6924,6 +6924,10 @@ button.omni-tag-pill:focus-visible {
 
 .toast {
   position: fixed;
+  /* popover="manual" (top layer, so it shows above an open modal dialog): reset the UA popover inset/margin */
+  top: auto;
+  right: auto;
+  margin: 0;
   bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
