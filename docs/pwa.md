@@ -57,7 +57,7 @@ Prefer signed-in **`GET /api/auth/status`** (`pushConfigured`, `push.state` / `p
 
 ## Outbound delivery requirements
 
-Web Push sends encrypted notifications from the Scrumboy server to the browser vendor's public HTTPS push-service URL, not back to Scrumboy's own origin. The server must resolve and connect directly to public HTTPS destinations. Private, loopback, link-local, and metadata IP destinations are blocked, redirects are rejected, and outbound `HTTP_PROXY`/`HTTPS_PROXY` settings are not used. Reverse proxies such as Caddy and Nginx handling inbound requests are unaffected. Proxy-only egress, split-horizon DNS returning private addresses, and some DNS64/NAT64-only environments may require network changes.
+Web Push sends encrypted notifications from the Scrumboy server to the browser vendor's public HTTPS push-service URL, not back to Scrumboy's own origin. The server must resolve and connect directly to public HTTPS destinations. Private, loopback, link-local, and metadata IP destinations are blocked, redirects are rejected, and outbound `HTTP_PROXY`/`HTTPS_PROXY` settings are not used. Reverse proxies such as Caddy and Nginx handling inbound requests are unaffected. Proxy-only egress, split-horizon DNS returning private addresses, and some DNS64/NAT64-only environments may require network changes. The well-known NAT64 prefix `64:ff9b::/96` and local-use translation prefix `64:ff9b:1::/48` are blocked. Custom NAT64 prefixes allocated from ordinary public IPv6 space cannot be identified automatically; operators using such prefixes **must enforce an egress firewall policy that prevents translated connections to private, loopback, link-local, and metadata IPv4 destinations**, or disable that translation path for Scrumboy.
 
 A temporary delivery failure does not remove an existing subscription. The browser re-posts an existing subscription after sign-in so a missing server record can recover. Only a push-service `404` or `410` response removes an expired server subscription.
 
@@ -67,7 +67,7 @@ After sign-in (full mode, same origin), the SPA checks **`GET /api/auth/status`*
 
 1. Checks browser support (`serviceWorker`, `PushManager`).
 2. Fetches **`GET /api/push/vapid-public-key`**.
-3. Re-posts any existing browser subscription for that signed-in user, even when the local autosub outcome is already **`done`**, repairing missing server records without prompting. New subscriptions are attempted only if no durable autosub outcome is recorded. **`denied`** continues to suppress automatic attempts. Transient failures and dismissed prompts (`default` permission) do not lock the path.
+3. Re-posts any existing browser subscription for that signed-in user without prompting, including when the local autosub outcome is **`done`** or **`denied`**, repairing missing server records. A previous **`denied`** outcome suppresses creating a new subscription until notification permission is granted in the browser settings. Transient failures and dismissed prompts (`default` permission) do not lock the path.
 
 This is **per browser / per device**, not a server-side default. The legacy global key **`scrumboy_push_autosub_v1`** is no longer read.
 

@@ -33,6 +33,7 @@ var blockedSpecialPurposeNets = mustParseCIDRs(
 	"240.0.0.0/4",   // reserved
 	"255.255.255.255/32",
 	"64:ff9b::/96",  // NAT64
+	"64:ff9b:1::/48",
 	"100::/64",      // discard-only
 	"2001:db8::/32", // documentation
 	"2002::/16",     // 6to4

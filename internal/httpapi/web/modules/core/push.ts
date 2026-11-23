@@ -84,9 +84,6 @@ export async function maybeAutoSubscribePushAfterLogin(userId: number): Promise<
   }
 
   const prior = getAutosubState(userId);
-  if (prior === AUTOSUB_STATE_DENIED) {
-    return;
-  }
 
   try {
     const keyResp = await getAppRuntime().transport().request('/api/push/vapid-public-key', { credentials: 'same-origin' });
@@ -114,6 +111,9 @@ export async function maybeAutoSubscribePushAfterLogin(userId: number): Promise<
     return;
   }
   if (prior === AUTOSUB_STATE_DONE) {
+    return;
+  }
+  if (prior === AUTOSUB_STATE_DENIED && (typeof Notification === 'undefined' || Notification.permission !== 'granted')) {
     return;
   }
 

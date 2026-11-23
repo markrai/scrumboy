@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- **Web Push endpoint and outbound delivery controls** - New subscriptions must use valid public HTTPS endpoints; existing endpoints are screened again before delivery. Push requests use a dedicated bounded HTTP client with safe address resolution, direct public-IP dialing, and no redirects or ambient outbound proxies.
+- **Web Push endpoint and outbound delivery controls** - New subscriptions must use valid public HTTPS endpoints; existing endpoints are screened again before delivery. Push requests use a dedicated bounded HTTP client with safe address resolution, direct public-IP dialing, and no redirects or ambient outbound proxies. Well-known and local-use NAT64 translation ranges are excluded.
 - **Subscription lifecycle resilience** - Delivery failures, DNS or TLS errors, blocked destinations, and nonterminal HTTP responses retain the subscription. Only push-service `404` and `410` responses remove expired subscriptions; endpoint-bearing errors are excluded from logs. Existing subscriptions remain removable through the unsubscribe API.
 - **Browser subscription recovery** - Existing browser subscriptions are re-registered at sign-in to heal missing server records, and failed new registrations clean up locally created subscriptions.
 

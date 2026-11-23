@@ -200,3 +200,34 @@ func TestNewDialContextUsesDialer(t *testing.T) {
 		t.Fatalf("err=%v, want ErrForbidden", err)
 	}
 }
+
+func TestDialContextRejectsLocalUseNAT64DNS(t *testing.T) {
+	t.Parallel()
+
+	lookups := 0
+	dials := 0
+	d := Dialer{
+		LookupIP: func(ctx context.Context, host string) ([]net.IP, error) {
+			lookups++
+			if host != "push.example.com" {
+				t.Fatalf("unexpected DNS hostname: %q", host)
+			}
+			return []net.IP{net.ParseIP("64:ff9b:1:fffe::a9fe:a9fe")}, nil
+		},
+		Dial: func(context.Context, string, string) (net.Conn, error) {
+			dials++
+			return nil, errors.New("unexpected NAT64 connection")
+		},
+	}
+	conn, err := d.DialContext(context.Background(), "tcp", "push.example.com:443")
+	if conn != nil {
+		_ = conn.Close()
+		t.Fatal("forbidden NAT64 destination was dialed")
+	}
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("DialContext error = %v, want ErrForbidden", err)
+	}
+	if lookups != 1 || dials != 0 {
+		t.Fatalf("lookups=%d, dials=%d; want one DNS lookup and zero connections", lookups, dials)
+	}
+}

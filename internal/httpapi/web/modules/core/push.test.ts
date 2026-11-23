@@ -21,7 +21,7 @@ function setupPushBrowser(existing: boolean) {
   const subscribe = vi.fn(async () => subscription);
   const request = vi.fn(async () => ({
     ok: true,
-    json: async () => ({ publicKey: 'public-key' }),
+    json: async () => ({ publicKey: 'AQID' }),
   }));
   installAppRuntime({
     kind: 'browser',
@@ -60,6 +60,42 @@ describe('Web Push subscription persistence', () => {
     expect(persist).toHaveBeenCalledTimes(1);
     expect(browser.subscribe).not.toHaveBeenCalled();
     expect(browser.subscription.unsubscribe).not.toHaveBeenCalled();
+  });
+
+  it('synchronizes an existing subscription even after a previous denied outcome', async () => {
+    const browser = setupPushBrowser(true);
+    localStorage.setItem('scrumboy_push_autosub_v1_u42', 'denied');
+    persist.mockResolvedValue(null);
+
+    await maybeAutoSubscribePushAfterLogin(42);
+
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(browser.subscribe).not.toHaveBeenCalled();
+    expect(localStorage.getItem('scrumboy_push_autosub_v1_u42')).toBe('done');
+  });
+
+  it('does not prompt while browser notification permission remains denied', async () => {
+    const browser = setupPushBrowser(false);
+    localStorage.setItem('scrumboy_push_autosub_v1_u42', 'denied');
+    vi.stubGlobal('Notification', { permission: 'denied', requestPermission: vi.fn() });
+
+    await maybeAutoSubscribePushAfterLogin(42);
+
+    expect(browser.subscribe).not.toHaveBeenCalled();
+    expect(persist).not.toHaveBeenCalled();
+    expect(Notification.requestPermission).not.toHaveBeenCalled();
+  });
+
+  it('can create a subscription without prompting when permission is restored', async () => {
+    const browser = setupPushBrowser(false);
+    localStorage.setItem('scrumboy_push_autosub_v1_u42', 'denied');
+    persist.mockResolvedValue(null);
+
+    await maybeAutoSubscribePushAfterLogin(42);
+
+    expect(browser.subscribe).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem('scrumboy_push_autosub_v1_u42')).toBe('done');
   });
 
   it('unsubscribes a newly created browser subscription when registration fails', async () => {

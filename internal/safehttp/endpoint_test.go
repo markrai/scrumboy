@@ -28,6 +28,7 @@ func TestValidPublicHTTPSEndpoint(t *testing.T) {
 		{"https://[::ffff:127.0.0.1]/send", false},
 		{"https://[fc00::1]/send", false},
 		{"https://[64:ff9b::8.8.8.8]/send", false},
+		{"https://[64:ff9b:1:fffe::a9fe:a9fe]/send", false},
 		{"https://localhost/send", false},
 		{"https://api.localhost/send", false},
 		{"https://LOCALHOST./send", false},
