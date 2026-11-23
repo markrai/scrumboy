@@ -2,21 +2,24 @@
 
 ## System Roles vs Project Roles
 
-**System roles** (Owner, Admin, User) govern system-level permissions such as user management and admin APIs.
+**System roles** (Owner, Admin, User, Guest) govern system-level permissions such as user management and admin APIs.
 
 **Project roles** (Maintainer, Contributor, Viewer) govern project-level permissions and are stored in the `project_members` table.
 
-**Important:** System roles (Owner, Admin, User) **never** grant project permissions. Project access is solely via `project_members`. A system Admin or Owner cannot access, modify, or delete a project without an explicit project membership.
+**Important:** System roles (Owner, Admin, User, Guest) **never** grant project permissions. Project access is solely via `project_members`. A system Admin or Owner cannot access, modify, or delete a project without an explicit project membership.
 
 ### System role matrix
 
 | Role | How assigned / obtained | Instance-wide capabilities |
 |------|-------------------------|----------------------------|
-| **Owner** | First user on an empty instance (local bootstrap or first OIDC sign-in). There is **no** supported public path to promote another user to Owner. | List users; create users; change a user’s system role to **admin** or **user**; delete users. Cannot delete or demote the last remaining Owner. Does **not** grant project access. |
+| **Owner** | First user on an empty instance (local bootstrap or first OIDC sign-in). There is **no** supported public path to promote another user to Owner. | List users; create users; change a user’s system role to **admin**, **user**, or **guest**; delete users. Cannot delete or demote the last remaining Owner. Does **not** grant project access. |
 | **Admin** | An Owner sets the user’s system role to **admin** via the admin Users UI / admin API. | List users; create users. Cannot change system roles or delete users. Does **not** grant project access. |
 | **User** | Default system role for newly created users (admin-created accounts and non-bootstrap OIDC provisioned users). | No instance-wide user management. Project access only via project membership. |
+| **Guest** | An Owner assigns Guest in Settings → Users or through the admin API. | Read-only access to assigned regular boards. Can open and edit temporary boards by shared link. Cannot create, import, or claim boards. |
 
-Public system-role updates accept only `admin` and `user`. Setting `owner` through that interface is rejected.
+System-role updates through the admin API accept `admin`, `user`, and `guest`. An Owner can assign Guest after incompatible board memberships are resolved. Settings identifies conflicting boards where the Owner is also a member and gives only a count for other boards. On regular boards a Guest can only hold a Viewer membership. Temporary board memberships survive conversion to Guest. Normal listing and export rules apply, including export of temporary boards the account created. If a creator claims a temporary board, its Guest members become Viewers.
+
+Guest permissions apply to the signed-in account. Direct creation, Trello and backup import, and temporary board claims require permission to create boards. Public board links follow the [public-board setting](public-boards.md), and signed-out visitors can still use `/anon`.
 
 ---
 
@@ -53,7 +56,7 @@ Public system-role updates accept only `admin` and `user`. Setting `owner` throu
 | Create tags                    | Contributor+  |                                        |
 | Delete project-scoped tag      | Maintainer+   | Shared board tag; not a personal/user-owned tag |
 | Update project-scoped tag color | Maintainer+  | Shared `tags.color` for everyone on the board |
-| Delete personal/user-owned tag | Tag owner only | No Maintainer override to delete another user’s personal tag |
+| Delete personal/user-owned tag | Tag owner, except Guests | No Maintainer override to delete another user’s personal tag |
 | Update personal tag color      | Per-user preference | Each user sets their own color for personal tags; does not change others’ colors |
 | Delete project                 | Maintainer+   |                                        |
 | Update project name/image      | Maintainer+   |                                        |
