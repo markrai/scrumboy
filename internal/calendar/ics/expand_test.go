@@ -729,7 +729,6 @@ func paddedICS(minBytes int, summary string) []byte {
 	return []byte(prefix + strings.Repeat("x", n) + suffix)
 }
 
-
 func TestExpandWeeklyMeetingKeepsLocalTimeAcrossDST(t *testing.T) {
 	loc, err := time.LoadLocation("America/New_York")
 	if err != nil {

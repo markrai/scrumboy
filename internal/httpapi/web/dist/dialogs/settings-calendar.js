@@ -145,8 +145,8 @@ function renderCalendarTabHTML(data) {
         <select class="input" id="agendaTimezoneInput">${renderTimezoneOptions(data.agendaTimezone)}</select>
       </label>
       <p class="muted" data-i18n-text="settings.calendar.timezone.hint">Used for today's events. All members see Agenda in this timezone.</p>
-       <p class="muted" data-i18n-text="settings.calendar.timezone.dstHint">Daylight saving time adjusts automatically when the selected region observes it.</p>
-       ${offerDeviceTimezone ? `<button class="btn btn--sm" type="button" id="agendaTimezoneUseDevice">${escapeHTML(t('settings.calendar.timezone.useDevice', { zone: deviceZone }))}</button>` : ''}
+      <p class="muted" data-i18n-text="settings.calendar.timezone.dstHint">Daylight saving time adjusts automatically when the selected region observes it.</p>
+      ${offerDeviceTimezone ? `<button class="btn btn--sm" type="button" id="agendaTimezoneUseDevice">${escapeHTML(t('settings.calendar.timezone.useDevice', { zone: deviceZone }))}</button>` : ''}
     </div>
     ${renderTimelinePreferenceHTML()}
     <div class="settings-section">

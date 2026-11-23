@@ -231,8 +231,9 @@ describe('settings calendar tab', () => {
       body: JSON.stringify({ agendaTimezone: 'Europe/Berlin' }),
     });
     expect(rerender).toHaveBeenCalledTimes(1);
-    expect((document.getElementById('agendaTimezoneInput') as HTMLSelectElement).value).toBe('Europe/Berlin');
-    expect(document.getElementById('agendaTimezoneUseDevice')).toBeNull();
+    const updatedHTML = await loadCalendarTabContent();
+    expect(updatedHTML).toContain('<option value="Europe/Berlin" selected>');
+    expect(updatedHTML).not.toContain('agendaTimezoneUseDevice');
   });
 
   it('does not offer device timezone changes to non-maintainers', async () => {
