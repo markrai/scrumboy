@@ -61,6 +61,14 @@ Anonymous mode: `pushConfigured` is forced false and the detailed `push` object 
 
 ---
 
+## Push destination and failure handling
+
+Registration accepts public HTTPS push-service URLs and rejects private or loopback address literals, malformed URLs, credentials, and fragments. Stored endpoints are screened again when used. Delivery resolves and dials only permitted public addresses, bypasses ambient outbound proxies, refuses redirects, and uses an overall timeout. DNS, TLS, timeout, or provider rate-limit errors do not delete a subscription. Only `404` or `410` push-service responses remove a subscription as expired. Existing subscriptions with an invalid destination remain stored but cannot be contacted until replaced or removed by the browser.
+
+See [`docs/pwa.md`](pwa.md) for outbound networking requirements on self-hosted deployments.
+
+---
+
 ## Two different notification paths
 
 Do not confuse these — they solve different problems:

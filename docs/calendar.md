@@ -16,9 +16,11 @@ All members of the project see the same events, timezone, lane name, and lane co
 
 1. Open the board → **Settings** → **Agenda**.
 2. Turn on **Enable Agenda for this board**.
-3. Choose the **board timezone**. “Today” and event times use this zone for everyone.
+3. Choose the **board timezone**. “Today” and event times use this zone for everyone. You can select **Use device timezone** to save your current device's region to the board.
 4. Optionally set **lane name** and **lane color** (defaults: `Agenda` and indigo).
 5. Under **Add ICS feed**, enter a display name and an **HTTPS** iCalendar URL, then **Add feed**.
+
+**Daylight saving time:** Choose a named regional IANA timezone, such as `America/New_York` or `Europe/Berlin`. Scrumboy automatically uses the correct standard or summer-time offset for each event date; there is no manual DST switch. `UTC` and fixed-offset zones do not automatically adjust. The board timezone is shared by everyone, so choosing your device's timezone changes the board setting for all members. Explicit `TZID` values supplied by an ICS feed are respected; floating calendar times use the board timezone.
 
 Up to **8** feeds per board. Disable a feed without deleting it; use **Refresh** to fetch immediately; **Remove** deletes it.
 

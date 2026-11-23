@@ -202,6 +202,47 @@ describe('settings calendar tab', () => {
     expect(listAgendaTimezones('')).toContain('UTC');
   });
 
+  it('offers the detected device timezone and explains automatic daylight saving', async () => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      timeZone: 'Europe/Berlin',
+    } as Intl.ResolvedDateTimeFormatOptions);
+    apiFetchMock.mockResolvedValue(calendarPayload);
+
+    const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
+    document.body.innerHTML = await loadCalendarTabContent();
+
+    const useDevice = document.getElementById('agendaTimezoneUseDevice') as HTMLButtonElement;
+    expect(useDevice?.textContent).toContain('Europe/Berlin');
+    expect(document.body.textContent).toContain('Daylight saving time adjusts automatically');
+    expect(document.getElementById('agendaTimezoneInput')).not.toBeNull();
+
+    const rerender = vi.fn(async () => {
+      document.body.innerHTML = await loadCalendarTabContent();
+    });
+    bindCalendarTabInteractions({ signal: new AbortController().signal, rerender });
+    apiFetchMock.mockReset();
+    apiFetchMock.mockResolvedValue({ ...calendarPayload, agendaTimezone: 'Europe/Berlin' });
+    useDevice.click();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/board/alpha/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ agendaTimezone: 'Europe/Berlin' }),
+    });
+    expect(rerender).toHaveBeenCalledTimes(1);
+    const updatedHTML = await loadCalendarTabContent();
+    expect(updatedHTML).toContain('<option value="Europe/Berlin" selected>');
+    expect(updatedHTML).not.toContain('agendaTimezoneUseDevice');
+  });
+
+  it('does not offer device timezone changes to non-maintainers', async () => {
+    const { loadCalendarTabContent } = await import('./settings-calendar.js');
+    const html = await loadCalendarTabContent({ canManageCalendar: false });
+    expect(html).not.toContain('agendaTimezoneUseDevice');
+    expect(html).not.toContain('agendaTimezoneInput');
+  });
+
   it('saves the selected timezone on change', async () => {
     intlWithSupportedValues.supportedValuesOf = () => ['America/New_York', 'UTC'];
     apiFetchMock.mockResolvedValue(calendarPayload);

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 
+	"scrumboy/internal/safehttp"
 	"scrumboy/internal/store"
 )
 
@@ -48,6 +49,10 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request, rest []strin
 		}
 		if in.Endpoint == "" || in.Keys.P256dh == "" || in.Keys.Auth == "" {
 			writeValidationError(w, "endpoint and keys.p256dh, keys.auth required", "push_subscription_keys_required", nil)
+			return
+		}
+		if !safehttp.ValidPublicHTTPSEndpoint(in.Endpoint) {
+			writeValidationError(w, "endpoint must be a public https URL", "invalid_push_endpoint", nil)
 			return
 		}
 		ua := r.UserAgent()

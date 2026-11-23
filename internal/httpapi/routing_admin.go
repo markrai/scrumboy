@@ -166,9 +166,8 @@ func (s *Server) handleAdminUsersUpdateRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Only allow "admin" or "user" - do NOT allow "owner" promotion via API
-	if in.Role != "admin" && in.Role != "user" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "role must be 'admin' or 'user'", nil)
+	if in.Role != "admin" && in.Role != "user" && in.Role != "guest" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "role must be 'admin', 'user', or 'guest'", nil)
 		return
 	}
 

@@ -293,6 +293,7 @@ Assignee history uses a separate `todo_assignee_events` table (also append-orien
 ### Web Push
 
 - Active only when Web Push is **effectively enabled** (full mode + validated matching VAPID key pair + valid/default subscriber)—not merely because env strings are non-empty (`prepareWebPushConfiguration`).
+- New Web Push subscriptions must use public HTTPS endpoints. Delivery checks stored endpoints again, resolves public addresses through the hardened outbound dialer, and rejects private/link-local destinations, the well-known and local-use NAT64 prefixes (`64:ff9b::/96`, `64:ff9b:1::/48`), redirects, and ambient HTTP proxies. A 10-second overall request limit applies. Operator-specific NAT64 prefixes within ordinary global-unicast IPv6 space cannot be reliably recognized: deployments using such translation must enforce egress firewall restrictions against translated private and metadata destinations.
 - Assignment notifications use the Web Push protocol (encrypted to the browser endpoint). Payload fields include assignment type, fixed title text, **todo title as** `body`, `projectSlug`, `todoId`, and `scrumboyPush`. Push network operators can observe metadata consistent with Web Push; encryption is not the same as “content never leaves the instance.”
 - Startup `web push: …` logging is presence-oriented; prefer `pushConfigured` / `push.state` on auth status. User permission is per browser/device.
 - Details: `[docs/vapid.md](vapid.md)`, `[docs/pwa.md](pwa.md)`.

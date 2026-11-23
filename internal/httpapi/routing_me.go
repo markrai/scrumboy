@@ -40,7 +40,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, rest []string)
 			writeStoreErr(w, err, false)
 			return
 		}
-		writeJSON(w, http.StatusOK, userToJSON(u))
+		writeJSON(w, http.StatusOK, currentUserToJSON(u))
 		return
 	case http.MethodPatch:
 		var in struct {
@@ -80,7 +80,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, rest []string)
 			writeStoreErr(w, err, false)
 			return
 		}
-		writeJSON(w, http.StatusOK, userToJSON(u))
+		writeJSON(w, http.StatusOK, currentUserToJSON(u))
 		return
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)

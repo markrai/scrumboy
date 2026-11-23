@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.42.4-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.42.6-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -139,7 +139,7 @@ Scrumboy includes a native Android client, implemented with Capacitor, under `mo
 
 # Roles
 
-In **full mode**, access is governed by two separate role systems: instance-wide system roles (**Owner**, **Admin**, **User**) and per-project roles. System roles do not grant project access; project access comes only from project membership.
+In **full mode**, access is governed by two separate role systems: instance-wide system roles (**Owner**, **Admin**, **User**, **Guest**) and per-project roles. System roles do not grant project access; project access comes only from project membership.
 
 ### System roles (instance-wide)
 
