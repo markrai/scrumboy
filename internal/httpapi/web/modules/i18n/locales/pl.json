@@ -502,6 +502,8 @@
   "settings.calendar.enableHint": "Today's events from ICS feeds appear in a read-only Agenda lane. All members see the same Agenda.",
   "settings.calendar.timezone.label": "Board timezone",
   "settings.calendar.timezone.hint": "Used for today's events. All members see Agenda in this timezone.",
+  "settings.calendar.timezone.dstHint": "Zmiana na czas letni następuje automatycznie, jeśli obowiązuje w wybranym regionie.",
+  "settings.calendar.timezone.useDevice": "Użyj strefy czasowej urządzenia ({zone})",
   "settings.calendar.timeline.label": "Start of day",
   "settings.calendar.timeline.hint": "Agenda initially scrolls here unless an earlier event exists.",
   "settings.calendar.nowLine.label": "Prominent now line",
