@@ -138,7 +138,7 @@ Scrumboy includes a native Android client, implemented with Capacitor, under `mo
 
 # Roles
 
-In **full mode**, access is governed by two separate role systems: instance-wide system roles (**Owner**, **Admin**, **User**) and per-project roles. System roles do not grant project access; project access comes only from project membership.
+In **full mode**, access is governed by two separate role systems: instance-wide system roles (**Owner**, **Admin**, **User**, **Guest**) and per-project roles. System roles do not grant project access; project access comes only from project membership.
 
 ### System roles (instance-wide)
 

@@ -1,3 +1,4 @@
+import { canCreateBoards } from "../user-capabilities.js";
 import { settingsDialog, closeSettingsBtn } from '../dom/elements.js';
 import { apiFetch, apiFetchForm } from '../api.js';
 import { fetchProjectMembers } from '../members-cache.js';
@@ -692,7 +693,7 @@ export function renderBackupTabHTML(): string {
         <div class="settings-section__description muted" data-i18n-text="settings.backup.export.description">Download all your projects, todos, and tags as a JSON file.</div>
         <button class="btn" type="button" id="backupExportBtn" data-i18n-text="settings.backup.export.action">Export Backup</button>
       </div>
-      <div class="settings-backup-import">
+      ${canCreateBoards(getUser()) ? `<div class="settings-backup-import">
         <div class="settings-section__title" data-i18n-text="settings.backup.import.title">Import Data</div>
         <div class="settings-section__description muted" data-i18n-text="settings.backup.import.description">Restore from a backup file or merge data from another instance.</div>
         <input type="file" accept=".json,.sbz,application/json,application/zip" id="backupFileInput" style="margin-bottom: 16px;">
@@ -729,6 +730,7 @@ export function renderBackupTabHTML(): string {
         <div id="trelloImportWarnings" class="settings-backup-warnings" style="display: none; margin-bottom: 16px; padding: 12px; background: var(--panel); border-radius: 4px; color: var(--muted);"></div>
         <div id="trelloImportResult" class="settings-backup-preview" style="display: none; padding: 12px; background: var(--panel); border-radius: 4px;"></div>
       </div>
+      ` : ""}
       ${deleteHTML}
     </div>
   `;
@@ -2410,6 +2412,24 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       }, { signal });
     });
 
+    document.querySelectorAll<HTMLButtonElement>('[data-guest-role]').forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const { userId, guestRole } = btn.dataset;
+        if (!userId || !guestRole) return;
+        btn.disabled = true;
+        try {
+          await apiFetch(`/api/admin/users/${userId}/role`, {
+            method: "PATCH",
+            body: JSON.stringify({ role: guestRole }),
+          });
+          await renderSettingsModal();
+        } catch (err: any) {
+          showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.toast.roleChangeFailed" }));
+          btn.disabled = false;
+        }
+      }, { signal });
+    });
+
     // Delete button
     document.querySelectorAll('[data-action="delete"]').forEach(btn => {
       btn.addEventListener("click", async (e) => {
@@ -3010,43 +3030,28 @@ async function renderUsersTabContent(): Promise<string> {
     const rows = users.map((user: any) => {
       const isSelf = user.id === currentUser?.id;
       const userRole = user.systemRole || "user";
-      const isUserRole = userRole === "user";
       const isAdminRole = userRole === "admin";
+      const isGuestRole = userRole === "guest";
       const isOwnerRole = userRole === "owner";
-
-      // Determine available actions
       let actionsHTML = "-";
-      
-      if (isOwner) {
-        // Owner can manage all users except themselves
-        if (isSelf) {
-          // Self: no delete, no demote if last owner
-          actionsHTML = "-";
-        } else if (isOwnerRole) {
-          // Other owner: no actions (can't demote/promote owners, can't delete owners)
-          actionsHTML = "-";
-        } else if (isAdminRole) {
-          // Admin: can demote to user or delete
-          actionsHTML = `
-            <div class="users-table__actions">
-              <button class="btn btn--ghost btn--small" data-action="demote" data-user-id="${user.id}" data-user-role="${userRole}" data-i18n-text="settings.users.actions.demote">Demote</button>
-              <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
-			  ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
-            </div>
-          `;
-        } else if (isUserRole) {
-          // User: can promote to admin or delete
-          actionsHTML = `
-            <div class="users-table__actions">
-              <button class="btn btn--ghost btn--small" data-action="promote" data-user-id="${user.id}" data-user-role="${userRole}" data-i18n-text="settings.users.actions.promote">Promote</button>
-              <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
-			  ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
-            </div>
-          `;
-        }
-      } else if (isAdmin) {
-        // Admin: can view but not manage
-        actionsHTML = "-";
+
+      if (isOwner && !isSelf && !isOwnerRole) {
+        const systemRoleAction = isAdminRole
+          ? `<button class="btn btn--ghost btn--small" data-action="demote" data-user-id="${user.id}" data-i18n-text="settings.users.actions.demote">Demote</button>`
+          : isGuestRole
+            ? ""
+            : `<button class="btn btn--ghost btn--small" data-action="promote" data-user-id="${user.id}" data-i18n-text="settings.users.actions.promote">Promote</button>`;
+        const guestRoleAction = user.isService ? "" : isGuestRole
+          ? `<button class="btn btn--ghost btn--small" data-guest-role="user" data-user-id="${user.id}" data-i18n-text="settings.users.actions.setUser">${escapeHTML(t("settings.users.actions.setUser"))}</button>`
+          : `<button class="btn btn--ghost btn--small" data-guest-role="guest" data-user-id="${user.id}" data-i18n-text="settings.users.actions.setGuest">${escapeHTML(t("settings.users.actions.setGuest"))}</button>`;
+        actionsHTML = `
+          <div class="users-table__actions">
+            ${systemRoleAction}
+            ${guestRoleAction}
+            <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
+            ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
+          </div>
+        `;
       }
 
       const roleDisplay = userRole.charAt(0).toUpperCase() + userRole.slice(1);

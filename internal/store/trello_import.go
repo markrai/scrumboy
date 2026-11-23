@@ -28,6 +28,9 @@ func (s *Store) ImportTrelloProject(ctx context.Context, data *ExportData, proje
 		return Project{}, fmt.Errorf("begin Trello import tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := requireBoardCreation(ctx, tx); err != nil {
+		return Project{}, err
+	}
 
 	newProjectID, projectRow, err := s.insertTrelloProjectRow(ctx, tx, projectExport, projectImportMetadata, mode, nowMs)
 	if err != nil {

@@ -382,7 +382,10 @@ WHERE (
   (p.expires_at IS NOT NULL AND p.creator_user_id = ?) OR
   (p.expires_at IS NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?)) OR
   (p.expires_at IS NOT NULL AND p.creator_user_id IS NOT NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?))
-) AND p.import_batch_id IS NULL`
+) AND p.import_batch_id IS NULL
+  AND (p.expires_at IS NULL OR NOT EXISTS (
+    SELECT 1 FROM users WHERE id = ? AND system_role = 'guest'
+  ))`
 	visibleProjectsOrderBy = `ORDER BY p.updated_at DESC, p.id DESC`
 )
 
@@ -409,7 +412,7 @@ func visibleProjectsQuery(selectColumns string, withCursor, withLimit bool) stri
 }
 
 func visibleProjectsArgs(userID int64) []any {
-	return []any{userID, userID, userID, userID, userID}
+	return []any{userID, userID, userID, userID, userID, userID}
 }
 
 func (s *Store) ListProjects(ctx context.Context) ([]ProjectListEntry, error) {
@@ -745,7 +748,7 @@ func (s *Store) CreateProjectWithWorkflow(ctx context.Context, name string, work
 		return Project{}, fmt.Errorf("begin create project tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := rejectServiceActor(ctx, tx); err != nil {
+	if err := requireBoardCreation(ctx, tx); err != nil {
 		return Project{}, err
 	}
 
@@ -964,6 +967,11 @@ func (s *Store) userCanCreateTagsInProject(ctx context.Context, projectID int64,
 		return true, nil
 	}
 
+	guest, err := isGuest(ctx, s.db, userID)
+	if err != nil || guest {
+		return false, err
+	}
+
 	// Check if user is owner via owner_user_id
 	if p.OwnerUserID != nil && *p.OwnerUserID == userID {
 		return true, nil
@@ -1036,7 +1044,7 @@ func (s *Store) getProject(ctx context.Context, projectID int64) (Project, error
 	if err != nil {
 		return p, err
 	}
-	if err := rejectServiceLinkAccess(ctx, s.db, p); err != nil {
+	if err := rejectRestrictedLinkAccess(ctx, s.db, p); err != nil {
 		return Project{}, err
 	}
 	// Safety check: if slug is missing, generate and persist it
@@ -1066,7 +1074,7 @@ func (s *Store) GetProjectBySlug(ctx context.Context, slug string) (Project, err
 	if err != nil {
 		return p, err
 	}
-	if err := rejectServiceLinkAccess(ctx, s.db, p); err != nil {
+	if err := rejectRestrictedLinkAccess(ctx, s.db, p); err != nil {
 		return Project{}, err
 	}
 	return p, nil
@@ -1078,7 +1086,7 @@ func getProjectTx(ctx context.Context, tx *sql.Tx, projectID int64, store *Store
 	if err != nil {
 		return p, err
 	}
-	if err := rejectServiceLinkAccess(ctx, tx, p); err != nil {
+	if err := rejectRestrictedLinkAccess(ctx, tx, p); err != nil {
 		return Project{}, err
 	}
 	// Safety check: if slug is missing, generate and persist it
@@ -1139,7 +1147,7 @@ func (s *Store) getProjectForReadTx(ctx context.Context, tx *sql.Tx, projectID i
 	if err != nil {
 		return Project{}, err
 	}
-	if err := rejectServiceLinkAccess(ctx, tx, p); err != nil {
+	if err := rejectRestrictedLinkAccess(ctx, tx, p); err != nil {
 		return Project{}, err
 	}
 	// Temporary boards bypass ownership because of project state, not because of request mode.
@@ -1577,6 +1585,10 @@ func (s *Store) CreateAnonymousBoard(ctx context.Context) (Project, error) {
 		tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 		if err != nil {
 			return Project{}, fmt.Errorf("begin create anonymous board: %w", err)
+		}
+		if err := requireBoardCreation(ctx, tx); err != nil {
+			_ = tx.Rollback()
+			return Project{}, err
 		}
 		r, err := tx.ExecContext(ctx, `INSERT INTO projects(name, image, slug, estimation_mode, creator_user_id, last_activity_at, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, name, defaultImage, slug, EstimationModeModifiedFibonacci, creatorUserID, nowMs, expiresAtMs, nowMs, nowMs)
 		if err != nil {

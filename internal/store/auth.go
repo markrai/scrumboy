@@ -235,6 +235,11 @@ func (s *Store) AssignUnownedDurableProjectsToUser(ctx context.Context, userID i
 		return fmt.Errorf("begin assign projects tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	guest, err := isGuest(ctx, tx, userID)
+	if err != nil || guest {
+		return err
+	}
+
 	// CRITICAL: Only assign durable projects (expires_at IS NULL).
 	// Temporary boards (expires_at IS NOT NULL) must NEVER be assigned, even if owner_user_id IS NULL.
 	if _, err := tx.ExecContext(ctx, `
@@ -316,6 +321,10 @@ WHERE id = ?
 	}
 	if affected != 1 {
 		return ErrNotFound
+	}
+
+	if err := requireBoardCreation(WithUserID(ctx, userID), tx); err != nil {
+		return err
 	}
 
 	// Only after a successful one-row conversion: guarantee the claimer is a maintainer.
@@ -658,7 +667,7 @@ func (s *Store) deleteUser(ctx context.Context, requesterID, targetUserID int64,
 // a concurrent role change cannot invalidate them between the check and the write.
 func (s *Store) UpdateUserRole(ctx context.Context, requesterID, targetUserID int64, newRole SystemRole) error {
 	// Validate role
-	if newRole != SystemRoleOwner && newRole != SystemRoleAdmin && newRole != SystemRoleUser {
+	if newRole != SystemRoleOwner && newRole != SystemRoleAdmin && newRole != SystemRoleUser && newRole != SystemRoleGuest {
 		return fmt.Errorf("%w: invalid system role", ErrValidation)
 	}
 
@@ -696,6 +705,12 @@ func (s *Store) UpdateUserRole(ctx context.Context, requesterID, targetUserID in
 		}
 		if count <= 1 {
 			return fmt.Errorf("%w: cannot demote the last owner", ErrValidation)
+		}
+	}
+
+	if newRole == SystemRoleGuest {
+		if err := validateGuestRoleChange(ctx, tx, targetUserID); err != nil {
+			return err
 		}
 	}
 

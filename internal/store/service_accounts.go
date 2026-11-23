@@ -73,22 +73,6 @@ func isServiceUser(ctx context.Context, q sqlRowQueryer, userID int64) (bool, er
 	return isService, nil
 }
 
-// rejectServiceActor refuses an operation reserved for human actors.
-func rejectServiceActor(ctx context.Context, q sqlRowQueryer) error {
-	userID, ok := UserIDFromContext(ctx)
-	if !ok {
-		return nil
-	}
-	isService, err := isServiceUser(ctx, q, userID)
-	if err != nil {
-		return err
-	}
-	if isService {
-		return ErrServiceAccountRestricted
-	}
-	return nil
-}
-
 // serviceLinkAccessBlocked reports whether userID is a service account with no membership in the
 // project. Expiring boards normally admit anyone holding the link, but a service identity acts only
 // within explicitly delegated projects.
@@ -104,15 +88,22 @@ func serviceLinkAccessBlocked(ctx context.Context, q sqlRowQueryer, projectID, u
 	return !isMember, nil
 }
 
-// rejectServiceLinkAccess is the gate in the project loaders, which every link-collaboration path
+// rejectRestrictedLinkAccess is the gate in the project loaders, which every link-collaboration path
 // goes through.
-func rejectServiceLinkAccess(ctx context.Context, q sqlRowQueryer, p Project) error {
+func rejectRestrictedLinkAccess(ctx context.Context, q sqlRowQueryer, p Project) error {
 	if p.ExpiresAt == nil {
 		return nil
 	}
 	userID, ok := UserIDFromContext(ctx)
 	if !ok {
 		return nil
+	}
+	guest, err := isGuest(ctx, q, userID)
+	if err != nil {
+		return err
+	}
+	if guest {
+		return ErrNotFound
 	}
 	blocked, err := serviceLinkAccessBlocked(ctx, q, p.ID, userID)
 	if err != nil {

@@ -117,6 +117,22 @@ func buildDashboardWorkflowSemantics(cols []WorkflowColumn) dashboardWorkflowSem
 	return sem
 }
 
+const guestDashboardTodos = `
+WITH todos AS NOT MATERIALIZED (
+  SELECT t.* FROM main.todos t
+  JOIN projects p ON p.id = t.project_id
+  JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
+  WHERE p.expires_at IS NULL AND p.import_batch_id IS NULL
+)
+`
+
+func dashboardTodoScope(guest bool, userID int64, query string, args []any) (string, []any) {
+	if guest {
+		return guestDashboardTodos + query, append([]any{userID}, args...)
+	}
+	return query, args
+}
+
 func (s *Store) GetDashboardSummary(ctx context.Context, userID int64, timezone string) (DashboardSummary, error) {
 	// Assigned count and total points: per project, use sprint filter when ACTIVE sprint exists
 	// We'll compute after we have project list and active sprints
@@ -144,8 +160,21 @@ func (s *Store) GetDashboardSummary(ctx context.Context, userID int64, timezone 
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	guest, err := isGuest(ctx, tx, userID)
+	if err != nil {
+		return DashboardSummary{}, err
+	}
+	queryRows := func(query string, args ...any) (*sql.Rows, error) {
+		query, args = dashboardTodoScope(guest, userID, query, args)
+		return tx.QueryContext(ctx, query, args...)
+	}
+	queryRow := func(query string, args ...any) *sql.Row {
+		query, args = dashboardTodoScope(guest, userID, query, args)
+		return tx.QueryRowContext(ctx, query, args...)
+	}
+
 	// Projects with assigned todos (for activeSprint per project)
-	projectRows, err := tx.QueryContext(ctx, `
+	projectRows, err := queryRows(`
 SELECT DISTINCT p.id, p.name, p.slug
 FROM todos t
 JOIN projects p ON p.id = t.project_id
@@ -234,7 +263,7 @@ ORDER BY p.name
 		}
 		args = append(args, userID)
 		var spPts, blPts sql.NullInt64
-		if err := tx.QueryRowContext(ctx, `
+		if err := queryRow(`
 SELECT
   COALESCE(SUM(CASE WHEN sprint_id IN `+ph+` THEN 1 ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN sprint_id IN `+ph+` THEN estimation_points ELSE 0 END), 0),
@@ -255,7 +284,7 @@ WHERE assignee_user_id = ? AND wc.is_done = 0 AND archived_at IS NULL
 	} else {
 		// No active sprints: all assigned non-DONE is unscheduled
 		var pUnsched sql.NullInt64
-		if err := tx.QueryRowContext(ctx, `
+		if err := queryRow(`
 SELECT COUNT(*), COALESCE(SUM(estimation_points), 0)
 FROM todos t
 JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
@@ -289,7 +318,7 @@ WHERE assignee_user_id = ? AND wc.is_done = 0 AND archived_at IS NULL`, userID).
 			args = append(args, id)
 		}
 		args = append(args, userID)
-		if err := tx.QueryRowContext(ctx, `
+		if err := queryRow(`
 SELECT COALESCE(SUM(t.estimation_points), 0), COUNT(*)
 FROM todos t
 JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
@@ -319,7 +348,7 @@ WHERE t.assignee_user_id = ?
 			}
 			var p int64
 			var c int
-			if err := tx.QueryRowContext(ctx, `
+			if err := queryRow(`
 SELECT COALESCE(SUM(estimation_points), 0), COUNT(*)
 FROM todos t
 JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
@@ -335,7 +364,7 @@ WHERE assignee_user_id = ? AND done_at >= ? AND done_at < ?
 
 	// If no project has active sprint, use calendar week globally
 	if len(projectIDsWithActive) == 0 {
-		if err := tx.QueryRowContext(ctx, `
+		if err := queryRow(`
 SELECT COALESCE(SUM(estimation_points), 0), COUNT(*)
 FROM todos t
 JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
@@ -365,7 +394,7 @@ WHERE assignee_user_id = ? AND done_at >= ? AND done_at < ?
 		var totalAll, doneCountAll int
 		var totalPointsAll, donePointsAll int64
 		doneCond := `done_wc.id IS NOT NULL AND s.started_at IS NOT NULL AND t.done_at >= s.started_at AND t.done_at < COALESCE(s.closed_at, s.planned_end_at)`
-		if err := tx.QueryRowContext(ctx, `
+		if err := queryRow(`
 SELECT
   COALESCE(SUM(CASE WHEN t.assignee_user_id = ? THEN 1 ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN t.assignee_user_id = ? THEN t.estimation_points ELSE 0 END), 0),
@@ -397,7 +426,7 @@ WHERE t.sprint_id IN `+ph,
 	}
 
 	var wipCount, wipInProgressCount, wipTestingCount int
-	wipRows, err := tx.QueryContext(ctx, `
+	wipRows, err := queryRows(`
 SELECT t.project_id, t.column_key, t.local_id, t.title, t.updated_at, p.name, p.slug
 FROM todos t
 JOIN projects p ON p.id = t.project_id
@@ -468,7 +497,7 @@ WHERE t.assignee_user_id = ? AND wc.is_done = 0 AND t.archived_at IS NULL
 		})
 	}
 
-	rows, err := tx.QueryContext(ctx, `
+	rows, err := queryRows(`
 SELECT
   CAST((done_at - ?) / ? AS INTEGER) AS week_bucket,
   COUNT(*) AS stories,
@@ -511,7 +540,7 @@ ORDER BY week_bucket ASC
 		}
 		args = append(args, userID)
 		var avg sql.NullFloat64
-		if err := tx.QueryRowContext(ctx, `
+		if err := queryRow(`
 SELECT AVG((t.done_at - t.created_at) / 86400000.0)
 FROM todos t
 JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
@@ -528,7 +557,7 @@ WHERE t.assignee_user_id = ?
 	} else {
 		thirtyDaysAgo := time.Now().UTC().AddDate(0, 0, -30).UnixMilli()
 		var avg sql.NullFloat64
-		if err := tx.QueryRowContext(ctx, `
+		if err := queryRow(`
 SELECT AVG((done_at - created_at) / 86400000.0)
 FROM todos t
 JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
@@ -803,13 +832,28 @@ func normalizeDashboardTodoPageLimits(limit int) (pageLimit, fetchLimit int) {
 }
 
 func (s *Store) ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string, sort string) ([]DashboardTodo, *string, error) {
-	if NormalizeDashboardTodoSort(sort) == dashboardTodoSortBoard {
-		return s.listDashboardTodosBoard(ctx, userID, limit, cursor)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin dashboard todos: %w", err)
 	}
-	return s.listDashboardTodosActivity(ctx, userID, limit, cursor)
+	defer tx.Rollback()
+
+	guest, err := isGuest(ctx, tx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	queryRows := func(query string, args ...any) (*sql.Rows, error) {
+		query, args = dashboardTodoScope(guest, userID, query, args)
+		return tx.QueryContext(ctx, query, args...)
+	}
+
+	if NormalizeDashboardTodoSort(sort) == dashboardTodoSortBoard {
+		return s.listDashboardTodosBoard(queryRows, userID, limit, cursor)
+	}
+	return s.listDashboardTodosActivity(queryRows, userID, limit, cursor)
 }
 
-func (s *Store) listDashboardTodosActivity(ctx context.Context, userID int64, limit int, cursor *string) ([]DashboardTodo, *string, error) {
+func (s *Store) listDashboardTodosActivity(queryRows func(string, ...any) (*sql.Rows, error), userID int64, limit int, cursor *string) ([]DashboardTodo, *string, error) {
 	pageLimit, fetchLimit := normalizeDashboardTodoPageLimits(limit)
 
 	raw := dashboardCursorRaw(cursor)
@@ -822,7 +866,7 @@ func (s *Store) listDashboardTodosActivity(ctx context.Context, userID int64, li
 		if !ok {
 			return nil, nil, fmt.Errorf("%w: invalid dashboard cursor", ErrValidation)
 		}
-		rows, err = s.db.QueryContext(ctx, `
+		rows, err = queryRows(`
 SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points,
        CASE WHEN p.sprints_enabled = 1 THEN t.sprint_id ELSE NULL END, t.priority_key,
        p.name, p.slug, p.image, p.dominant_color,
@@ -836,7 +880,7 @@ ORDER BY t.updated_at DESC, t.id DESC
 LIMIT ?
 `, userID, updatedAtCursor, updatedAtCursor, idCursor, fetchLimit)
 	} else {
-		rows, err = s.db.QueryContext(ctx, `
+		rows, err = queryRows(`
 SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points,
        CASE WHEN p.sprints_enabled = 1 THEN t.sprint_id ELSE NULL END, t.priority_key,
        p.name, p.slug, p.image, p.dominant_color,
@@ -924,7 +968,7 @@ type dashboardBoardRow struct {
 	rank  int64
 }
 
-func (s *Store) listDashboardTodosBoard(ctx context.Context, userID int64, limit int, cursor *string) ([]DashboardTodo, *string, error) {
+func (s *Store) listDashboardTodosBoard(queryRows func(string, ...any) (*sql.Rows, error), userID int64, limit int, cursor *string) ([]DashboardTodo, *string, error) {
 	pageLimit, fetchLimit := normalizeDashboardTodoPageLimits(limit)
 
 	raw := dashboardCursorRaw(cursor)
@@ -937,7 +981,7 @@ func (s *Store) listDashboardTodosBoard(ctx context.Context, userID int64, limit
 		if !ok {
 			return nil, nil, fmt.Errorf("%w: invalid dashboard cursor", ErrValidation)
 		}
-		rows, err = s.db.QueryContext(ctx, `
+		rows, err = queryRows(`
 SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points,
        CASE WHEN p.sprints_enabled = 1 THEN t.sprint_id ELSE NULL END, t.priority_key,
        t.rank, wc.position,
@@ -952,7 +996,7 @@ ORDER BY t.project_id ASC, wc.position ASC, t.rank ASC, t.id ASC
 LIMIT ?
 `, userID, pid, wcPos, rank, todoID, fetchLimit)
 	} else {
-		rows, err = s.db.QueryContext(ctx, `
+		rows, err = queryRows(`
 SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points,
        CASE WHEN p.sprints_enabled = 1 THEN t.sprint_id ELSE NULL END, t.priority_key,
        t.rank, wc.position,

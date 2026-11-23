@@ -468,12 +468,14 @@ func exportableProjectsSelector(ctx context.Context, mode Mode, authEnabled bool
 			return "", nil, ErrUnauthorized
 		}
 		return `(
-  (expires_at IS NOT NULL AND creator_user_id = ?) OR
+  (expires_at IS NOT NULL AND creator_user_id = ? AND NOT EXISTS (
+    SELECT 1 FROM users WHERE id = ? AND system_role = 'guest'
+  )) OR
   (expires_at IS NULL AND EXISTS (
     SELECT 1 FROM project_members pm
     WHERE pm.project_id = projects.id AND pm.user_id = ? AND pm.role = 'maintainer'
   ))
-)`, []any{userID, userID}, nil
+)`, []any{userID, userID, userID}, nil
 	}
 
 	// Pre-bootstrap: export all projects
@@ -1604,7 +1606,7 @@ func (s *Store) ImportProjectsWithTarget(ctx context.Context, data *ExportData, 
 // importProjects is the shared import entry. plan is nil for JSON imports (today's code paths)
 // and non-nil for .sbz archive imports, whose images are already written to disk.
 func (s *Store) importProjects(ctx context.Context, data *ExportData, mode Mode, importMode string, targetSlug string, plan *ImportAssetPlan) (*ImportResult, error) {
-	if err := rejectServiceActor(ctx, s.db); err != nil {
+	if err := requireBoardCreation(ctx, s.db); err != nil {
 		return nil, err
 	}
 
@@ -1685,6 +1687,10 @@ func (s *Store) importIntoBoard(ctx context.Context, data *ExportData, mode Mode
 	}
 	defer tx.Rollback()
 	if err := serializeProjectWriteTx(ctx, tx, targetProject.ID); err != nil {
+		return nil, err
+	}
+
+	if err := requireBoardCreation(ctx, tx); err != nil {
 		return nil, err
 	}
 
@@ -1863,6 +1869,11 @@ func (s *Store) importReplaceAll(ctx context.Context, data *ExportData, mode Mod
 			return nil, fmt.Errorf("begin transaction: %w", err)
 		}
 
+		if err := requireBoardCreation(ctx, tx); err != nil {
+			_ = tx.Rollback()
+			return nil, err
+		}
+
 		// Insert project with import_batch_id
 		projectID, err := insertProjectWithBatchID(ctx, tx, pExport, mode, batchID)
 		if err != nil {
@@ -1987,6 +1998,11 @@ func (s *Store) importReplaceAll(ctx context.Context, data *ExportData, mode Mod
 		return nil, fmt.Errorf("begin swap transaction: %w", err)
 	}
 
+	defer txSwap.Rollback()
+	if err := requireBoardCreation(ctx, txSwap); err != nil {
+		return nil, err
+	}
+
 	// Delete old export-scope projects (CRITICAL: exclude staging)
 	whereClause, args, err := s.getExportableProjectsSelectorTx(ctx, txSwap, mode)
 	if err != nil {
@@ -2103,6 +2119,10 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 		if err := serializeProjectWriteTx(ctx, tx, projectID); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := requireBoardCreation(ctx, tx); err != nil {
+		return nil, err
 	}
 
 	whereClause, args, err := s.getExportableProjectsSelectorTx(ctx, tx, mode)
@@ -2637,6 +2657,9 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback()
+	if err := requireBoardCreation(ctx, tx); err != nil {
+		return nil, err
+	}
 
 	// Map old project slugs to new project IDs
 	projectIDMap := make(map[string]int64)
@@ -3109,6 +3132,9 @@ func (s *Store) PreviewImport(ctx context.Context, data *ExportData, mode Mode, 
 }
 
 func (s *Store) previewImport(ctx context.Context, data *ExportData, mode Mode, importMode string, fromArchive bool) (*PreviewResult, error) {
+	if err := requireBoardCreation(ctx, s.db); err != nil {
+		return nil, err
+	}
 	// CRITICAL: Must use exact same resolution logic as import handlers
 	// We'll use an in-memory resolver approach for safety
 	result := &PreviewResult{Warnings: []string{}}

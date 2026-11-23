@@ -1823,6 +1823,14 @@ func (s *Store) DeleteMyTagByID(ctx context.Context, userID, tagID int64) ([]int
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	guest, err := isGuest(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if guest {
+		return nil, ErrForbidden
+	}
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM todo_tags WHERE tag_id = ?`, tagID); err != nil {
 		return nil, fmt.Errorf("delete todo_tags: %w", err)
 	}
@@ -1909,6 +1917,14 @@ ORDER BY g.id`, projectID, userID)
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	guest, err := isGuest(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if guest {
+		return nil, ErrForbidden
+	}
+
 	for _, tagID := range tagIDs {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM todo_tags WHERE tag_id = ?`, tagID); err != nil {
 			return nil, fmt.Errorf("delete todo_tags: %w", err)

@@ -234,6 +234,10 @@ func (s *Store) AddProjectMember(ctx context.Context, requesterID, projectID, ta
 		return fmt.Errorf("%w: user is already a member", ErrConflict)
 	}
 
+	if err := validateGuestMembership(ctx, tx, projectID, targetUserID, role); err != nil {
+		return err
+	}
+
 	nowMs := time.Now().UTC().UnixMilli()
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO project_members (project_id, user_id, role, created_at)
@@ -429,6 +433,10 @@ func (s *Store) UpdateProjectMemberRole(ctx context.Context, requesterID, projec
 		if count <= 1 {
 			return fmt.Errorf("%w: cannot demote the last maintainer", ErrConflict)
 		}
+	}
+
+	if err := validateGuestMembership(ctx, tx, projectID, targetUserID, ProjectRole(role)); err != nil {
+		return err
 	}
 
 	res, err := tx.ExecContext(ctx, `

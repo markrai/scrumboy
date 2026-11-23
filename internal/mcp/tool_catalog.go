@@ -540,10 +540,10 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"admin_updateUserRole": {
 			Name:        "admin_updateUserRole",
-			Description: "Change a user's system role to admin or user. Requires the owner system role. Promotion to owner is not supported through this tool, and the last owner cannot be demoted.",
+			Description: "Change a user's system role to admin, user, or guest. Requires the owner system role. Promotion to owner is not supported through this tool, and the last owner cannot be demoted.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"userId": jsonProp("integer", "User ID"),
-				"role":   jsonProp("string", "New system role: admin or user"),
+				"role":   jsonProp("string", "New system role: admin, user, or guest"),
 			}, []string{"userId", "role"}),
 		},
 		"admin_updateUser": {

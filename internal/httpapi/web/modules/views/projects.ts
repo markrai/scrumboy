@@ -1,3 +1,4 @@
+import { canCreateBoards } from "../user-capabilities.js";
 import { app, settingsDialog } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
@@ -386,7 +387,10 @@ function ensureProjectsI18nBinding(): void {
 }
 
 function renderProjectsContent(projects: Project[]): void {
-  if (!getProjectsTab()) {
+  const showBoardCreation = canCreateBoards(getUser());
+  if (!showBoardCreation) {
+    setProjectsTab("projects");
+  } else if (!getProjectsTab()) {
     setProjectsTab(localStorage.getItem("projectsTab") || "projects");
   }
 
@@ -408,10 +412,10 @@ function renderProjectsContent(projects: Project[]): void {
         <span class="projects-tab__label" data-i18n-text="projects.tabs.projects">${escapeHTML(t("projects.tabs.projects"))}</span>
         <span class="chip__count">${durableProjects.length}</span>
       </button>
-      <button class="chip ${getProjectsTab() === "temporary" ? "chip--active" : ""}" data-projects-tab="temporary">
+      ${showBoardCreation ? `<button class="chip ${getProjectsTab() === "temporary" ? "chip--active" : ""}" data-projects-tab="temporary">
         <span class="projects-tab__label" data-i18n-text="${temporaryLabelKey}">${escapeHTML(t(temporaryLabelKey))}</span>
         <span class="chip__count">${temporaryBoards.length}</span>
-      </button>
+      </button>` : ""}
     </div>
   `;
 
@@ -442,10 +446,10 @@ function renderProjectsContent(projects: Project[]): void {
             </div>
           </div>
           ${tabsHTML}
-          <form id="createProjectForm" class="row">
+          ${showBoardCreation ? `<form id="createProjectForm" class="row">
             ${getProjectsTab() === "temporary" ? `<div class="spacer"></div>` : `<input class="input" id="projectName" placeholder="${escapeHTML(t("projects.fields.namePlaceholder"))}" data-i18n-placeholder="projects.fields.namePlaceholder" maxlength="200" required />`}
             <button class="btn" type="submit" data-i18n-text="${createButtonKey}">${escapeHTML(t(createButtonKey))}</button>
-          </form>
+          </form>` : ""}
           <div class="${getProjectView() === 'grid' ? 'project-grid' : 'list'}" id="projectList">
             ${activeList.length === 0 ? `<div class="muted" data-i18n-text="${emptyKey}">${escapeHTML(t(emptyKey))}</div>` : ""}
             ${activeList

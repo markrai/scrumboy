@@ -2,21 +2,24 @@
 
 ## System Roles vs Project Roles
 
-**System roles** (Owner, Admin, User) govern system-level permissions such as user management and admin APIs.
+**System roles** (Owner, Admin, User, Guest) govern system-level permissions such as user management and admin APIs.
 
 **Project roles** (Maintainer, Contributor, Viewer) govern project-level permissions and are stored in the `project_members` table.
 
-**Important:** System roles (Owner, Admin, User) **never** grant project permissions. Project access is solely via `project_members`. A system Admin or Owner cannot access, modify, or delete a project without an explicit project membership.
+**Important:** System roles (Owner, Admin, User, Guest) **never** grant project permissions. Project access is solely via `project_members`. A system Admin or Owner cannot access, modify, or delete a project without an explicit project membership.
 
 ### System role matrix
 
 | Role | How assigned / obtained | Instance-wide capabilities |
 |------|-------------------------|----------------------------|
-| **Owner** | First user on an empty instance (local bootstrap or first OIDC sign-in). There is **no** supported public path to promote another user to Owner. | List users; create users; change a user’s system role to **admin** or **user**; delete users. Cannot delete or demote the last remaining Owner. Does **not** grant project access. |
+| **Owner** | First user on an empty instance (local bootstrap or first OIDC sign-in). There is **no** supported public path to promote another user to Owner. | List users; create users; change a user’s system role to **admin**, **user**, or **guest**; delete users. Cannot delete or demote the last remaining Owner. Does **not** grant project access. |
 | **Admin** | An Owner sets the user’s system role to **admin** via the admin Users UI / admin API. | List users; create users. Cannot change system roles or delete users. Does **not** grant project access. |
 | **User** | Default system role for newly created users (admin-created accounts and non-bootstrap OIDC provisioned users). | No instance-wide user management. Project access only via project membership. |
+| **Guest** | An Owner assigns Guest in Settings → Users or through the admin API. | Read-only access to assigned regular boards. No board creation or temporary board access. |
 
-Public system-role updates accept only `admin` and `user`. Setting `owner` through that interface is rejected.
+System-role updates through the admin API accept `admin`, `user`, and `guest`. An Owner can assign Guest after incompatible board memberships are resolved. A Guest can only hold Viewer memberships on regular boards.
+
+Guest permissions apply to the signed-in account. Direct creation, Trello and backup import, and temporary board claims require permission to create boards. Public board links follow the [public-board setting](public-boards.md), and signed-out visitors can still use `/anon`.
 
 ---
 
