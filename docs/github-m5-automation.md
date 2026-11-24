@@ -1,4 +1,4 @@
-# M5.A: Scrumboy automation rules and dry-run previews
+# GitHub notification automations
 
 **M5.A status: historical API foundation; current M5.C–E behavior is described below.** All M5.A routes require an authenticated, durable Full Mode project. This milestone adds rule storage, owner-controlled configuration and a preview endpoint, **not** automatic GitHub processing, notification delivery, card writes or UI automation controls.
 
@@ -90,14 +90,14 @@ After enabling a matching rule, \`reason\` becomes \`ready_for_new_events\`, whi
 
 - **M5.B (implemented):** Normalize signed GitHub events, enforce installation/repository/project association and deduplicate delivery. Never evaluate unauthenticated webhook bodies.
 - **M5.C (implemented):** Only rules enabled by a Maintainer before event admission may enqueue durable in-app notifications. There is **no separate execution approval**; idempotency, rule-version checks, bounded failure recovery and audit history apply. Previously received events never execute retroactively.
-- **M5.D (implemented):** Project Settings → Automations supports rule creation, sample-only preview, Enable/Disable, recent matches and in-app notification history. Live deployment acceptance remains pending.
+- **Settings → Automations:** Project Settings supports rule creation, sample-only preview, Enable/Disable, recent matches, in-app notification history and redacted action audit details.
 - **M5.E:** Full Go, frontend, migration, role/tenant, negative security and live staging acceptance. No release of automatic actions until this passes.
 
-The instance-owned GitHub App is currently administrator-managed; automated App creation and independent-instance qualification remain separate work. M5.A does not change public-board visibility.
+The instance-owned GitHub App is administrator-managed. Guided App Manifest setup and manual App configuration both keep credentials on the self-hosted instance. Automation does not change public-board visibility.
 
 ## M5.B: authenticated event matching (read-only)
 
-**Status: code implemented, automated and live acceptance pending.** This phase consumes only GitHub webhook payloads that pass the existing raw-body HMAC-SHA256 verification. A new metadata-only automation inbox is separate from the M4 installation/repository reconciliation inbox. No worker, endpoint or SQL table performs automated actions, notifications or card changes.
+Signed GitHub events are normalized only after raw-body HMAC-SHA256 verification. The metadata-only automation inbox is separate from repository reconciliation. Matching alone is read-only; only the notification executor described below can create an in-app notification record, and it never mutates GitHub or card content.
 
 ### GitHub App event subscriptions and mapping
 
@@ -139,11 +139,11 @@ The existing admin-only webhook status endpoint \`GET /api/admin/integrations/gi
 
 M5.A's \`execution_approved_at\` still has a database constraint requiring \`NULL\`. **M5.A/B were deliberately non-executing.** The current implementation authorizes future notifications when a Maintainer enables a rule; migration 100 ensures events admitted before the upgrade are not backfilled.
 
-Independent-instance isolation and live signed-delivery testing remain pending. M5.B is a backend metadata-processing milestone, **not** general availability.
+Independent-instance signed delivery and notification execution were qualified on Vega before v3.43.0. Project/tenant isolation, replay/dedupe, revocation and lease recovery are additionally enforced by automated tests.
 
-## M5.C–E: enabling a rule authorizes in-app notifications
+## Enabling a rule authorizes future in-app notifications
 
-**Implementation status: staged in PR #366; automated and live acceptance still required.** Only `notify` actions are executable. They create durable project-scoped in-app history records, not email, push, browser pop-ups, card mutations, or GitHub writes.
+Only `notify` actions are executable in v3.43.0. They create durable project-scoped in-app history records, not email, push, browser pop-ups, card mutations, or GitHub writes.
 
 There is **no separate execution approval**, confirmation dialog, or operator environment switch. A project Maintainer creates a disabled rule and turns it on with the **Enable** button. The authenticated `PATCH /api/board/{slug}/integrations/automation-rules/{id}` request with `{"enabled":true}` authorizes execution for future matching GitHub events. **Disable** stops execution and invalidates pending actions. Editing an enabled rule starts a fresh rule version; actions from older versions are cancelled at settlement, and only events received after the new version can produce new notifications. The obsolete `/execution-approval` API returns 404. The legacy `SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED` environment variable has no effect.
 
@@ -172,4 +172,4 @@ Project Viewers, Contributors and Maintainers may view rules, previews, matches,
 
 The tab calls only project-scoped authenticated APIs: `/integrations/resources`, `/integrations/automation-rules`, `/integrations/automation-rules/{id}/preview`, `/integrations/automation-matches`, `/integrations/automation-actions`, and `/integrations/automation-actions/{id}/audit`. Audits are append-only transition records; previews are strictly read-only.
 
-**Remaining release gates:** Complete M5.E two-tenant live webhook and browser qualification, replay/revocation/restart/retry exercises, failure-path tests and final CI. Independent-instance isolation and the planned App Manifest wizard are tracked in #371; live webhook acceptance remains a rollout blocker. PR #366 stays open and non-draft until these gates pass.
+**Release status:** v3.43.0 passed the final CI/security/package matrix. Genuine GitHub HMAC delivery and notification execution were exercised on independent Vega staging. Replay/dedupe, revocation, restart/lease recovery, retry/dead-letter, rule-version cancellation and project/role isolation are additionally code-qualified. Clean-instance guided-onboarding polish remains tracked in #371.

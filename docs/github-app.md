@@ -1,14 +1,25 @@
-# GitHub App integration (M3)
+# GitHub App integration
 
-M3 provides an opt-in GitHub App connection and repository reference workflow in Scrumboy Full Mode. It registers GitHub repositories as external resources and lets project Maintainers associate them with durable projects, so Contributors can link cards to those repositories. M3.2 adds explicit, read-only GitHub issue and pull-request references and title search. It does **not** modify GitHub issues or pull requests, synchronize card content, or automatically change a Scrumboy card when GitHub state changes. Webhooks and optional automations have separate milestones.
+Scrumboy Full Mode can connect to an **instance-owned GitHub App** for repository discovery, read-only issue and pull-request references, signed inbound webhooks, and opt-in in-app notification automations. It does **not** require a Scrumboy.com account or relay, and it does not modify GitHub issues, pull requests, or Scrumboy card content.
+
+## Quick start
+
+1. As the instance Owner, choose **Settings → GitHub**.
+2. Create or connect an App owned by the account or organization that operates this Scrumboy instance. Guided App Manifest setup is available when `SCRUMBOY_PUBLIC_BASE_URL` is a canonical HTTPS origin; the fully manual App ID/PEM path remains supported below.
+3. Install the App only on the repositories you want Scrumboy to see, then use **Connect and sync**.
+4. Select the Scrumboy project and add the repositories that project should be allowed to reference.
+5. Open a story and choose the **References** tab. Browse open pull requests by default, switch between Issues/Pull requests and Open/Closed/All, filter by title, or paste a canonical GitHub issue/PR URL.
+6. If you want real-time notification rules, expose the signed webhook endpoint described in [GitHub inbound webhooks](github-m4-webhooks.md), then create and enable a rule under **Settings → Automations**.
+
+Repository browsing and explicit refresh work without inbound webhooks. Real-time events require GitHub to reach the exact HTTPS webhook route from the public internet.
 
 ## Self-hosted GitHub App ownership
 
 A self-hosted Scrumboy Full Mode instance uses a **GitHub App owned by its administrator**, not a central Scrumboy Connect service. One administrator configures the App for their Scrumboy instance. Other Scrumboy project members can link permitted repositories and issues/PRs under the existing project roles without creating Apps or handling credentials. There is no shared broker, central webhook relay or dependency on scrumboy.com.
 
-**Current implementation on PR #366:** Readiness diagnostics, an instance-owned GitHub App Manifest setup flow, protected file-based credential persistence, automatic provider/webhook activation, and existing manual configuration are implemented. **End-to-end registration against GitHub and public webhook delivery remain live acceptance requirements**, tracked in [#371](https://github.com/markrai/scrumboy/issues/371). The App belongs to the self-hosted administrator; there is no central Scrumboy service.
+v3.43.0 includes readiness diagnostics, instance-owned GitHub App Manifest enrollment, protected file-based credential persistence, automatic provider/webhook activation, and the manual configuration path. Real signed GitHub webhook delivery has been qualified on an independent self-hosted instance. A clean-instance guided-registration smoke test and additional onboarding polish remain tracked in [#371](https://github.com/markrai/scrumboy/issues/371).
 
-### Register an instance-owned GitHub App (current manual setup)
+### Register an instance-owned GitHub App manually
 
 1. Create a GitHub App on an account or organization the Scrumboy **instance administrator** controls. Request **Metadata: Read-only**, **Issues: Read-only**, and **Pull requests: Read-only**. These support repository discovery, issue/PR references and event subscriptions. No GitHub write or Contents permission is needed for notifications.
 2. Install the App only on selected repositories. Record the App ID and slug, and generate its RSA private key (PEM).
@@ -16,7 +27,7 @@ A self-hosted Scrumboy Full Mode instance uses a **GitHub App owned by its admin
 4. For real-time events, separately configure [the signed webhook endpoint](github-m4-webhooks.md) and subscribe to Issues and Pull request events. GitHub must reach the HTTPS endpoint from the public internet; private Tailscale-only addresses cannot accept GitHub deliveries. Manual repository and issue/PR refresh work without webhooks.
 
 
-### S2.2 Guided GitHub App setup (Full Mode)
+### Guided GitHub App setup (Full Mode)
 
 The instance **Owner** can open **Settings → GitHub → Set up GitHub** when no App is configured and `SCRUMBOY_PUBLIC_BASE_URL` is a canonical, pathless HTTPS origin. GitHub displays the App registration and permission review. The App is owned by that GitHub account, not by Scrumboy.com.
 
@@ -73,7 +84,7 @@ services:
 
 Keep the private key outside the repository and the `./data` backup export path; protect it with host filesystem permissions.
 
-## Connect and test (M3)
+## Connect repositories to a project
 
 1. Start Scrumboy in Full Mode, sign in as Owner/Admin, and open **Settings > GitHub**.
 2. Install the App at GitHub with only the repositories you choose. Use **Install App** and **Refresh** in Scrumboy if the installation is not listed yet.
@@ -81,53 +92,45 @@ Keep the private key outside the repository and the `./data` backup export path;
 4. The repository management section defaults to the current Scrumboy project when Settings is opened from a project. The **Scrumboy project** selector remains available for Owners/Admins who maintain several durable projects; only projects where they are a **Maintainer** are shown. GitHub App installations remain instance-wide and are never copied per project.
 5. Under **Linked Repositories**, review the selected project's existing associations. The **Add Repositories** section appears immediately below, with a repository picker and **Add to project** button only when there is something available to add.
 6. When one GitHub installation is connected, the Installations section already identifies its account and no redundant account field appears below. If multiple accounts are connected, the **GitHub account** selector appears in repository management to choose the source for additions. Adding a repository only makes it available as a card reference in the selected project; it does not modify GitHub.
-7. Open a card in the project. In **External references**, link the associated repository, verify the URL, then unlink it as an independent step. Test the card with a Viewer, Contributor and Maintainer to verify read/write boundaries.
+7. Open a story in the project and choose **References**. Linked repositories provide the scope for issue/PR browsing and URL linking. Project Viewers can read retained references; Contributors can link/unlink story references; Maintainers additionally manage project repository associations.
 
 Repository names and links may be visible to authenticated members of your Scrumboy project independently of their GitHub access. Deliberately published Scrumboy boards do not automatically expose integration management APIs or private card-reference UI.
 
-## M3.2: GitHub issues and pull requests on cards
+## GitHub issues and pull requests on stories
 
-In a durable project where an instance administrator connected the GitHub App and a Maintainer associated a repository, open an existing Scrumboy card and expand **External references**.
+In a durable project where an instance administrator connected the GitHub App and a Maintainer associated at least one repository, open a story and choose the **References** tab.
 
-- The existing repository selector still supports simple repository references; its **Add** button is visible on desktop and mobile.
-- Under **GitHub Issues & Pull Requests**, paste a canonical `https://github.com/OWNER/REPO/issues/123` or `https://github.com/OWNER/REPO/pull/123` URL and choose **Link URL**.
-- Alternatively, choose a repository already associated with the project, select **Issues** or **Pull requests**, enter a title query of 2–100 characters and choose **Search**. The query returns at most 20 results from that selected repository. Choose **Link** to attach a result.
-- A linked item displays its type, number, title, repository and read-only Open/Closed/Draft/Merged status. **Refresh** fetches its current metadata when GitHub access is available. **Remove** unlinks the item without modifying GitHub.
-- Only Contributors and above may link, refresh or remove items. Project Viewers may read retained metadata. Unrelated users, anonymous viewers and public boards have no private search/link APIs.
-- Failed GitHub lookups do not erase or alter existing references or cards. Repository access loss preserves last-known read-only item metadata and displays unavailable state.
+- **Linked references** shows the GitHub issues and pull requests already attached to the story.
+- The browser defaults to **open pull requests** from the selected project-linked repository.
+- Use the repository, type (**Issues** / **Pull requests**) and state (**Open** / **Closed** / **All**) controls to change the result set.
+- The title field filters automatically. Two or more characters trigger a short debounced provider search; there is no Search button.
+- Results are capped at 20. Choose **Link** to attach one, or paste a canonical `https://github.com/OWNER/REPO/issues/123` or `.../pull/123` URL and choose **Link URL**.
+- New Todo supports staging references before the story exists; they are attached after the story receives its canonical ID. A partial reference failure does not roll back a successfully created story.
+- A linked item displays its type, number, title, repository and cached read-only Open/Closed/Draft/Merged state. **Refresh** updates metadata when repository access is available; **Remove** unlinks the item without modifying GitHub.
+- If GitHub repository access is removed, a complete repository refresh marks the repository **Unavailable** while retaining existing Scrumboy project associations and story references. New links to that repository are refused until access returns.
+- Only Contributors and above may link, refresh or remove story references. Project Viewers see retained references read-only. Unrelated users, anonymous viewers and public boards have no private browse/link APIs.
 
-**Existing installations need to approve the two additional read permissions**. Scrumboy requests new short-lived tokens only when issue/PR lookup or search is used. Those tokens are minted with GitHub's `repository_ids` restricted to the exact provider repository ID associated with the selected project. The original metadata-only installation-discovery token remains separate. No issue/PR access token or private key is persisted in SQLite, the browser or a card.
+Existing installations must approve **Issues: Read-only** and **Pull requests: Read-only**. Scrumboy mints short-lived installation tokens only when issue/PR access is needed and restricts them to the exact provider repository ID associated with the project. No issue/PR access token or private key is persisted in SQLite, the browser, or story content.
 
-**Security boundary:** GitHub installations are instance-managed and can be discovered only by a Scrumboy Owner/Admin. Project Maintainers associate resources; project Contributors link cards. Neither a GitHub installation nor a Scrumboy public board makes private repository information available to unrelated users. Guided setup is Owner-only; operational delivery acceptance remains tracked in #371.
+**Security boundary:** GitHub installations are instance-managed and discoverable only by a Scrumboy Owner/Admin. Project Maintainers associate repositories; Contributors link story references. A GitHub installation never grants Scrumboy project membership, and publishing a Scrumboy board never exposes GitHub integration APIs.
 
 Read-only project API (normal Scrumboy authentication and mutation header required):
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | GET | `/api/board/{slug}/todos/{localId}/github-items` | List cached GitHub issue/PR links |
-| POST | `/api/board/{slug}/todos/{localId}/github-items` | Link validated `{"url":"https://github.com/OWNER/REPO/issues/123"}` |
+| POST | `/api/board/{slug}/todos/{localId}/github-items` | Link a validated canonical GitHub issue/PR URL |
 | DELETE | `/api/board/{slug}/todos/{localId}/github-items/{resourceId}/{kind}/{number}` | Unlink a specific issue/PR |
 | POST | `/api/board/{slug}/todos/{localId}/github-items/{resourceId}/{kind}/{number}/refresh` | Explicitly refresh item metadata |
-| GET | `/api/board/{slug}/integrations/github/search?resourceId=123&kind=issue&q=title` | Search issues or PRs in one associated repository |
+| GET | `/api/board/{slug}/integrations/github/browse?resourceId=123&kind=pr&state=open&q=title` | Browse/filter issues or PRs in one project-associated repository |
 
-`kind` is `issue` or `pr`. URL input cannot select arbitrary GitHub installations or external hosts. The server reauthorizes every repository and resource against the active project, and all outbound lookup tokens are restricted to one installation and one repository. Existing `integration_todo_resources` references remain compatible, while migration 096 stores structured item references separately from card title/body and preserves project/resource cascade behavior.
+`kind` is `issue` or `pr`. URL input cannot select arbitrary installations or external hosts. The server reauthorizes the project/repository association for each operation.
 
-### Live M3 acceptance ledger
+## Qualification status
 
-| Scenario | Status | Evidence / action |
-| --- | --- | --- |
-| App configured using ID, private-key mount and slug | Verified on isolated Vega test instance | Settings shows **App configured** |
-| Installation discovery and connect/sync | Verified on isolated Vega test instance | Connected GitHub account `markrai` |
-| Project picker and repository association | **Not yet live-verified** | Select a maintained project and associate `markrai/scrumboy` |
-| Card reference link/unlink | **Not yet live-verified** | Link and unlink from a disposable Scrumboy card; verify no change to card content |
-| Role boundaries | Automated tests exist; **live check pending** | Viewer read, Contributor link/unlink, Maintainer project association |
-| Repository rename and removal | Automated tests exist; **live check pending** | Use disposable repository data; verify retained unavailable references on removal, stable IDs on rename and restoration on reauthorization |
-| Revoked App access, API interruption or incomplete discovery | Automated tests exist; **live check pending** | Verify failed refresh preserves existing links, then restore access |
-| Key rotation and app suspension | **Not yet live-verified** | Use a disposable App key/installation and verify safe failure and recovery |
-| M3.2 URL paste, title search, status refresh and removal | **Not yet live-verified** | Approve issue/PR permissions, link disposable objects on Vega and verify view-only roles |
-| M3.2 scoped token & installation authorization | **Automated tests added; live check pending** | Prove calls cannot access unassociated repositories or unrelated GitHub installations |
+v3.43.0 passed the full Go/frontend/generated-file/CLI/security/package matrix. Independent Vega staging also verified installation discovery, repository browsing, genuine signed GitHub delivery, in-app notification execution, and GitHub-side repository access loss reaching the retained **Unavailable** state. Project/role isolation, failed/incomplete discovery, rename/restore identity, replay/dedupe, revocation and lease recovery are additionally covered by automated tests.
 
-Do not mark live scenarios as passed without recording an actual result. The M3 code and CI can be complete while the live acceptance gate remains open.
+The separate clean-instance guided App Manifest registration smoke test remains tracked in [#371](https://github.com/markrai/scrumboy/issues/371); it is onboarding validation, not a dependency on any Scrumboy-hosted service.
 
 ## Administration API
 
@@ -157,4 +160,4 @@ For provider API details see the [GitHub App REST API documentation](https://doc
 
 ## Optional GitHub webhook receiver and readiness (S1/M4)
 
-M4 adds an independent, opt-in **inbound** webhook receiver. Repository browsing and explicit refresh still work without it. S1 surfaces a redacted readiness status in Settings → GitHub and project Automations. **An App being configured does not imply GitHub events can arrive.** The receiver accepts `SCRUMBOY_GITHUB_WEBHOOK_SECRET` or `SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE`, never both. It reports a canonical webhook URL when a pathless HTTPS `SCRUMBOY_PUBLIC_BASE_URL` is set. GitHub event subscriptions and external reachability remain unverified until genuine signed delivery is observed. See [GitHub inbound webhooks](github-m4-webhooks.md).
+M4 adds an independent, opt-in **inbound** webhook receiver. Repository browsing and explicit refresh still work without it. S1 surfaces a redacted readiness status in Settings → GitHub and project Automations. **An App being configured does not imply GitHub events can arrive.** The receiver accepts `SCRUMBOY_GITHUB_WEBHOOK_SECRET` or `SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE`, never both. It reports a canonical webhook URL when a pathless HTTPS `SCRUMBOY_PUBLIC_BASE_URL` is set. GitHub event subscriptions and external reachability are deployment-specific. Settings reports only deliveries verified by the current process; operators should still confirm the configured subscriptions and GitHub delivery log for their own instance. See [GitHub inbound webhooks](github-m4-webhooks.md).

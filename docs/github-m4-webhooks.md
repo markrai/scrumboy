@@ -1,4 +1,4 @@
-# GitHub inbound webhooks: M4 operator and safety guide
+# GitHub inbound webhooks
 
 M4 is a separate, **opt-in** inbound webhook capability. It does not replace M3's explicit **Connect and sync** / **Refresh repositories** actions, and does not create, edit, delete or publish Scrumboy cards.
 
@@ -8,7 +8,7 @@ The GitHub App must already be configured and Scrumboy must run in Full Mode. Wi
 
 1. Generate a strong random secret, for example `openssl rand -hex 32`. Store the resulting printable value in a host file, outside both the source tree and Scrumboy data/backups. Restrict the host file permissions to the Scrumboy process.
 2. In GitHub App settings, enable **Webhook → Active** and paste **the exact same secret** into the Webhook Secret field. A trailing newline in the file is trimmed at startup; internal whitespace is significant.
-3. Configure a **publicly reachable HTTPS** endpoint: `https://YOUR-SCRUMBOY-HOST/api/integrations/github/webhook`. GitHub cannot deliver to a private Tailscale-only port or to Vega's localhost HTTP port 9447. Use a protected staging HTTPS host for initial live acceptance.
+3. Configure a **publicly reachable HTTPS** endpoint: `https://YOUR-SCRUMBOY-HOST/api/integrations/github/webhook`. GitHub cannot deliver to a private Tailscale-only port or to Vega's localhost HTTP port 9447. Use a publicly reachable HTTPS host or reverse proxy that forwards this exact route.
 4. Subscribe to **Installation**, **Installation repositories**, and **Repository** events for M4, and also **Issues** and **Pull request** for M5 notifications. Read-only Issues/Pull requests permissions suffice; no write permissions are required.
 5. Choose **one** secret source: set `SCRUMBOY_GITHUB_WEBHOOK_SECRET` to the printable secret for simple self-hosted deployments, **or** mount it read-only and set `SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE` to the container path for stronger production secret isolation. Setting both fails startup. The App private key (`SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE`) is separate. Environment values may be visible through container inspection and must never be printed in diagnostics.
 6. Restart the isolated instance, then send a GitHub **ping** and an installation-repository event to verify delivery. Never deploy untested changes directly to a production database.
@@ -58,7 +58,7 @@ Authenticated Owners/Admins can manually requeue a dead delivery with `POST /api
 
 Transient GitHub API errors or incomplete discovery are retried. Exhausted deliveries become `dead` and remain visible in the counts until retention cleanup. A failed scan must never be converted into an empty repository list or a cascade deletion of existing card references. Investigate the provider and secret configuration before retrying; repeated manual requeues should not be used to mask permanent authorization failures.
 
-## Acceptance checklist
+## Operator verification checklist
 
 - [ ] Full Mode and App configured; secret absent means endpoint 404.
 - [ ] Valid signed delivery is accepted without session-cookie auth or `X-Scrumboy`; missing/forged signature is rejected.
@@ -67,9 +67,9 @@ Transient GitHub API errors or incomplete discovery are retried. Exhausted deliv
 - [ ] Unknown installation is ignored; disconnected/suspended installation cannot update resources.
 - [ ] Durable records survive restart; abandoned leases are reclaimable; retry exhaustion is bounded.
 - [ ] Rename or newly authorized repository updates metadata without rewriting user card content.
-- [ ] Removed/revoked repository after webhook leaves card references intact for explicit operator review.
+- [ ] Remove GitHub repository access, run **Refresh repositories**, and confirm existing Scrumboy references remain while the repository becomes **Unavailable**.
 - [ ] Owner/Admin monitoring and manual requeue endpoints are permission checked.
-- [ ] Docker and migration tests, Go and frontend suites, CodeQL and GitHub required checks pass.
+- [x] v3.43.0 release CI passed Go, frontend/generated parity, CLI, Windows credential security, CodeQL, DCO, Gradle and GHCR checks.
 - [ ] GitHub staging HTTPS ping and repository event are received and verified with real GitHub delivery logs.
 
-See [M3 qualification](github-m3-qualification.md) for the earlier manual repository-to-card test gate.
+See [GitHub App integration](github-app.md) for repository setup, references and lifecycle semantics.

@@ -58,17 +58,42 @@ The image sets:
 - `DATA_DIR=/data`
 - `SQLITE_PATH=/data/app.db`
 
-Mount a named volume or host directory on `/data` if you want data to survive container recreation. That path holds the SQLite database, any WAL/SHM sidecars while the server is running, and file-backed uploads such as `user-wallpapers/` and note images in `assets/` ([inline images](inline-images.md) are on by default in Full Mode).
+Mount a named volume or host directory on `/data` if you want data to survive container recreation. That path holds the SQLite database, any WAL/SHM sidecars while the server is running, file-backed uploads such as `user-wallpapers/` and note images in `assets/`, and the protected guided GitHub App credential bundle under `.scrumboy-github-app/` when that setup path is used.
 
 ## Backup
 
-Where practical, back up the whole persisted `/data` storage (named volume or host directory). That keeps SQLite state and file-backed uploads together.
+Where practical, back up the whole persisted `/data` storage (named volume or host directory). That keeps SQLite state, file-backed uploads and any guided GitHub App credential bundle together. Treat backups containing `.scrumboy-github-app/` as secrets.
 
 JSON export/import is **not** a complete replacement for a `/data` backup. See [backup-and-import.md](backup-and-import.md). For deeper disaster-recovery layout (WAL/SHM, wallpapers, encryption key when used), see [diagrams/scrumboy_deployment_ops.md](diagrams/scrumboy_deployment_ops.md).
 
 ## Configuration
 
 Supply Scrumboy environment variables through normal container or Compose `environment` configuration. See [environment-variables.md](environment-variables.md).
+
+## GitHub integration
+
+GitHub integration is optional and available in Full Mode. Scrumboy uses an **instance-owned GitHub App**; there is no required Scrumboy.com account, shared production App, or hosted relay.
+
+For the guided setup, expose Scrumboy through a canonical HTTPS `SCRUMBOY_PUBLIC_BASE_URL`, then use **Settings → GitHub → Set up GitHub**. Guided credentials are stored under `/data/.scrumboy-github-app/`, so a persistent `/data` mount is required and host-level backups must protect that directory.
+
+For conservative/manual setup, mount the App private key read-only and provide the App ID and PEM path:
+
+```yaml
+services:
+  scrumboy:
+    environment:
+      SCRUMBOY_MODE: full
+      SCRUMBOY_GITHUB_APP_ID: "123456"
+      SCRUMBOY_GITHUB_APP_PRIVATE_KEY_FILE: /run/secrets/scrumboy-github-app.pem
+      SCRUMBOY_GITHUB_APP_SLUG: your-app-slug
+    volumes:
+      - ./data:/data
+      - /secure/github-app.private-key.pem:/run/secrets/scrumboy-github-app.pem:ro
+```
+
+Repository browsing and story References work without inbound webhooks. For real-time GitHub events and notification automations, GitHub must be able to reach `/api/integrations/github/webhook` over public HTTPS. Prefer a mounted `SCRUMBOY_GITHUB_WEBHOOK_SECRET_FILE` for manual production setup rather than an inline environment secret.
+
+Full setup, permissions, backup/recovery and lifecycle details: [github-app.md](github-app.md). Webhook routing and troubleshooting: [github-m4-webhooks.md](github-m4-webhooks.md).
 
 ## Notes features
 

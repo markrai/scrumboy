@@ -6,7 +6,7 @@ M1 introduces a provider-neutral, database-backed foundation for connecting exte
 
 Every self-hosted Scrumboy Full Mode instance uses its own administrator-owned GitHub App, with server-local private-key and webhook-secret handling. One App supports its selected installations and repositories for that instance. There is no centrally managed Scrumboy Connect App, remote broker, shared key or hosted relay. App-global installation discovery is restricted to the instance Owner/Admin, while project authorization and public-board visibility are separate boundaries.
 
-S2.2 adds Owner-only manifest enrollment, a private atomic credential bundle under DATA_DIR, startup recovery, and synchronized hot activation of the GitHub provider and HMAC-verified webhook worker. The direct adapter also supports manual PEM setup; manual environment settings override, but never mutate, the guided bundle. An externally reachable webhook endpoint and full live registration/notification acceptance remain pending under [#371](https://github.com/markrai/scrumboy/issues/371).
+S2.2 adds Owner-only manifest enrollment, a private atomic credential bundle under DATA_DIR, startup recovery, and synchronized hot activation of the GitHub provider and HMAC-verified webhook worker. The direct adapter also supports manual PEM setup; manual environment settings override, but never mutate, the guided bundle. Genuine signed webhook delivery and notification execution were qualified on an independent self-hosted instance before v3.43.0. Clean-instance guided-registration onboarding polish remains tracked in [#371](https://github.com/markrai/scrumboy/issues/371).
 
 
 ## Ownership and authority
@@ -27,7 +27,7 @@ Project and connection deletion cascade through their associations; connection d
 
 ## Provider boundary
 
-The integration core stores opaque provider-native IDs and a minimal resource reference. In M3, adapters will handle provider API calls, authentication and installation discovery, without embedding GitHub-specific ID fields in generic tables. M4 will introduce a separate inbound event inbox, deduplication and reconciliation. M5 introduces user-configurable automations. None of those later systems should turn a Scrumboy board's public-view choice into a GitHub-visibility restriction.
+The integration core stores opaque provider-native IDs and a minimal resource reference. Provider adapters handle API calls, authentication and installation discovery without embedding GitHub-specific ID fields in generic tables. M4 adds a separate inbound event inbox, deduplication and reconciliation. M5 adds user-configurable notification automations. None of those later systems should turn a Scrumboy board's public-view choice into a GitHub-visibility restriction.
 
 ## Validation
 
