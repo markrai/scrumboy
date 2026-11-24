@@ -3,10 +3,10 @@
 package githubcredentials
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"unsafe"
 
@@ -128,7 +128,10 @@ func TestCredentialStoreRejectsInsecureWindowsACL(t *testing.T) {
 		t.Fatal(err)
 	}
 	bundle := testCredentials()
-	data := []byte(`{"version":1,"appId":` + "73482" + `,"slug":"` + bundle.Slug + `","privateKey":` + """ + strings.ReplaceAll(string(bundle.PrivateKey), "\n", "\\n") + """ + `,"webhookSecret":"` + bundle.WebhookSecret + `"}`)
+	data, err := json.Marshal(Bundle{Version: 1, AppID: bundle.AppID, Slug: bundle.Slug, PrivateKey: string(bundle.PrivateKey), WebhookSecret: bundle.WebhookSecret})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, credentialsFileName), data, 0600); err != nil {
 		t.Fatal(err)
 	}
