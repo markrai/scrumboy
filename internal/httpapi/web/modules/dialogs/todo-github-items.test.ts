@@ -124,11 +124,8 @@ describe('Todo GitHub reference browser', () => {
       if (path.endsWith('/github-items')) return [{ ...issue, availability: 'unavailable' }];
       return {};
     });
-    const field = document.createElement('div');
-    field.id = 'todoExternalResourcesField';
-    document.body.append(field);
-    const { bindTodoGitHubItems } = await import('./todo-github-items.js');
-    await bindTodoGitHubItems('alpha', 5, true);
+    const mod = await import('./todo-github-items.js');
+    await mod.initializeTodoGitHubItems('alpha', 5, true);
     expect(document.body.textContent).toContain('Unavailable');
     const refresh = findButton('Refresh');
     expect(refresh.disabled).toBe(true);
@@ -142,11 +139,8 @@ describe('Todo GitHub reference browser', () => {
       if (path.endsWith('/refresh') && init?.method === 'POST') throw new Error('provider denied repository');
       return {};
     });
-    const field = document.createElement('div');
-    field.id = 'todoExternalResourcesField';
-    document.body.append(field);
-    const { bindTodoGitHubItems } = await import('./todo-github-items.js');
-    await bindTodoGitHubItems('alpha', 5, true);
+    const mod = await import('./todo-github-items.js');
+    await mod.initializeTodoGitHubItems('alpha', 5, true);
     findButton('Refresh').click();
     await vi.waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('Settings → GitHub → Refresh repositories')));
   });
