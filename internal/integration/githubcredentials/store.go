@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 
 	"scrumboy/internal/integration/githubmanifest"
@@ -59,14 +58,16 @@ func (s *Store) Load() (githubmanifest.Credentials, bool, error) {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return githubmanifest.Credentials{}, false, ErrInsecureStorage
 	}
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
-		return githubmanifest.Credentials{}, false, ErrInsecureStorage
+	if err := validateCredentialPath(root, info, true); err != nil {
+		return githubmanifest.Credentials{}, false, err
 	}
 	name := filepath.Join(root, credentialsFileName)
 	fileInfo, err := os.Lstat(name)
-	if err != nil || !fileInfo.Mode().IsRegular() || fileInfo.Size() > maxCredentialsBytes ||
-		(runtime.GOOS != "windows" && fileInfo.Mode().Perm()&0077 != 0) {
+	if err != nil || !fileInfo.Mode().IsRegular() || fileInfo.Size() > maxCredentialsBytes {
 		return githubmanifest.Credentials{}, false, ErrInsecureStorage
+	}
+	if err := validateCredentialPath(name, fileInfo, false); err != nil {
+		return githubmanifest.Credentials{}, false, err
 	}
 	f, err := os.Open(name)
 	if err != nil {
@@ -112,7 +113,7 @@ func (s *Store) Save(c githubmanifest.Credentials) error {
 		return ErrInsecureStorage
 	}
 	defer os.RemoveAll(stage)
-	if err := os.Chmod(stage, 0700); err != nil {
+	if err := protectCredentialPath(stage, true); err != nil {
 		return ErrInsecureStorage
 	}
 	bundle := Bundle{Version: 1, AppID: c.AppID, Slug: c.Slug, PrivateKey: string(c.PrivateKey), WebhookSecret: c.WebhookSecret}
@@ -122,6 +123,10 @@ func (s *Store) Save(c githubmanifest.Credentials) error {
 	}
 	file, err := os.OpenFile(filepath.Join(stage, credentialsFileName), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
+		return ErrInsecureStorage
+	}
+	if err := protectCredentialPath(file.Name(), false); err != nil {
+		file.Close()
 		return ErrInsecureStorage
 	}
 	if _, err := file.Write(data); err != nil {
@@ -152,14 +157,3 @@ func (s *Store) Save(c githubmanifest.Credentials) error {
 	return nil
 }
 
-func syncDirectory(path string) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	dir, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
-}
