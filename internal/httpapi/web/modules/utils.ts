@@ -105,31 +105,38 @@ function escapeHTML(s: string): string {
     .replaceAll("'", "&#039;");
 }
 
+const TOAST_DURATION_MS = 2500;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
-function showToast(msg: string): void {
-  toast.textContent = msg;
-  // A modal <dialog> lives in the browser top layer and paints over any z-index, which hid errors raised
-  // while a dialog was open. A manual popover joins the top layer too; re-showing puts it above the dialog.
-  const el = toast as HTMLElement & { showPopover?: () => void; hidePopover?: () => void };
-  if (typeof el.showPopover === "function" && typeof el.hidePopover === "function") {
-    try {
-      if (el.matches(":popover-open")) el.hidePopover();
-      el.showPopover();
-    } catch {
-      // Popover unsupported or element not a popover: fall back to the plain fixed-position toast.
-    }
+type PopoverElement = HTMLElement & { showPopover?: () => void; hidePopover?: () => void };
+
+function hideToastPopover(el: PopoverElement): void {
+  try {
+    if (typeof el.hidePopover === "function" && el.matches(":popover-open")) el.hidePopover();
+  } catch {
+    // Popover API missing or misbehaving; the CSS class alone controls visibility.
   }
-  toast.classList.add("toast--show");
+}
+
+function showToast(msg: string): void {
+  const el = toast as PopoverElement;
   if (toastTimer !== undefined) clearTimeout(toastTimer);
+  el.textContent = msg;
+  // A modal <dialog> lives in the browser top layer and paints over any z-index. A manual popover joins
+  // the top layer too; hiding and re-showing moves it above a dialog opened after the previous toast.
+  // If promotion fails, the toast stays a plain fixed-position element (see .toast in styles.css).
+  hideToastPopover(el);
+  try {
+    if (typeof el.showPopover === "function") el.showPopover();
+  } catch {
+    // Fall back to the fixed-position toast.
+  }
+  el.classList.add("toast--show");
   toastTimer = setTimeout(() => {
-    toast.classList.remove("toast--show");
-    try {
-      if (el.matches(":popover-open")) el.hidePopover?.();
-    } catch {
-      // ignore
-    }
-  }, 2500);
+    toastTimer = undefined;
+    el.classList.remove("toast--show");
+    hideToastPopover(el);
+  }, TOAST_DURATION_MS);
 }
 
 /**
