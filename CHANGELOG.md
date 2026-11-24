@@ -2,7 +2,13 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
-## Unreleased
+## [3.43.1] - 2026-11-24
+
+### Fixed
+
+- **Actionable invalid-tag messages (PR #378)** - Rejected tag names now explain the rule instead of only "Please enter a valid tag": "Tags: max 32 chars; letters/numbers, spaces, hyphens." This applies to both `invalid_tag` and `invalid_tag_name` and matches the server's canonicalization, where spaces become hyphens and punctuation such as `_` is rejected.
+- **Toasts visible above open dialogs** - Toasts raised while a modal dialog is open, such as a rejected tag when saving a todo, now appear above the dialog instead of dimmed behind its backdrop. Browsers without the Popover API keep the ordinary fixed-position toast.
+- **Toast lifetime and wrapping** - A new toast replaces the current one and gets its own full display time instead of being dismissed early by the previous toast's timer. Long messages now wrap on narrow screens instead of being cut off with an ellipsis.
 
 ## [3.43.0] - 2026-11-24
 

@@ -6931,9 +6931,15 @@ button.omni-tag-pill:focus-visible {
    ============================================ */
 
 .toast {
+  /* popover="manual" lets the toast join the top layer above an open modal dialog. Override the UA
+     [popover] rules: keep it rendered when not popover-open (so a failed showPopover() still leaves the
+     plain fixed-position toast) and reset the UA inset/margin/size that would otherwise center it. */
+  display: block;
   position: fixed;
-  bottom: 18px;
-  left: 50%;
+  inset: auto auto 18px 50%;
+  margin: 0;
+  width: max-content;
+  height: auto;
   transform: translateX(-50%);
   background: var(--bg);
   border: 1px solid var(--border);
@@ -6945,9 +6951,10 @@ button.omni-tag-pill:focus-visible {
   transition: opacity 120ms ease;
   box-shadow: var(--shadow);
   max-width: min(720px, calc(100vw - 24px));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-align: center;
   z-index: 2147483647;
 }
 
