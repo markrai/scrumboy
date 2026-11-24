@@ -118,6 +118,39 @@ describe('Todo GitHub reference browser', () => {
     expect(api.mock.calls.filter(([p]) => p.includes('/browse?'))).toHaveLength(0);
   });
 
+  it('marks unavailable saved references and disables refresh', async () => {
+    api.mockImplementation(async (path: string) => {
+      if (path.endsWith('/integrations/resources')) return [{ ...repository, availability: 'unavailable' }];
+      if (path.endsWith('/github-items')) return [{ ...issue, availability: 'unavailable' }];
+      return {};
+    });
+    const field = document.createElement('div');
+    field.id = 'todoExternalResourcesField';
+    document.body.append(field);
+    const { bindTodoGitHubItems } = await import('./todo-github-items.js');
+    await bindTodoGitHubItems('alpha', 5, true);
+    expect(document.body.textContent).toContain('Unavailable');
+    const refresh = findButton('Refresh');
+    expect(refresh.disabled).toBe(true);
+    expect(refresh.title).toContain('Restore GitHub access');
+  });
+
+  it('explains repository access changes when a saved reference refresh fails', async () => {
+    api.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith('/integrations/resources')) return [repository];
+      if (path.endsWith('/github-items')) return [issue];
+      if (path.endsWith('/refresh') && init?.method === 'POST') throw new Error('provider denied repository');
+      return {};
+    });
+    const field = document.createElement('div');
+    field.id = 'todoExternalResourcesField';
+    document.body.append(field);
+    const { bindTodoGitHubItems } = await import('./todo-github-items.js');
+    await bindTodoGitHubItems('alpha', 5, true);
+    findButton('Refresh').click();
+    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('Settings → GitHub → Refresh repositories')));
+  });
+
   it('refreshes and removes only saved Todo references', async () => {
     api.mockImplementation(async (path: string, opts?: RequestInit) => {
       if (opts?.method) return null;

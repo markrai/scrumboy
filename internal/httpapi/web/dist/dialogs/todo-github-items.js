@@ -176,11 +176,21 @@ export async function initializeTodoGitHubItems(slug, localId, editable) {
                 (item.availability === 'unavailable' ? ' · Unavailable' : ''), 'github-items__state');
             if (!editable)
                 continue;
-            button(row, 'Refresh', async () => {
+            const refresh = button(row, 'Refresh', async () => {
                 recordLocalMutation();
-                await apiFetch(path + '/' + item.resourceId + '/' + item.kind + '/' + item.number + '/refresh', { method: 'POST' });
+                try {
+                    await apiFetch(path + '/' + item.resourceId + '/' + item.kind + '/' + item.number + '/refresh', { method: 'POST' });
+                }
+                catch {
+                    showToast('Could not refresh this GitHub reference. Repository access may have changed; use Settings → GitHub → Refresh repositories.');
+                    return;
+                }
                 await reloadLinked();
             });
+            if (item.availability === 'unavailable') {
+                refresh.disabled = true;
+                refresh.title = 'Repository unavailable. Restore GitHub access and refresh repositories in Settings → GitHub.';
+            }
             button(row, 'Remove', async () => {
                 recordLocalMutation();
                 await apiFetch(path + '/' + item.resourceId + '/' + item.kind + '/' + item.number, { method: 'DELETE' });
