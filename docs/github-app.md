@@ -110,7 +110,7 @@ Read-only project API (normal Scrumboy authentication and mutation header requir
 | POST | `/api/board/{slug}/todos/{localId}/github-items/{resourceId}/{kind}/{number}/refresh` | Explicitly refresh item metadata |
 | GET | `/api/board/{slug}/integrations/github/search?resourceId=123&kind=issue&q=title` | Search issues or PRs in one associated repository |
 
-`kind` is `issue` or `pr`. URL input cannot select arbitrary GitHub installations or external hosts. The server reauthorizes every repository and resource against the active project, and all outbound lookup tokens are restricted to one installation and one repository. Existing `integration_todo_resources` references remain compatible, while migration 094 stores structured item references separately from card title/body and preserves project/resource cascade behavior.
+`kind` is `issue` or `pr`. URL input cannot select arbitrary GitHub installations or external hosts. The server reauthorizes every repository and resource against the active project, and all outbound lookup tokens are restricted to one installation and one repository. Existing `integration_todo_resources` references remain compatible, while migration 096 stores structured item references separately from card title/body and preserves project/resource cascade behavior.
 
 ### Live M3 acceptance ledger
 

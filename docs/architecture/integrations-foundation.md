@@ -35,7 +35,7 @@ The integration core stores opaque provider-native IDs and a minimal resource re
 
 ## M2: card-to-resource links
 
-Migration 091 creates `integration_todo_resources` with card-deletion and project-resource-detachment cascade cleanup. A card can reference at most 50 external resources. References use stable resource IDs, do not modify the card, and remain separate from story-to-story links.
+Migration 093 creates `integration_todo_resources` with card-deletion and project-resource-detachment cascade cleanup. A card can reference at most 50 external resources. References use stable resource IDs, do not modify the card, and remain separate from story-to-story links.
 
 REST: `GET /api/board/{slug}/integrations/resources` lists a project's available resources. `GET/POST /api/board/{slug}/todos/{localId}/integrations` lists or links resources, where POST accepts `{"resourceId":123}`. `DELETE /api/board/{slug}/todos/{localId}/integrations/{resourceId}` unlinks a resource. MCP mirrors these operations with `integrations_resourcesList`, `todos_externalLinksList`, `todos_externalLinkAdd`, and `todos_externalLinkRemove`.
 

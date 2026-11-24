@@ -57,7 +57,7 @@ This is the release gate for the live GitHub App integration before automatic Gi
 ## Automated tests and CI
 - `go test ./internal/integration/... ./internal/store/... ./internal/httpapi/... ./internal/mcp/... ./internal/migrate/...`
 - Frontend `npm test` in `internal/httpapi/web`, the generated-code parity check and browser checks.
-- Migration checks on an isolated old-schema database, including retained resource availability, project/card association cascade for explicit detach/disconnect, M3.2 migration 094 issue/PR identity and cascade, and restore compatibility.
+- Migration checks on an isolated old-schema database, including retained resource availability, project/card association cascade for explicit detach/disconnect, M3.2 migration 098 issue/PR identity and cascade, and restore compatibility.
 - Required GitHub checks (Go, frontend, CodeQL, DCO, Gradle, GHCR) must pass on the final qualified commit.
 
 ## Acceptance record
@@ -75,7 +75,7 @@ M4 may be developed on this PR, but the M3 acceptance checkbox stays open until 
 ## Scenario J: M5.B verified event matching (implementation present; CI and staging acceptance pending)
 
 - [x] Raw HMAC-verified GitHub issue and pull-request metadata only; subscribe to Issues and Pull requests. Merge is distinct from unmerged close.
-- [x] Separate migration 096 and durable inbox with delivery digest deduplication, bounded claim/lease/retry, cross-inbox collision rejection and 30-day retention.
+- [x] Separate migration 098 and durable inbox with delivery digest deduplication, bounded claim/lease/retry, cross-inbox collision rejection and 30-day retention.
 - [x] Idempotent, atomic project/repository/installation-aware rule matching; no event can target a disconnected, unavailable or detached repository.
 - [x] GET-only, project-role-scoped match summaries and redacted admin queue counts; no raw payload or credentials retained.
 - [x] Unit and integration tests covering invalid signatures, malformed/unknown events, duplicates, revoked installations, stale claims, transient database errors, project boundaries and non-execution.

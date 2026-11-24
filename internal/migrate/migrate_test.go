@@ -693,7 +693,7 @@ func TestMigration059ClassifiesExistingPreferencesAsLegacy(t *testing.T) {
 }
 
 
-func TestMigration098RemovesSeparateAutomationApprovalGate(t *testing.T) {
+func TestMigration100RemovesSeparateAutomationApprovalGate(t *testing.T) {
     sqlDB := openMigratedDB(t)
     if !columnExists(t, sqlDB, "integration_automation_rules", "execution_since") {
         t.Fatal("missing automation activation timestamp")
@@ -721,4 +721,56 @@ func TestMigration098RemovesSeparateAutomationApprovalGate(t *testing.T) {
     if err := Apply(context.Background(), sqlDB); err != nil {
         t.Fatalf("migration not idempotent: %v", err)
     }
+}
+
+
+func TestEmbeddedMigrationsHaveUniqueNumericPrefixes(t *testing.T) {
+	seen := make(map[string]string)
+	for _, version := range embeddedMigrationVersions(t) {
+		prefix, _, ok := strings.Cut(version, "_")
+		if !ok {
+			t.Fatalf("migration %q has no numeric prefix", version)
+		}
+		if previous, exists := seen[prefix]; exists {
+			t.Fatalf("migration prefix %s reused by %q and %q", prefix, previous, version)
+		}
+		seen[prefix] = version
+	}
+}
+
+func TestLegacyIntegrationMigrationAliases(t *testing.T) {
+	sqlDB := openRawTestDB(t)
+	ctx := context.Background()
+	if _, err := sqlDB.ExecContext(ctx, `
+CREATE TABLE schema_migrations (
+  version TEXT PRIMARY KEY,
+  applied_at INTEGER NOT NULL
+)`); err != nil {
+		t.Fatalf("create schema_migrations: %v", err)
+	}
+	for _, alias := range legacyMigrationAliases {
+		if _, err := sqlDB.ExecContext(ctx, `INSERT INTO schema_migrations(version, applied_at) VALUES (?, 123)`, alias.legacy); err != nil {
+			t.Fatalf("seed legacy migration %s: %v", alias.legacy, err)
+		}
+	}
+	applied, err := alreadyApplied(ctx, sqlDB)
+	if err != nil {
+		t.Fatalf("alreadyApplied: %v", err)
+	}
+	applied, err = reconcileLegacyMigrationAliases(ctx, sqlDB, applied)
+	if err != nil {
+		t.Fatalf("reconcileLegacyMigrationAliases: %v", err)
+	}
+	for _, alias := range legacyMigrationAliases {
+		if !applied[alias.canonical] {
+			t.Fatalf("canonical migration %s was not marked applied", alias.canonical)
+		}
+		var appliedAt int64
+		if err := sqlDB.QueryRowContext(ctx, `SELECT applied_at FROM schema_migrations WHERE version = ?`, alias.canonical).Scan(&appliedAt); err != nil {
+			t.Fatalf("read canonical migration %s: %v", alias.canonical, err)
+		}
+		if appliedAt != 123 {
+			t.Fatalf("canonical migration %s applied_at = %d, want 123", alias.canonical, appliedAt)
+		}
+	}
 }

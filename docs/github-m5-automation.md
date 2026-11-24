@@ -56,7 +56,7 @@ Returns \`201\` with the stored rule. Clients cannot activate execution by addin
 {"enabled":true}
 \`\`\`
 
-This enables the rule for actual execution in the current M5.C–E implementation. M5.A was a non-executing foundation with no worker or provider event subscription. The database also has an `execution_approved_at` field that is constrained to `NULL` throughout M5.A. The later implementation authorizes execution when a Maintainer enables a rule; the obsolete M5.C approval table is removed by migration 098.
+This enables the rule for actual execution in the current M5.C–E implementation. M5.A was a non-executing foundation with no worker or provider event subscription. The database also has an `execution_approved_at` field that is constrained to `NULL` throughout M5.A. The later implementation authorizes execution when a Maintainer enables a rule; the obsolete M5.C approval table is removed by migration 100.
 
 **Delete a rule:** \`DELETE /api/board/{slug}/integrations/automation-rules/{ruleId}\` returns \`204\`.
 
@@ -137,7 +137,7 @@ The existing admin-only webhook status endpoint \`GET /api/admin/integrations/gi
 
 ### Explicit non-execution gate
 
-M5.A's \`execution_approved_at\` still has a database constraint requiring \`NULL\`. **M5.A/B were deliberately non-executing.** The current implementation authorizes future notifications when a Maintainer enables a rule; migration 098 ensures events admitted before the upgrade are not backfilled.
+M5.A's \`execution_approved_at\` still has a database constraint requiring \`NULL\`. **M5.A/B were deliberately non-executing.** The current implementation authorizes future notifications when a Maintainer enables a rule; migration 100 ensures events admitted before the upgrade are not backfilled.
 
 Independent-instance isolation and live signed-delivery testing remain pending. M5.B is a backend metadata-processing milestone, **not** general availability.
 
@@ -147,7 +147,7 @@ Independent-instance isolation and live signed-delivery testing remain pending. 
 
 There is **no separate execution approval**, confirmation dialog, or operator environment switch. A project Maintainer creates a disabled rule and turns it on with the **Enable** button. The authenticated `PATCH /api/board/{slug}/integrations/automation-rules/{id}` request with `{"enabled":true}` authorizes execution for future matching GitHub events. **Disable** stops execution and invalidates pending actions. Editing an enabled rule starts a fresh rule version; actions from older versions are cancelled at settlement, and only events received after the new version can produce new notifications. The obsolete `/execution-approval` API returns 404. The legacy `SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED` environment variable has no effect.
 
-Migration 098 removes the M5.C execution-approval table/triggers and renames the action authorization column to `activation_version`. It adds `execution_since` to the rule model. Existing enabled rules become executable for **future events only** after upgrade; already-admitted events and old queued actions cannot suddenly activate. The legacy `integration_automation_rules.execution_approved_at` field remains inert as constrained by the M5.A migration, with no permission implications. Both the rule's exact version and activation time are checked against the event admission time. These checks occur in the same durable transaction that records a match and queues a unique action.
+Migration 100 removes the M5.C execution-approval table/triggers and renames the action authorization column to `activation_version`. It adds `execution_since` to the rule model. Existing enabled rules become executable for **future events only** after upgrade; already-admitted events and old queued actions cannot suddenly activate. The legacy `integration_automation_rules.execution_approved_at` field remains inert as constrained by the M5.A migration, with no permission implications. Both the rule's exact version and activation time are checked against the event admission time. These checks occur in the same durable transaction that records a match and queues a unique action.
 
 A webhook event is eligible only when it passed raw-body HMAC verification, maps to a supported GitHub issue or pull-request event, belongs to an active installation with an available repository linked to the project, and matches an enabled rule that existed before the event was admitted. Events are deduplicated by delivery ID and digest, and one event/rule pair can produce at most one notification. Every notification is a durable action with a bounded lease, retry limit, and redacted audit history. At settlement the worker rechecks the exact enabled rule version, project/repository association, installation status, event timing and the lease token. A disable, edit, delete, repository disconnect or installation revocation causes cancellation, not a notification.
 
