@@ -124,7 +124,7 @@ describe('project automations settings', () => {
     });
     const controller = mount(false);
     await vi.waitFor(() => expect(document.querySelectorAll('.settings-automations__rule')).toHaveLength(1));
-    expect(document.body.textContent).toContain('Enabling a rule starts notifications');
+    expect(document.body.textContent).toContain('Enabled rules create notifications for new matching GitHub events');
     expect(document.body.textContent).not.toContain('Execution approved');
     expect(document.body.textContent).toContain('Notification history');
     expect(document.body.textContent).toContain('Recent matches');

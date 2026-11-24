@@ -320,6 +320,35 @@ describe('GitHub project picker flow', () => {
         controller.abort();
     });
 
+    it('warns before unlinking a repository from a project and does not mutate when cancelled', async () => {
+        let linked = true;
+        confirm.mockResolvedValueOnce(false);
+        requests.mockImplementation(async (path: string, init?: RequestInit) => {
+            if (path === '/api/admin/integrations/github') return { configured: true, connections: [{ id: 7, installationId: '25', account: 'markrai', status: 'active' }] };
+            if (path.endsWith('/installations')) return [{ id: 25, account: 'markrai', kind: 'User' }];
+            if (path === '/api/projects') return [{ name: 'Engineering', slug: 'engineering', role: 'Maintainer' }];
+            if (path.endsWith('/connections/7/resources')) return [{ id: 40, name: 'markrai/scrumboy', availability: 'available' }];
+            if (path === '/api/board/engineering/integrations/resources' && init?.method === 'DELETE') { linked = false; return {}; }
+            if (path === '/api/board/engineering/integrations/resources') return linked ? [{ id: 40, name: 'markrai/scrumboy', availability: 'available' }] : [];
+            return [];
+        });
+        const el = root(), controller = new AbortController();
+        const { bindGitHubSettingsTab } = await import('./settings-github.js');
+        bindGitHubSettingsTab(el, 'engineering', controller.signal);
+        await vi.waitFor(() => expect(el.querySelector<HTMLButtonElement>('.github-integration__remove-repo')?.textContent).toBe('Unlink from project'));
+        el.querySelector<HTMLButtonElement>('.github-integration__remove-repo')!.click();
+        await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+        expect(confirm.mock.calls[0][0]).toContain('Existing card references');
+        expect(confirm.mock.calls[0][0]).toContain('will not restore');
+        expect(confirm.mock.calls[0].slice(1)).toEqual(['Unlink repository', 'Unlink', 'danger']);
+        expect(requests).not.toHaveBeenCalledWith('/api/board/engineering/integrations/resources', expect.objectContaining({ method: 'DELETE' }));
+
+        confirm.mockResolvedValueOnce(true);
+        el.querySelector<HTMLButtonElement>('.github-integration__remove-repo')!.click();
+        await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/board/engineering/integrations/resources', expect.objectContaining({ method: 'DELETE' })));
+        controller.abort();
+    });
+
     it('keeps linked repositories project-specific through project switches and installation refresh', async () => {
         const resources = [{ id: 40, name: 'org/alpha', availability: 'available' }, { id: 41, name: 'org/beta', availability: 'available' }];
         requests.mockImplementation(async (path: string) => {

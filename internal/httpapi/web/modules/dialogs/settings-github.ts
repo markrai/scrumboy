@@ -470,12 +470,21 @@ export function bindGitHubSettingsTab(root: HTMLElement, initialSlug: string | n
                     const row = document.createElement('div');
                     row.className = 'github-integration__linked-row';
                     textNode(row, 'span', String(resource.name) + (resource.availability === 'unavailable' ? ' (Unavailable)' : ''));
-                    const remove = action(row, 'Remove', () => {
-                        remove.disabled = true;
-                        void mutate(async () => {
-                            await apiFetch('/api/board/' + encodeURIComponent(slug) + '/integrations/resources/' + resource.id, { method: 'DELETE', signal });
-                            await loadProject();
-                        }, false).finally(() => { if (remove.isConnected) remove.disabled = false; });
+                    const remove = action(row, 'Unlink from project', () => {
+                        void (async () => {
+                            const confirmed = await showConfirmDialog(
+                                'Unlink ' + String(resource.name) + ' from this project? Existing card references to this repository will be removed. Re-linking the repository later will not restore those references. GitHub App access is unchanged.',
+                                'Unlink repository',
+                                'Unlink',
+                                'danger'
+                            );
+                            if (!confirmed || signal.aborted || !remove.isConnected) return;
+                            remove.disabled = true;
+                            void mutate(async () => {
+                                await apiFetch('/api/board/' + encodeURIComponent(slug) + '/integrations/resources/' + resource.id, { method: 'DELETE', signal });
+                                await loadProject();
+                            }, false).finally(() => { if (remove.isConnected) remove.disabled = false; });
+                        })();
                     });
                     remove.classList.add('github-integration__remove-repo');
                     list.append(row);

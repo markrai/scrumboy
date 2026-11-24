@@ -59,7 +59,7 @@ func (s *Server) githubReadiness(admin bool, activeConnections int) map[string]a
         readiness["message"] = "Webhook receiver configured. No valid signed GitHub delivery has reached this process since startup. Check the GitHub webhook destination and event subscriptions."
     default:
         readiness["state"] = "verified_delivery"
-        readiness["message"] = "A valid signed GitHub delivery reached this process. This does not prove ongoing public reachability, current subscriptions, or matching automation rules."
+        readiness["message"] = "GitHub events are connected. Scrumboy has received a verified GitHub delivery since startup."
     }
     return readiness
 }

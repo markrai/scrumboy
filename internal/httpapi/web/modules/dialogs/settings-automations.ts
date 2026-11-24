@@ -184,7 +184,7 @@ export function bindAutomationTab(options: { slug: string; canManage: boolean; s
       indicator.setAttribute('role', 'status');
       indicator.setAttribute('data-github-readiness', String(snapshot.readiness.state || 'unknown'));
     }
-    append(root, 'p', 'Enabling a rule starts notifications for future verified GitHub events. Disabling it stops notifications. Preview checks the rule without sending a GitHub event.', 'settings-automations__notice');
+    append(root, 'p', 'Enabled rules create notifications for new matching GitHub events. Preview checks a rule without triggering an action.', 'settings-automations__notice');
     const repositories = snapshot.repositories.filter(repo => repo.availability === 'available');
     const repositoryNames = new Map(snapshot.repositories.map(repo => [repo.id, repo.name]));
     const choices = repositories.map(repo => [String(repo.id), repo.name] as [string, string]);
