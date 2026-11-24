@@ -341,11 +341,11 @@ describe('GitHub project picker flow', () => {
         expect(confirm.mock.calls[0][0]).toContain('Existing card references');
         expect(confirm.mock.calls[0][0]).toContain('will not restore');
         expect(confirm.mock.calls[0].slice(1)).toEqual(['Unlink repository', 'Unlink', 'danger']);
-        expect(requests).not.toHaveBeenCalledWith('/api/board/engineering/integrations/resources', expect.objectContaining({ method: 'DELETE' }));
+        expect(requests).not.toHaveBeenCalledWith('/api/board/engineering/integrations/resources/40', expect.objectContaining({ method: 'DELETE' }));
 
         confirm.mockResolvedValueOnce(true);
         el.querySelector<HTMLButtonElement>('.github-integration__remove-repo')!.click();
-        await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/board/engineering/integrations/resources', expect.objectContaining({ method: 'DELETE' })));
+        await vi.waitFor(() => expect(requests).toHaveBeenCalledWith('/api/board/engineering/integrations/resources/40', expect.objectContaining({ method: 'DELETE' })));
         controller.abort();
     });
 
