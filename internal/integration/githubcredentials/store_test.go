@@ -108,7 +108,10 @@ func TestCredentialStoreFailClosedOnInvalidOrInsecureBundle(t *testing.T) {
 	if _, exists, err := store.Load(); err != nil || exists { t.Fatalf("invalid save left directory: %v %v", exists, err) }
 	root := filepath.Join(dataDir, directoryName)
 	if err := os.Mkdir(root, 0700); err != nil { t.Fatal(err) }
-	if err := os.WriteFile(filepath.Join(root, credentialsFileName), []byte("{invalid"), 0600); err != nil { t.Fatal(err) }
+	if err := protectCredentialPath(root, true); err != nil { t.Fatal(err) }
+	name := filepath.Join(root, credentialsFileName)
+	if err := os.WriteFile(name, []byte("{invalid"), 0600); err != nil { t.Fatal(err) }
+	if err := protectCredentialPath(name, false); err != nil { t.Fatal(err) }
 	if _, _, err := store.Load(); !errors.Is(err, ErrInvalidCredentials) { t.Fatalf("corrupt bundle accepted: %v", err) }
 	if runtime.GOOS != "windows" {
 		if err := os.Chmod(root, 0755); err != nil { t.Fatal(err) }
