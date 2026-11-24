@@ -54,6 +54,50 @@ func TestCredentialStoreSaveLoadRestartAndNoOverwrite(t *testing.T) {
 	}
 }
 
+func TestCredentialStoreRestoresProtectedBackupBundle(t *testing.T) {
+	sourceDir := t.TempDir()
+	source, err := New(sourceDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := testCredentials()
+	if err := source.Save(want); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := os.ReadFile(filepath.Join(sourceDir, directoryName, credentialsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	restoreDir := t.TempDir()
+	root := filepath.Join(restoreDir, directoryName)
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := protectCredentialPath(root, true); err != nil {
+		t.Fatal(err)
+	}
+	name := filepath.Join(root, credentialsFileName)
+	if err := os.WriteFile(name, backup, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := protectCredentialPath(name, false); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := New(restoreDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := restored.Load()
+	if err != nil || !found {
+		t.Fatalf("restored bundle unavailable: found=%v err=%v", found, err)
+	}
+	if got.AppID != want.AppID || got.Slug != want.Slug ||
+		string(got.PrivateKey) != string(want.PrivateKey) || got.WebhookSecret != want.WebhookSecret {
+		t.Fatal("restored credentials differ from backup")
+	}
+}
+
 func TestCredentialStoreFailClosedOnInvalidOrInsecureBundle(t *testing.T) {
 	dataDir := t.TempDir()
 	store, err := New(dataDir)
