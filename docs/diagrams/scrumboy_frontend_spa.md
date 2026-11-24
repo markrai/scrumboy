@@ -22,7 +22,7 @@ flowchart TB
   Dialogs --> I18n
   Dialogs --> API
   Views --> API
-  Views -. dynamic import .-> Wall
+  Views -.->|dynamic import| Wall
 ```
 
 ## Board and story surfaces

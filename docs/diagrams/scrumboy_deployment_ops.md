@@ -18,7 +18,7 @@ flowchart TB
   IdP[Optional OIDC IdP]
 
   User --> Proxy --> App
-  User -. LAN direct .-> App
+  User -.->|LAN direct| App
   GitHub -->|signed webhook route when enabled| Proxy
   App -->|GitHub REST API| GitHub
   App --> Vol
@@ -102,8 +102,6 @@ flowchart TB
 
   Stop --> Copy --> Files --> Start
   Secrets --> External --> Start
-  Export --> logical
-  SBZ --> logical
   NewBin --> SameData --> AutoMig
 ```
 

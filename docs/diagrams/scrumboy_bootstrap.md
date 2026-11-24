@@ -68,7 +68,7 @@ flowchart TB
   Server --> MailT
   Server --> MailN
   Fan --> Push
-  Server -. when GitHub receiver configured .-> GH
+  Server -.->|when GitHub receiver configured| GH
   GH --> GHRecon[repository reconciliation loop]
   GH --> GHMatch[automation matching loop]
   GH --> GHExec[notification action loop]
