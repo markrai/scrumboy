@@ -1,0 +1,52 @@
+# Provider-neutral integration architecture (M1–M3)
+
+M1 introduces a provider-neutral, database-backed foundation for connecting external systems to Scrumboy projects. No new HTTP routes, web UI, credentials, GitHub App setup, inbound webhooks, synchronization, or card modifications ship in this milestone. The store methods are internal building blocks for later milestones.
+
+## Instance-owned GitHub App direction
+
+Every self-hosted Scrumboy Full Mode instance uses its own administrator-owned GitHub App, with server-local private-key and webhook-secret handling. One App supports its selected installations and repositories for that instance. There is no centrally managed Scrumboy Connect App, remote broker, shared key or hosted relay. App-global installation discovery is restricted to the instance Owner/Admin, while project authorization and public-board visibility are separate boundaries.
+
+S2.2 adds Owner-only manifest enrollment, a private atomic credential bundle under DATA_DIR, startup recovery, and synchronized hot activation of the GitHub provider and HMAC-verified webhook worker. The direct adapter also supports manual PEM setup; manual environment settings override, but never mutate, the guided bundle. Genuine signed webhook delivery and notification execution were qualified on an independent self-hosted instance before v3.43.0. Clean-instance guided-registration onboarding polish remains tracked in [#371](https://github.com/markrai/scrumboy/issues/371).
+
+
+## Ownership and authority
+
+- Connections are instance-managed. Only a current non-service system Owner or Admin may register, list, rename, disable, or delete them and their external resources. System privilege does not grant project membership.
+- External resources belong to one connection and have stable provider-native identifiers. The provider and resource kind are constrained tokens, not hard-coded GitHub enums.
+- A project Maintainer may attach and detach existing resources from that project. Project Viewers and Contributors can read the project's associations, but cannot modify them; nonmembers cannot enumerate them.
+- Associations are scoped to durable projects, including projects their owners deliberately make publicly viewable. This milestone does not impose a GitHub-versus-Scrumboy visibility policy. Temporary and anonymous boards have no integration association surface.
+- Connections are not user credentials. SQLite stores neither PATs, private keys, installation tokens nor webhook secrets. Guided App secrets are persisted only in a separate restrictive filesystem bundle under DATA_DIR and require protected volume backups; installation tokens remain process-local.
+
+## Schema and identity
+
+- `integration_connections`: instance-level provider and provider account identity (`provider`, `external_account_id`), label, status and timestamps. The unique provider/account pair is a stable installation identity for one connection.
+- `integration_resources`: resource kind and provider-native `external_id`, name, absolute HTTP(S) URL, timestamps. Unique within (`connection_id`, `kind`, `external_id`), independent of mutable repository names and links.
+- `integration_project_resources`: many-to-many association from a Scrumboy project to a resource. There is no special treatment of public durable projects; existing Scrumboy board visibility remains the user's decision.
+
+Project and connection deletion cascade through their associations; connection deletion also cascades resource records. Project deletion never mutates an external provider. M1 intentionally does not introduce issue/PR objects or card links, which will be modeled in M2 without altering the existing `todos` table.
+
+## Provider boundary
+
+The integration core stores opaque provider-native IDs and a minimal resource reference. Provider adapters handle API calls, authentication and installation discovery without embedding GitHub-specific ID fields in generic tables. M4 adds a separate inbound event inbox, deduplication and reconciliation. M5 adds user-configurable notification automations. None of those later systems should turn a Scrumboy board's public-view choice into a GitHub-visibility restriction.
+
+## Validation
+
+`go test ./internal/store ./internal/migrate` should cover schema migrations, transaction-authoritative role checks, duplicate identity handling, project isolation, input validation, and cascade lifecycle. M1 has no live network dependency.
+
+## M2: card-to-resource links
+
+Migration 093 creates `integration_todo_resources` with card-deletion and project-resource-detachment cascade cleanup. A card can reference at most 50 external resources. References use stable resource IDs, do not modify the card, and remain separate from story-to-story links.
+
+REST: `GET /api/board/{slug}/integrations/resources` lists a project's available resources. `GET/POST /api/board/{slug}/todos/{localId}/integrations` lists or links resources, where POST accepts `{"resourceId":123}`. `DELETE /api/board/{slug}/todos/{localId}/integrations/{resourceId}` unlinks a resource. MCP mirrors these operations with `integrations_resourcesList`, `todos_externalLinksList`, `todos_externalLinkAdd`, and `todos_externalLinkRemove`.
+
+Only authenticated project members with Viewer or higher can read external references. Contributors or higher can add and remove card references. Association of a resource to a project still requires Maintainer or higher; registration of new resources still requires instance Owner/Admin. Expiring boards are excluded. Public board publication does not grant integration access. GitHub credentials, inbound event processing and automation execution live in the later provider/webhook/automation layers and do not weaken these project boundaries.
+
+## M3: GitHub App adapter and installation lifecycle
+
+GitHub is the first provider adapter behind the generic `internal/integration.Provider` boundary. Only the operator holds the GitHub App ID and RSA private key, and the key remains outside the database and repository. The adapter signs short-lived app JWTs, mints least-privilege installation tokens, caches them only in memory, refreshes them before expiry and invalidates cached credentials on provider denial or local disconnect. Requests always target GitHub's fixed API origin and never use a URL supplied by a connected repository.
+
+In Full Mode, authenticated instance Owners/Admins can list GitHub App installations, connect one through a verified installation ID, synchronize its repositories and disconnect a locally managed connection. Discovery must complete successfully before an atomic SQLite reconciliation changes any registered repository. A repository's immutable GitHub ID is the stable identity. Rename updates the display name and URL without severing linked cards. Repositories removed from the App's authorized installation scope are marked unavailable after a complete scan, retaining their original resource identity, last-known URL, project associations and card references. New card links or project associations to unavailable resources are refused. Restored access reactivates the same resource ID. Failed, truncated, or unauthorized scans make no SQLite changes. A provider outage or revocation is not automatically interpreted as a zero-repository installation.
+
+Explicit local disconnect first previews the counts of affected repository resources, project associations and card references, then requires confirmation with a matching impact snapshot checked in the deletion transaction. The Settings > GitHub tab provides the admin workflow. Only project Maintainers can attach and detach registered resources to their project, and only Contributors and above can link them to cards. Owner/Admin system role does not imply project membership. Project and Scrumboy public-board visibility are independent of GitHub's repository visibility. M3 performs no issue sync, GitHub mutations, provider webhooks, or autonomous card updates.
+
+See [GitHub App operator setup](../github-app.md) for installation instructions, constraints and API reference.

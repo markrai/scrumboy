@@ -134,14 +134,16 @@ therefore always imports as active, exactly as it did before archival existed.
 
 Import commits only when every non-null todo priority key resolves to a tier in the same project.
 
-## Backups with images (`.sbz`)
+## Backups with images and drawings (`.sbz`)
 
-When [inline images](inline-images.md) are used, an export whose stories embed images downloads as a **`.sbz`** archive instead of JSON. Exports without images stay JSON format 1.2, readable by older Scrumboy versions.
+An export that needs archive-only content, including embedded note images, Story/Wall drawings, or Notes ink, downloads as a **`.sbz`** archive instead of plain JSON. Exports without image/drawing/ink content stay JSON format 1.2.
 
 A `.sbz` file is a ZIP containing:
 
-- `manifest.json` - the same backup data as a JSON export, format **1.3**, with each project listing its images (`assets`: id, type, size, dimensions, SHA-256)
-- `assets/<id>.png|jpg|gif` - the image bytes
+- `manifest.json` - project backup data in archive format **1.4**, including image metadata and portable Story/Wall drawing and Notes-ink state
+- `assets/<id>.png|jpg|gif` - image bytes for exported story notes
+
+Archive format 1.3 remains accepted as the legacy image-only archive format. Drawing and Notes-ink data require 1.4.
 
 Only images embedded by an exported story (active or archived) are included; unsaved drafts are not. The image list is taken from the exported note text itself, so every image the backup's notes embed is in the archive, even while others edit stories or right after a downgrade. Every image file is checked before the download starts, so a backup with a missing image fails with an error instead of downloading an incomplete archive. In the rare case that a story is edited and its image removed during the export, the export fails and can simply be repeated. A note that embeds an image URL that never belonged to its project (typed by hand, or copied from another board) shows "Image unavailable" and is exported as text only.
 
@@ -157,7 +159,7 @@ Importing a `.sbz` (Settings → Backup accepts `.json` and `.sbz`):
 - One archive per user is processed at a time, two across the server, and each user may send 10 archive previews or imports per 10 minutes. Busy requests are refused before the upload is stored; retry shortly.
 - Storage budgets apply. A **Replace** needs free budget for the imported images, because the old projects' images are released only when the replacement completes.
 - Limits: 512 MB upload, 1 GB total uncompressed, 5,000 entries, 10 MB per image. There is no compression-ratio rule.
-- A JSON file labeled 1.3, or a 1.1/1.2 JSON file listing images, is rejected: import the `.sbz` instead.
+- A plain JSON file labeled with an archive-only version, or a 1.1/1.2 JSON file listing archive assets, is rejected: import the `.sbz` instead.
 
 A Replace import that was interrupted by a crash leaves invisible staging data; Scrumboy removes it, and its image files, after the next restart.
 

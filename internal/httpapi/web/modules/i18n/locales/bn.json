@@ -1,4 +1,8 @@
 {
+  "todo.externalResources.title": "External references",
+  "todo.externalResources.remove": "Remove external reference",
+  "todo.externalResources.empty": "No external references linked.",
+  "todo.externalResources.failed": "Could not update external references.",
   "common.archive": "আর্কাইভ করুন",
   "common.restore": "পুনরুদ্ধার করুন",
   "common.retry": "আবার চেষ্টা করুন",

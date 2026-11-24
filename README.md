@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.42.6-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.43.0-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -111,6 +111,7 @@ Scrumboy includes a native Android client, implemented with Capacitor, under `mo
 - **Realtime Collaboration:** Keep project boards synchronized as teammates create, update, and move stories.
 - **Outbound Webhooks & Integrations:** In Full Mode, project webhook URLs registered through the API receive JSON events for story lifecycle changes, assignment, and due-soon reminders. Delivery defaults to asynchronous best-effort; `todo.created` subscriptions can opt into bounded SQLite-backed recovery. See [Integrations](#integrations--api-access).
 - **AI Agent Integration:** Connect Claude, Cursor, and other MCP-compatible clients to manage projects and stories through Scrumboy's tools.
+- **GitHub App integration (opt-in, Full Mode):** Instance admins can connect an instance-owned GitHub App, discover authorized repositories and associate them with Scrumboy projects. Users can browse and link read-only GitHub issues and pull requests from story References. Signed webhook ingestion can drive Maintainer-enabled in-app notification rules with durable deduplication, bounded retries and audit history; repository access loss is non-destructive until an administrator explicitly unlinks or disconnects it. No automation writes to GitHub or edits Scrumboy cards. See [GitHub App setup](docs/github-app.md).
 - Customizable Tags: Users can inherit and customize tag colors.
 - **Advanced Filtering:** Find stories with instant search, tag suggestions, and searchable sprint filters. Combine filters and keep selections visible as removable pills.
 - Sprints: create, activate, close; sprint filter on board; default sprint weeks (1 or 2) per project. Maintainers can disable sprints per project without deleting sprint history or todo assignments, then re-enable them later.

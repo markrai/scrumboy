@@ -1,4 +1,8 @@
 {
+  "todo.externalResources.title": "External references",
+  "todo.externalResources.remove": "Remove external reference",
+  "todo.externalResources.empty": "No external references linked.",
+  "todo.externalResources.failed": "Could not update external references.",
   "common.archive": "เก็บถาวร",
   "common.restore": "กู้คืน",
   "common.retry": "ลองอีกครั้ง",

@@ -349,10 +349,24 @@ for (const width of WIDTHS) {
     await page.mouse.move(startBox.x + startBox.width / 2, startBox.y + 40);
     await page.mouse.down();
     await page.mouse.move(startBox.x + startBox.width / 2 + dx, startBox.y + 40 + dy, { steps: 12 });
+    const committed = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/board/${slug}/wall/stories/${RICH}`) &&
+        response.request().method() === "PATCH",
+      { timeout: 10_000 },
+    );
     await page.mouse.up();
+    expect((await committed).ok()).toBe(true);
     await expect.poll(async () => pin.evaluate((el) => (el as HTMLElement).style.left), { timeout: 10_000 }).toBe(`${Math.round(startLeft + dx / zoom)}px`);
     await expect.poll(async () => pin.evaluate((el) => (el as HTMLElement).style.top), { timeout: 10_000 }).toBe(`${Math.round(startTop + dy / zoom)}px`);
     richPos = { x: Math.round(startLeft + dx / zoom), y: Math.round(startTop + dy / zoom) };
+
+    await expect.poll(async () => {
+      const wall = await (await ownerClient()).json<{ stories: Array<{ localId: number; x: number; y: number }> }>(
+        "GET", `/api/board/${slug}/wall`,
+      );
+      const saved = wall.stories.find((story) => story.localId === RICH);
+      return saved ? { x: saved.x, y: saved.y } : null;
+    }, { timeout: 10_000 }).toEqual(richPos);
 
     const after = await auditPins(page);
     expect(after.problems).toEqual([]);

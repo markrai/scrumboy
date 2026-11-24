@@ -4,7 +4,21 @@
 
 ## Unreleased
 
-- Added an Owner-assigned Guest system role for people who need Viewer access to assigned regular boards. Guests can collaborate through temporary board links. Rolling back to a version without Guest support restores ordinary User privileges to these accounts, including board creation.
+## [3.43.0] - 2026-11-24
+
+### Added
+
+- **Instance-owned GitHub App integration** - Full Mode instance administrators can connect a GitHub App they own, discover the repositories granted to that installation, and associate selected repositories with individual Scrumboy projects. The architecture has no shared Scrumboy.com relay or centrally managed GitHub App.
+- **GitHub issue and pull-request references** - New and existing stories have a dedicated References tab that can browse open/closed issues and pull requests from project-linked repositories, filter results by title, and attach read-only references. Project, repository and role boundaries are enforced server-side; Viewer access remains read-only.
+- **Signed GitHub webhook reconciliation** - Optional GitHub webhooks verify the raw-body HMAC signature before parsing, deduplicate delivery IDs, use a bounded durable inbox with leases/retries/dead-letter recovery, and reconcile repository metadata without silently deleting project or card references when GitHub access disappears.
+- **GitHub notification automations** - Project Maintainers can create disabled-by-default rules for supported issue and pull-request events, preview them safely, enable future verified-event execution, and inspect recent matches, notification history and transition audits. Rules create in-app notification records only; they do not modify GitHub, cards or public-board visibility.
+- **Self-hosted GitHub App onboarding foundation** - Owner-only GitHub App Manifest enrollment, protected credential persistence, restart recovery and no-restart runtime activation are included alongside the existing manual App ID/PEM/secret configuration. A clean-instance live wizard smoke test remains tracked separately in issue #371 and is not required for the manually configured runtime.
+- **Guest system role** - Owners can assign a Guest role for people who need Viewer access to assigned regular boards while retaining temporary-board collaboration. Guests cannot create regular boards.
+
+### Security
+
+- **Managed GitHub credentials** - Guided App private keys and webhook secrets stay outside SQLite. Managed bundles use restrictive POSIX permissions and, on Windows, a protected DACL granting access only to the current user, SYSTEM and Administrators; insecure/corrupt bundles fail closed. Dedicated Windows CI and protected backup/restore tests cover this path.
+- **Automation and tenant boundaries** - Webhook admission, repository ownership, project association, rule version/activation time, repository availability and installation state are rechecked before execution. Replayed deliveries, stale leases, disabled/edited rules and revoked repository access cannot create duplicate or stale notifications.
 
 ## [3.42.6] - 2026-11-23
 

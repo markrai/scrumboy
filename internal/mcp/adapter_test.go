@@ -480,6 +480,7 @@ func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {
 	wantTools := []any{
 		"system_getCapabilities", "me_get", "projects_list", "projects_create", "projects_update", "projects_delete",
 		"todos_create", "todos_get", "todos_search", "todos_update", "todos_countCompleted", "todos_delete", "todos_archive", "todos_restore", "todos_listArchived", "todos_move", "todos_linksList", "todos_linkAdd", "todos_linkRemove",
+		"integrations_resourcesList", "todos_externalLinksList", "todos_externalLinkAdd", "todos_externalLinkRemove",
 		"sprints_list", "sprints_get", "sprints_getActive", "sprints_create", "sprints_activate", "sprints_close", "sprints_update", "sprints_delete",
 		"tags_listProject", "tags_listMine", "tags_updateMineColor", "tags_deleteMine", "tags_updateProjectColor", "tags_deleteProject",
 		"members_list", "members_listAvailable", "members_add", "members_updateRole", "members_remove",

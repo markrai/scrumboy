@@ -7,6 +7,10 @@ const stylesSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "..", "..", "styles.css"),
   "utf8",
 );
+const todoMarkup = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "..", "..", "index.html"),
+  "utf8",
+);
 
 function mediaBlockContaining(css: string, query: string, needle: string): string | null {
   const re = new RegExp(`@media\\s*\\(\\s*${query}\\s*\\)\\s*\\{`, "g");
@@ -63,4 +67,19 @@ describe("todo dialog mobile footer buttons", () => {
       /#todoDialog\s+#todoTitle\s*\{[^}]*touch-action:\s*manipulation/,
     );
   });
+  it("keeps Details and References in separate, accessible Todo panels", () => {
+    expect(todoMarkup).toContain('id="todoDetailsTab"');
+    expect(todoMarkup).toContain('id="todoReferencesTab"');
+    expect(todoMarkup).toContain('id="todoDetailsPanel"');
+    expect(todoMarkup).toContain('id="todoReferencesPanel"');
+    const detailsStart = todoMarkup.indexOf('id="todoDetailsPanel"');
+    const refsStart = todoMarkup.indexOf('id="todoReferencesPanel"');
+    expect(detailsStart).toBeLessThan(refsStart);
+    expect(todoMarkup.indexOf('id="todoExternalResourcesField"')).toBeGreaterThan(refsStart);
+    expect(todoMarkup.indexOf('id="todoTitle"')).toBeGreaterThan(detailsStart);
+    expect(todoMarkup.indexOf('id="todoTitle"')).toBeLessThan(refsStart);
+    expect(stylesSource).toContain('.todo-dialog__panel[hidden]');
+    expect(stylesSource).toMatch(/\.todo-dialog__tab\s*\{[^}]*padding:\s*10px 16px/);
+  });
+
 });
