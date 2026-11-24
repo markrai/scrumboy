@@ -66,6 +66,10 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		project, err := s.anonymousBoardCreations.Create(s.requestContext(r))
+		if errors.Is(err, store.ErrForbidden) {
+			writeStoreErr(w, err, false)
+			return
+		}
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create board", nil)
 			return

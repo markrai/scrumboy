@@ -151,6 +151,7 @@ export interface User {
   image?: string | null;
   isBootstrap?: boolean;
   systemRole?: string;
+  capabilities?: { createBoards: boolean };
   twoFactorEnabled?: boolean;
   hasLocalPassword?: boolean;
   oidcLinked?: boolean;

@@ -673,7 +673,7 @@ func cmdMetrics(a *app, args []string) error {
 const adminUsage = `admin <users|service-account|service-token> <subcommand>
 
   users list
-  users role <user-id> <admin|user>            (owner)
+  users role <user-id> <admin|user|guest>            (owner)
   users delete <user-id> [--yes]               (owner)
   service-account list | create <name> | delete <user-id> [--yes]
   service-token list <account-user-id> | create <account-user-id> [--name N] | revoke <token-id> [--yes]
@@ -690,7 +690,7 @@ var adminSpecs = map[string]map[string]spec{
 			render: itemsRender([]string{"ID", "NAME", "EMAIL", "ROLE", "SERVICE"}, func(m map[string]any) []string {
 				return []string{str(m, "userId"), str(m, "name"), str(m, "email"), str(m, "systemRole"), str(m, "isService")}
 			})},
-		"role": {usage: "admin users role <user-id> <admin|user>", pos: 2,
+		"role": {usage: "admin users role <user-id> <admin|user|guest>", pos: 2,
 			build: func(c *cmdCtx, _ *flagVals) (string, map[string]any, error) {
 				id, err := posInt(c, 0, "user id")
 				return "admin_updateUserRole", map[string]any{"userId": id, "role": c.pos[1]}, err

@@ -22,6 +22,8 @@ import (
 	"scrumboy/internal/config"
 	"scrumboy/internal/db"
 	"scrumboy/internal/httpapi"
+	"scrumboy/internal/integration"
+	"scrumboy/internal/integration/githubwebhook"
 	"scrumboy/internal/mcp"
 	"scrumboy/internal/migrate"
 	"scrumboy/internal/oidc"
@@ -186,8 +188,19 @@ func main() {
 		}
 	}
 
+
+	var srv *httpapi.Server
+	github, githubErr := prepareGitHub(cfg, st, logger, func(provider integration.Provider, slug string, receiver *githubwebhook.Service) error {
+		if srv == nil {
+			return errors.New("server not ready")
+		}
+		return srv.ActivateGitHub(provider, slug, receiver)
+	}, nil)
+	if githubErr != nil {
+		logger.Fatalf("GitHub App setup: %v", githubErr)
+	}
 	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicOrigin: publicOrigin, Logger: logger, AssetFiles: assetJanitor})
-	srv := httpapi.NewServer(st, httpapi.Options{
+	srv = httpapi.NewServer(st, httpapi.Options{
 		Logger:                logger,
 		MaxRequestBody:        cfg.MaxRequestBodyBytes,
 		MaxTrelloImportBody:   cfg.MaxTrelloImportBytes,
@@ -199,6 +212,10 @@ func main() {
 		AgoraHandler:          agora.New(mcpH, agora.Options{MaxRequestBytes: maxB}),
 		EncryptionKey:         encKey,
 		OIDCService:           oidcSvc,
+		GitHubProvider: github.provider,
+		GitHubAppSlug: github.appSlug,
+		GitHubWebhook: github.webhook,
+		GitHubManifest: github.manifest,
 		VAPIDPublicKey:        cfg.VAPIDPublicKey,
 		VAPIDPrivateKey:       cfg.VAPIDPrivateKey,
 		VAPIDSubscriber:       cfg.VAPIDSubscriber,

@@ -1,115 +1,117 @@
 # Deployment and operations
 
-Single-node self-hosting: one process, one `DATA_DIR` volume (SQLite plus file-backed uploads), embedded SPA assets. No built-in clustering or HA; run one Scrumboy instance per database.
+Single-node self-hosting: one Scrumboy process, one SQLite database, one persistent `DATA_DIR`. No built-in clustering or HA; do not run multiple writers against the same database.
 
 ## Typical topology
 
 ```mermaid
 flowchart TB
   User[Browser clients]
+  GitHub[GitHub]
   Proxy[Optional reverse proxy Caddy nginx Traefik]
-  App[scrumboy binary or container :8080]
-  Vol["Persistent volume DATA_DIR"]
-  DB[(app.db WAL journal)]
-  Wallpapers["user-wallpapers user-id.jpg"]
-  Assets["assets shard/uuid.png|jpg|gif"]
+  App[scrumboy binary or container]
+  Vol["Persistent DATA_DIR"]
+  DB[(app.db WAL SHM)]
+  Wallpapers["user-wallpapers/"]
+  Assets["assets/ note images"]
+  GHCreds[".scrumboy-github-app/ credentials.json"]
   IdP[Optional OIDC IdP]
 
-  User --> Proxy
-  Proxy -->|HTTP or HTTPS| App
+  User --> Proxy --> App
   User -.->|LAN direct| App
+  GitHub -->|signed webhook route when enabled| Proxy
+  App -->|GitHub REST API| GitHub
   App --> Vol
   Vol --> DB
   Vol --> Wallpapers
   Vol --> Assets
+  Vol --> GHCreds
   App --> IdP
 ```
 
-- **Docker (recommended):** pull `ghcr.io/markrai/scrumboy:latest`, publish `:8080`, mount a volume on `/data` (`DATA_DIR=/data`, `SQLITE_PATH=/data/app.db` are image defaults).
-- **Docker (local clone):** `docker compose up --build` from the repo maps `./data:/data` (see `docker-compose.yml`, `Dockerfile`).
-- **TLS:** terminate at the reverse proxy, or enable app TLS when both `SCRUMBOY_TLS_CERT` and `SCRUMBOY_TLS_KEY` exist.
+A public reverse proxy is optional for ordinary Scrumboy use. It becomes necessary for GitHub real-time events unless the app itself is directly reachable on public HTTPS. Expose the exact `/api/integrations/github/webhook` route; a private Tailscale-only address cannot receive direct GitHub deliveries.
+
+- **Docker:** use `ghcr.io/markrai/scrumboy:latest`, publish the application port, and mount persistent storage on `/data`.
+- **TLS:** terminate at a reverse proxy or configure `SCRUMBOY_TLS_CERT` plus `SCRUMBOY_TLS_KEY`.
 - **Bind:** `BIND_ADDR` defaults to `:8080`.
+- **Public origin:** guided GitHub App enrollment and several URL-generating features require a canonical HTTPS `SCRUMBOY_PUBLIC_BASE_URL`.
 
 ## Persistence under DATA_DIR
 
 ```mermaid
 flowchart LR
-  Env[DATA_DIR or SQLITE_PATH]
-  Open[db.Open]
-  Mig[migrate.Apply on startup]
-  WAL[WAL mode default]
-  Files["app.db plus -wal -shm sidecars"]
-  Uploads["user-wallpapers/*.jpg"]
-  Assets["assets/xx/uuid.ext note images"]
-  Hourly[Hourly PRAGMA wal_checkpoint TRUNCATE]
+  Env[DATA_DIR and SQLITE_PATH]
+  DB["app.db + WAL + SHM"]
+  Wallpapers["user-wallpapers/*.jpg"]
+  Assets["assets/xx/uuid.ext"]
+  GH[".scrumboy-github-app/credentials.json"]
+  Mig[migrate.Apply]
+  Janitor[asset janitor]
+  Startup[GitHub credential load]
 
-  Env --> Open --> Mig --> WAL --> Files
-  Env --> Uploads
-  Env --> Assets
-  Hourly --> Files
+  Env --> DB --> Mig
+  Env --> Wallpapers
+  Env --> Assets --> Janitor
+  Env --> GH --> Startup
 ```
 
-SQLite holds board, auth, and preference state (including wallpaper preference JSON in `user_preferences`). Uploaded custom wallpaper images are stored as JPEGs at `DATA_DIR/user-wallpapers/<user-id>.jpg` — only the preference is in the database.
-
-WAL allows readers during writes but SQLite still has a **single writer**. Do not mount the same database from two running instances.
-
-| Variable | Role |
-|----------|------|
-| `DATA_DIR` | Instance data directory for `app.db` and file-backed uploads such as `user-wallpapers/` (default `./data`) |
-| `SQLITE_PATH` | Full DB path override (Docker uses `/data/app.db`) |
-| `SQLITE_JOURNAL_MODE` | Default `WAL` |
-| `SQLITE_SYNCHRONOUS` | Default `FULL` |
-| `SQLITE_BUSY_TIMEOUT_MS` | Writer lock wait (Compose sets `5000`) |
+SQLite stores board/auth/domain state, including Wall drawings, Notes ink, GitHub integration metadata, webhook inboxes, automation rules/actions, and audit records. Uploaded wallpapers and note images are file-backed. Guided GitHub App secrets are also file-backed but deliberately live **outside SQLite**.
 
 ### Persistence matrix
 
-What lives where, what JSON export covers, and what a full restore needs. See also [docs/recovery.md](../recovery.md) for owner password recovery (stop service and back up `DATA_DIR` first).
-
-| State | Location | In JSON export | Needed for full restore |
-|-------|----------|----------------|-------------------------|
-| SQLite | `SQLITE_PATH` (default under `DATA_DIR`) | scoped projects | yes |
-| WAL/SHM | beside DB | no | quiesce/copy with DB |
+| State | Location | In logical project export | Needed for full instance restore |
+|-------|----------|---------------------------|----------------------------------|
+| SQLite | `SQLITE_PATH` | scoped project data only | yes |
+| WAL/SHM | beside SQLite | no | quiesce/checkpoint or copy consistently |
 | Wallpapers | `DATA_DIR/user-wallpapers/` | no | yes |
-| Note images | `DATA_DIR/assets/<uuid[0:2]>/<uuid>.<ext>` | in `.sbz` exports only | yes, from the same backup as SQLite ([recovery.md](../recovery.md#instance-backup-and-restore)) |
-| Encryption key | env/secret (`SCRUMBOY_ENCRYPTION_KEY`) | no | yes if encrypted auth or calendar data |
-| Mermaid override | `DATA_DIR/mermaid-semantic-edges.json` when used | no | only for that override |
+| Note images | `DATA_DIR/assets/` | in `.sbz` when referenced by exported stories | yes |
+| Story/Wall drawings and Notes ink | SQLite | `.sbz` format 1.4 | yes |
+| Guided GitHub App credentials | `DATA_DIR/.scrumboy-github-app/credentials.json` | no | yes if guided GitHub identity must survive |
+| Manual GitHub App PEM | operator-managed secret path | no | yes if manual GitHub setup is used |
+| `SCRUMBOY_ENCRYPTION_KEY` | env/secret manager | no | yes when encrypted auth/calendar data exists |
+| Mermaid docs override | `DATA_DIR/mermaid-semantic-edges.json` when used | no | only for that override |
+
+Treat any backup containing `.scrumboy-github-app/` or a manual App PEM as a secret-bearing backup.
 
 ## Backup, restore, and upgrade
 
 ```mermaid
 flowchart TB
-  subgraph backup [Backup]
-    FileCopy[Quiesce then copy whole DATA_DIR]
-    Export[GET api backup export JSON]
-    Key[SCRUMBOY_ENCRYPTION_KEY if 2FA or calendar feeds]
+  subgraph backup [Instance backup]
+    Stop[Quiesce process or use documented consistent procedure]
+    Copy[Copy entire DATA_DIR]
+    Secrets[Copy external secrets: encryption key and manual GitHub PEM if used]
+  end
+
+  subgraph logical [Portable project export]
+    Export[JSON 1.2 when no archive-only assets]
+    SBZ[".sbz 1.4 when images or drawings/ink require archive"]
   end
 
   subgraph restore [Restore]
-    Files[Replace DATA_DIR contents on disk]
-    Import[POST api backup import replace merge or copy]
+    Files[Restore DATA_DIR with original protections]
+    External[Restore external secrets]
+    Start[Start same or newer compatible Scrumboy]
   end
 
   subgraph upgrade [Upgrade]
-    NewBin[New container image or binary]
-    SameData[Keep same DATA_DIR volume]
-    AutoMig[Numbered SQL migrations on startup]
+    NewBin[Replace binary or image]
+    SameData[Keep DATA_DIR]
+    AutoMig[Apply numbered migrations on startup]
   end
 
-  FileCopy --> Files
-  Export --> Import
-  Key --> Files
-  Key --> Import
+  Stop --> Copy --> Files --> Start
+  Secrets --> External --> Start
   NewBin --> SameData --> AutoMig
 ```
 
-- **File backup:** Prefer stopping the process (or otherwise ensuring no concurrent writes), then copy the **entire** `DATA_DIR` (Docker `/data`). That includes `app.db`, any `-wal` / `-shm` sidecars, and `user-wallpapers/`. If you must copy a live database, copy `app.db` together with its WAL/SHM sidecars **and** the `user-wallpapers/` directory — copying only `app.db` is not sufficient. Restoring the database without the wallpaper files leaves image-mode preferences pointing at missing files. Note images (`assets/`) must come from the same backup as the database; a live "database first, then files" copy is not consistent - use the offline procedure or the `.removal-hold` online procedure in [recovery.md](../recovery.md#instance-backup-and-restore).
-- **JSON backup:** Project-scoped logical export via API; import supports replace, merge, or copy-as-new (see `scrumboy_backup_import.md`). It does **not** include uploaded wallpaper files, general user preferences, or `audit_events`, and is not a substitute for a complete file-level `DATA_DIR` backup.
-- **2FA and calendar feeds:** back up `SCRUMBOY_ENCRYPTION_KEY` with the database; rotating it breaks stored TOTP secrets and encrypted ICS URLs. Once encrypted security data exists, startup requires the original valid key. On a fresh install with no encrypted data yet, an invalid key is ignored with a warning (2FA, password-reset encryption, and calendar URL encryption stay off until a valid key is set).
-- **Owner recovery:** host-side `recover-owner` can establish or replace an owner local password without the IdP; see `docs/recovery.md` (stop the service and back up `DATA_DIR` first).
-- **Upgrade:** replace the binary or image, keep the data volume, restart; pending migrations apply automatically in `main.go`.
+- **Full instance backup:** prefer a stopped/quiesced copy of all `DATA_DIR`, not only `app.db`. Follow [recovery.md](../recovery.md#instance-backup-and-restore) for a consistent online procedure when downtime is not practical.
+- **Logical export:** JSON/`.sbz` project exports are useful for portability but omit instance credentials, users outside the selected project scope, wallpapers, audit state, and other host-level state.
+- **GitHub guided identity:** restore the protected `.scrumboy-github-app` directory with private permissions. A permissive or corrupt bundle fails closed.
+- **Upgrade:** replace the binary/image, preserve data/secrets, restart, and let migrations apply automatically.
 
 ## Operational limits
 
-- One instance per database file (no horizontal scale-out on shared SQLite).
-- Suitable for small to medium teams on a single host; heavy concurrent write load is the main bottleneck.
-- Optional features (OIDC, VAPID push, webhooks, MCP, OAuth authorization server, SMTP/password-reset mail, wall canvas, markdown/mermaid notes) add env vars but are not required for core Kanban use.
+- SQLite is a single-writer database; one running Scrumboy process should own a database.
+- Optional OIDC, SMTP, Web Push, public boards, MCP/OAuth, GitHub integration, outbound webhooks, Wall/drawing, Markdown/Mermaid and inline images add configuration but are not required for core board use.
+- Repository browsing can work without GitHub webhooks. Real-time GitHub automations require provider reachability to the signed inbound endpoint.

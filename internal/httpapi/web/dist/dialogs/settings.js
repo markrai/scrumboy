@@ -1,3 +1,4 @@
+import { canCreateBoards } from "../user-capabilities.js";
 import { settingsDialog, closeSettingsBtn } from '../dom/elements.js';
 import { apiFetch, apiFetchForm } from '../api.js';
 import { fetchProjectMembers } from '../members-cache.js';
@@ -9,12 +10,14 @@ import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
 import { getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers, getBoardAccess, getPublicProjectsEnabled, getInlineImagesEnabled } from '../state/selectors.js';
 import { bindSharingTab, renderSharingTabShell } from './settings-sharing.js';
+import { bindGitHubSettingsTab } from './settings-github.js';
+import { bindAutomationTab, renderAutomationTabShell } from './settings-automations.js';
 import { isPublicBoardAccess } from '../state/board-access.js';
 import { setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview, setTrelloImportBtn, setTrelloImportData, setTrelloImportPreview, setTrelloImportResult, setUser, setBoardMembers, } from '../state/mutations.js';
 import { renderRealBurndownChart, destroyBurndownChart, mountBurndownChart } from '../charts/burndown.js';
 import { emit } from '../events.js';
 import { normalizeSprints } from '../sprints.js';
-import { KEY_ACTION_LIST, chordFromKeyboardEvent, formatChordForDisplay, getResolvedChordForAction, isTypingInTextField, reloadKeybindingsFromStorage, saveKeybindingOverride, setKeybindingsCaptureListening, } from '../core/keybindings.js';
+import { KEY_ACTION_LIST, chordFromKeyboardEvent, formatChordForDisplay, getResolvedChordForAction, isTypingInTextField, isInteractiveElementFocused, reloadKeybindingsFromStorage, saveKeybindingOverride, setKeybindingsCaptureListening, } from '../core/keybindings.js';
 import { requestDesktopNotificationPermission, getDesktopNotificationStatusDescription, getDesktopNotificationStatusKind, } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
 import { getAppRuntime } from '../platform/runtime.js';
@@ -535,7 +538,7 @@ export function renderBackupTabHTML() {
         <div class="settings-section__description muted" data-i18n-text="settings.backup.export.description">Download all your projects, todos, and tags as a JSON file.</div>
         <button class="btn" type="button" id="backupExportBtn" data-i18n-text="settings.backup.export.action">Export Backup</button>
       </div>
-      <div class="settings-backup-import">
+      ${canCreateBoards(getUser()) ? `<div class="settings-backup-import">
         <div class="settings-section__title" data-i18n-text="settings.backup.import.title">Import Data</div>
         <div class="settings-section__description muted" data-i18n-text="settings.backup.import.description">Restore from a backup file or merge data from another instance.</div>
         <input type="file" accept=".json,.sbz,application/json,application/zip" id="backupFileInput" style="margin-bottom: 16px;">
@@ -572,6 +575,7 @@ export function renderBackupTabHTML() {
         <div id="trelloImportWarnings" class="settings-backup-warnings" style="display: none; margin-bottom: 16px; padding: 12px; background: var(--panel); border-radius: 4px; color: var(--muted);"></div>
         <div id="trelloImportResult" class="settings-backup-preview" style="display: none; padding: 12px; background: var(--panel); border-radius: 4px;"></div>
       </div>
+      ` : ""}
       ${deleteHTML}
     </div>
   `;
@@ -1358,6 +1362,12 @@ export async function renderSettingsModal(options) {
         myMember?.role === "maintainer" &&
         !isTemporaryBoard &&
         getPublicProjectsEnabled();
+    const showAutomationsTab = !!slug &&
+        hasProjectAccess &&
+        showProfileTab &&
+        !!myMember &&
+        (myMember.role === "viewer" || myMember.role === "contributor" || myMember.role === "maintainer") &&
+        !isTemporaryBoard;
     // Initialize active tab (default to Profile or Customization if no projects)
     if (!getSettingsActiveTab()) {
         if (showProfileTab) {
@@ -1389,6 +1399,9 @@ export async function renderSettingsModal(options) {
         setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
     }
     else if (!showSharingTab && getSettingsActiveTab() === "sharing") {
+        setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
+    }
+    else if (!showAutomationsTab && getSettingsActiveTab() === "automations") {
         setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
     }
     else if (getSettingsActiveTab() === "voiceflow") {
@@ -1899,7 +1912,7 @@ export async function renderSettingsModal(options) {
     if (showPrioritiesTab && getSettingsActiveTab() === "priorities" && slug) {
         prioritiesHTML = loadPriorityTabContent({ slug, rerender: () => renderSettingsModal() });
     }
-    const showBoardTabRow = showSprintsTab || showWorkflowTab || showPrioritiesTab || showCustomFieldsTab || showCalendarTab || showChartsTab || showSharingTab;
+    const showBoardTabRow = showSprintsTab || showWorkflowTab || showPrioritiesTab || showCustomFieldsTab || showCalendarTab || showChartsTab || showSharingTab || showAutomationsTab;
     const boardTabsHTML = showBoardTabRow
         ? `<div class="settings-tabs settings-tabs--board">
       ${showSprintsTab ? `<button class="settings-tab ${activeSettingsTab === "sprints" ? "settings-tab--active" : ""}" data-tab="sprints" data-i18n-text="settings.tabs.sprints">Sprints</button>` : ``}
@@ -1909,6 +1922,7 @@ export async function renderSettingsModal(options) {
       ${showCalendarTab ? `<button class="settings-tab ${activeSettingsTab === "calendar" ? "settings-tab--active" : ""}" data-tab="calendar" data-i18n-text="settings.tabs.calendar">Agenda</button>` : ``}
       ${showChartsTab ? `<button class="settings-tab ${activeSettingsTab === "charts" ? "settings-tab--active" : ""}" data-tab="charts" data-i18n-text="settings.tabs.charts">Charts</button>` : ``}
       ${showSharingTab ? `<button class="settings-tab ${activeSettingsTab === "sharing" ? "settings-tab--active" : ""}" data-tab="sharing" data-i18n-text="settings.tabs.sharing">${escapeHTML(t("settings.tabs.sharing"))}</button>` : ``}
+      ${showAutomationsTab ? `<button class="settings-tab ${activeSettingsTab === "automations" ? "settings-tab--active" : ""}" data-tab="automations">Automations</button>` : ``}
     </div>`
         : "";
     destroyBurndownChart();
@@ -1918,13 +1932,14 @@ export async function renderSettingsModal(options) {
       <div class="settings-tabs settings-tabs--personal">
         ${showProfileTab ? `<button class="settings-tab ${activeSettingsTab === "profile" ? "settings-tab--active" : ""}" data-tab="profile" data-i18n-text="settings.tabs.profile">Profile</button>` : ``}
         ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
+        ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "integrations" ? "settings-tab--active" : ""}" data-tab="integrations">GitHub</button>` : ``}
         <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
         ${publicBoardView ? `` : `<button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
         <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup / Delete</button>`}
       </div>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
-      ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "customFields" && showCustomFieldsTab ? renderCustomFieldsTabShell() : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : activeSettingsTab === "sharing" && showSharingTab ? renderSharingTabShell() : ""}
+      ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "integrations" && showUsersTab ? `<div id="githubSettingsRoot"></div>` : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "customFields" && showCustomFieldsTab ? renderCustomFieldsTabShell() : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : activeSettingsTab === "sharing" && showSharingTab ? renderSharingTabShell() : activeSettingsTab === "automations" && showAutomationsTab ? renderAutomationTabShell() : ""}
     </div>
   `;
     if (!dialogWasOpen) {
@@ -1942,6 +1957,11 @@ export async function renderSettingsModal(options) {
     settingsAbortController?.abort();
     settingsAbortController = new AbortController();
     const signal = settingsAbortController.signal;
+    if (getSettingsActiveTab() === 'integrations' && showUsersTab) {
+        const target = document.getElementById('githubSettingsRoot');
+        if (target)
+            bindGitHubSettingsTab(target, getSlug(), signal);
+    }
     // Charts tab: burndown sprint navigation, mount uPlot chart, scrollbar behavior
     if (getSettingsActiveTab() === "charts") {
         bindBurndownNav(signal);
@@ -1987,7 +2007,7 @@ export async function renderSettingsModal(options) {
         settingsDlgForKeyboard.addEventListener("keydown", (e) => {
             if (e.key !== "Tab" || e.shiftKey)
                 return;
-            if (isTypingInTextField())
+            if (isTypingInTextField() || isInteractiveElementFocused())
                 return;
             e.preventDefault();
             const tabs = Array.from(settingsDlgForKeyboard.querySelectorAll(".settings-tab[data-tab]"));
@@ -2011,6 +2031,9 @@ export async function renderSettingsModal(options) {
     const settingsDlg = settingsDialog;
     if (getSettingsActiveTab() === "sharing" && showSharingTab && slug) {
         bindSharingTab({ slug, signal });
+    }
+    if (getSettingsActiveTab() === "automations" && showAutomationsTab && slug) {
+        bindAutomationTab({ slug, canManage: myMember?.role === "maintainer", signal });
     }
     if (getSettingsActiveTab() === "workflow") {
         bindWorkflowTabInteractions({
@@ -2188,6 +2211,27 @@ export async function renderSettingsModal(options) {
                 }
                 catch (err) {
                     showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.toast.demoteFailed" }));
+                }
+            }, { signal });
+        });
+        document.querySelectorAll('[data-guest-role]').forEach(btn => {
+            btn.addEventListener("click", async () => {
+                const { userId, guestRole } = btn.dataset;
+                if (!userId || !guestRole)
+                    return;
+                btn.disabled = true;
+                try {
+                    await apiFetch(`/api/admin/users/${userId}/role`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ role: guestRole }),
+                    });
+                    await renderSettingsModal();
+                }
+                catch (err) {
+                    const feedback = btn.closest("td")?.querySelector("[data-role-feedback]");
+                    if (feedback)
+                        feedback.textContent = apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.toast.roleChangeFailed" });
+                    btn.disabled = false;
                 }
             }, { signal });
         });
@@ -2726,45 +2770,28 @@ async function renderUsersTabContent() {
         const rows = users.map((user) => {
             const isSelf = user.id === currentUser?.id;
             const userRole = user.systemRole || "user";
-            const isUserRole = userRole === "user";
             const isAdminRole = userRole === "admin";
+            const isGuestRole = userRole === "guest";
             const isOwnerRole = userRole === "owner";
-            // Determine available actions
             let actionsHTML = "-";
-            if (isOwner) {
-                // Owner can manage all users except themselves
-                if (isSelf) {
-                    // Self: no delete, no demote if last owner
-                    actionsHTML = "-";
-                }
-                else if (isOwnerRole) {
-                    // Other owner: no actions (can't demote/promote owners, can't delete owners)
-                    actionsHTML = "-";
-                }
-                else if (isAdminRole) {
-                    // Admin: can demote to user or delete
-                    actionsHTML = `
-            <div class="users-table__actions">
-              <button class="btn btn--ghost btn--small" data-action="demote" data-user-id="${user.id}" data-user-role="${userRole}" data-i18n-text="settings.users.actions.demote">Demote</button>
-              <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
-			  ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
-            </div>
-          `;
-                }
-                else if (isUserRole) {
-                    // User: can promote to admin or delete
-                    actionsHTML = `
-            <div class="users-table__actions">
-              <button class="btn btn--ghost btn--small" data-action="promote" data-user-id="${user.id}" data-user-role="${userRole}" data-i18n-text="settings.users.actions.promote">Promote</button>
-              <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
-			  ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
-            </div>
-          `;
-                }
-            }
-            else if (isAdmin) {
-                // Admin: can view but not manage
-                actionsHTML = "-";
+            if (isOwner && !isSelf && !isOwnerRole) {
+                const systemRoleAction = isAdminRole
+                    ? `<button class="btn btn--ghost btn--small" data-action="demote" data-user-id="${user.id}" data-i18n-text="settings.users.actions.demote">Demote</button>`
+                    : isGuestRole
+                        ? ""
+                        : `<button class="btn btn--ghost btn--small" data-action="promote" data-user-id="${user.id}" data-i18n-text="settings.users.actions.promote">Promote</button>`;
+                const guestRoleAction = user.isService ? "" : isGuestRole
+                    ? `<button class="btn btn--ghost btn--small" data-guest-role="user" data-user-id="${user.id}" data-i18n-text="settings.users.actions.setUser">${escapeHTML(t("settings.users.actions.setUser"))}</button>`
+                    : `<button class="btn btn--ghost btn--small" data-guest-role="guest" data-user-id="${user.id}" data-i18n-text="settings.users.actions.setGuest">${escapeHTML(t("settings.users.actions.setGuest"))}</button>`;
+                actionsHTML = `
+          <div class="users-table__actions">
+            ${systemRoleAction}
+            ${guestRoleAction}
+            <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
+            ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
+          </div>
+          <div data-role-feedback role="alert"></div>
+        `;
             }
             const roleDisplay = userRole.charAt(0).toUpperCase() + userRole.slice(1);
             const userDisplay = user.name || user.email || `User ${user.id}`;

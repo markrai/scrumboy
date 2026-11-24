@@ -77,6 +77,9 @@ Persistence restore matrix (SQLite, wallpapers, encryption key, Mermaid override
 | [oauth.md](oauth.md) | Integrators | `internal/oauth` | current |
 | [agoragentic.md](agoragentic.md) | Agents | Agora manifest + MCP bridge | current |
 | [authentication-api.md](authentication-api.md) | Integrators | `/api/auth/*` handlers | current |
+| [github-app.md](github-app.md) | Self-hosters / operators / users | GitHub App setup, repositories, story References, credentials and lifecycle | current |
+| [github-m4-webhooks.md](github-m4-webhooks.md) | Self-hosters / operators | Signed inbound GitHub webhooks, routing, monitoring and recovery | current |
+| [github-m5-automation.md](github-m5-automation.md) | Maintainers / operators | GitHub event rules, in-app notifications, permissions and troubleshooting | current |
 | [mcp-oauth-acceptance.md](mcp-oauth-acceptance.md) | Release / QA | acceptance evidence checklist | checklist |
 
 ---

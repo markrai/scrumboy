@@ -587,7 +587,7 @@ function onGlobalKeydown(ev) {
     const view = getCurrentView();
     const tabCyclesMainNav = (chord === "tab" || chord === "shift+tab") && (view === "dashboard" || view === "projects");
     if (tabCyclesMainNav) {
-        if (isTypingInTextField())
+        if (shouldBlockForFocus())
             return;
     }
     else if (shouldBlockForFocus()) {

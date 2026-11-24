@@ -12,6 +12,21 @@ import (
 
 const recoveryMinimumMigration = "049_add_oidc_identities.sql"
 
+var legacyMigrationAliases = []struct {
+	legacy    string
+	canonical string
+}{
+	{"090_add_integration_foundation.sql", "092_add_integration_foundation.sql"},
+	{"091_add_integration_todo_resources.sql", "093_add_integration_todo_resources.sql"},
+	{"092_add_github_inbound_events.sql", "094_add_github_inbound_events.sql"},
+	{"093_add_integration_resource_availability.sql", "095_add_integration_resource_availability.sql"},
+	{"094_add_todo_github_items.sql", "096_add_todo_github_items.sql"},
+	{"095_add_integration_automation_rules.sql", "097_add_integration_automation_rules.sql"},
+	{"096_add_github_automation_events.sql", "098_add_github_automation_events.sql"},
+	{"097_add_integration_automation_execution.sql", "099_add_integration_automation_execution.sql"},
+	{"098_automation_enable_implies_execution.sql", "100_automation_enable_implies_execution.sql"},
+}
+
 func knownVersions() ([]string, error) {
 	entries, err := migrationsFS.ReadDir("migrations")
 	if err != nil {
@@ -37,6 +52,9 @@ func CheckRecoverySchema(ctx context.Context, db *sql.DB) error {
 	knownSet := make(map[string]bool, len(known))
 	for _, version := range known {
 		knownSet[version] = true
+	}
+	for _, alias := range legacyMigrationAliases {
+		knownSet[alias.legacy] = true
 	}
 	rows, err := db.QueryContext(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {
@@ -113,6 +131,10 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 	if err != nil {
 		return err
 	}
+	applied, err = reconcileLegacyMigrationAliases(ctx, db, applied)
+	if err != nil {
+		return err
+	}
 
 	for _, v := range versions {
 		if applied[v] {
@@ -124,6 +146,20 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 	}
 
 	return nil
+}
+
+func reconcileLegacyMigrationAliases(ctx context.Context, db *sql.DB, applied map[string]bool) (map[string]bool, error) {
+	for _, alias := range legacyMigrationAliases {
+		if !applied[alias.legacy] || applied[alias.canonical] {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+SELECT ?, applied_at FROM schema_migrations WHERE version = ?`, alias.canonical, alias.legacy); err != nil {
+			return nil, fmt.Errorf("record migration alias %s -> %s: %w", alias.legacy, alias.canonical, err)
+		}
+		applied[alias.canonical] = true
+	}
+	return applied, nil
 }
 
 func alreadyApplied(ctx context.Context, db *sql.DB) (map[string]bool, error) {
