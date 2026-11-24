@@ -115,7 +115,7 @@ One merged pull request produces **only** \`pull_request.merged\`, never a secon
 
 ### Durable inbox and matching guarantees
 
-Migration \`096_add_github_automation_events.sql\` introduces an independent bounded metadata inbox and a project-linked receipt table. Only delivery ID, payload SHA-256 digest, installation ID, repository ID, issue/PR number, event type, timestamps, lease/retry status and error class are stored. Full GitHub event bodies, issue titles/comments, OAuth states, tokens and App secrets are **not stored**. A delivery ID reused with different payload content or across the M4/M5 inboxes is rejected; identical duplicates have no new effect.
+Migration \`098_add_github_automation_events.sql\` introduces an independent bounded metadata inbox and a project-linked receipt table. Only delivery ID, payload SHA-256 digest, installation ID, repository ID, issue/PR number, event type, timestamps, lease/retry status and error class are stored. Full GitHub event bodies, issue titles/comments, OAuth states, tokens and App secrets are **not stored**. A delivery ID reused with different payload content or across the M4/M5 inboxes is rejected; identical duplicates have no new effect.
 
 The automation inbox allows at most 5,000 pending or leased events and 8 bounded lease attempts, with claim tokens, lease expiration and capped backoff. Completed/dead events and their receipts are pruned after 30 days. Matching an event and committing its completed status happen in **one SQLite transaction**. A failed receipt insert rolls the transaction back and the event remains retriable. A stale lease cannot finalize an event or create a receipt. A replay cannot generate another receipt for the same event/rule.
 

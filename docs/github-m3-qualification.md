@@ -57,7 +57,7 @@ This is the release gate for the live GitHub App integration before automatic Gi
 ## Automated tests and CI
 - `go test ./internal/integration/... ./internal/store/... ./internal/httpapi/... ./internal/mcp/... ./internal/migrate/...`
 - Frontend `npm test` in `internal/httpapi/web`, the generated-code parity check and browser checks.
-- Migration checks on an isolated old-schema database, including retained resource availability, project/card association cascade for explicit detach/disconnect, M3.2 migration 098 issue/PR identity and cascade, and restore compatibility.
+- Migration checks on an isolated old-schema database, including retained resource availability, project/card association cascade for explicit detach/disconnect, M3.2 migration 096 issue/PR identity and cascade, and restore compatibility.
 - Required GitHub checks (Go, frontend, CodeQL, DCO, Gradle, GHCR) must pass on the final qualified commit.
 
 ## Acceptance record
