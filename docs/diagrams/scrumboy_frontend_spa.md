@@ -1,87 +1,105 @@
 # Frontend SPA shell
 
-Vanilla TypeScript modules compiled to `dist/` and embedded by Go `//go:embed`.
+The browser application is vanilla TypeScript compiled to `web/dist/` and embedded by the Go server. Large feature surfaces such as the Wall are loaded on demand.
 
 ```mermaid
 flowchart TB
-  App[app.js entry]
-  Router[router.ts]
-  State[state selectors mutations]
-  Views[views projects board dashboard auth notfound]
-  Dialogs[dialogs todo settings wall bulk-edit]
-  Core[core sse push notifications theme]
-  I18n[i18n runtime index.ts]
-  Picker[locale-select.ts listbox]
-  Tips[field-tooltips.ts]
-  Cat[locale catalogs and flag SVGs]
-  Events[I18N_LOCALE_CHANGED hydrateI18n]
-  ApiErr[apiErrorMessage details.reason]
+  App[app entry]
+  Router[router]
+  State[state and URL selectors]
+  Views[projects board dashboard archive auth]
+  Dialogs[todo settings wall bulk edit]
+  Core[SSE push theme preferences]
+  I18n[i18n runtime and catalogs]
+  API[apiFetch]
+  Wall[Wall lazy module]
 
-  App --> Router
+  App --> Router --> Views
   App --> Core
-  App --> I18n
   Router --> State
-  Router --> Views
   Views --> Dialogs
   Views --> I18n
-  Views --> Tips
   Dialogs --> I18n
-  Dialogs --> Tips
-  I18n --> Cat
-  I18n --> Picker
-  I18n --> Events
-  I18n --> ApiErr
-  Events --> Views
-  Events --> Dialogs
-  Picker --> Cat
+  Dialogs --> API
+  Views --> API
+  Views -.->|dynamic import| Wall
 ```
+
+## Board and story surfaces
+
+```mermaid
+flowchart LR
+  Board[Board view]
+  Todo[New/Edit Todo dialog]
+  Details[Details tab]
+  Refs[References tab]
+  External[todo-external-links]
+  GitHub[todo-github-items]
+  Wall[Wall dialog]
+  Archive[Archive view]
+
+  Board --> Todo
+  Todo --> Details
+  Todo --> Refs
+  Refs --> External
+  External --> GitHub
+  Board --> Wall
+  Board --> Archive
+```
+
+The References tab is available on authenticated durable projects. It supports repository references and structured GitHub issue/PR references. GitHub browsing defaults to open pull requests, with repository/type/state selectors and a debounced title filter. New Todo can stage references before the story ID exists and commits them after creation.
+
+Unavailable GitHub repositories retain cached references. The UI marks them unavailable and prevents new links until installation access is restored and repositories are refreshed.
+
+## Settings composition
+
+```mermaid
+flowchart TB
+  Settings[Settings dialog]
+  Global[Customization Profile Users Backup API tokens]
+  Project[Workflow Priorities Tags Sprints Calendar Custom fields Sharing Charts]
+  GitHub[GitHub instance and project repository management]
+  Automations[Automations rules matches notification history audit]
+
+  Settings --> Global
+  Settings --> Project
+  Settings --> GitHub
+  Settings --> Automations
+```
+
+GitHub installation discovery is instance-admin oriented; repository association is project-scoped. Automations are readable by project members and mutable only by Maintainers.
 
 ## Locale flow
 
 ```mermaid
 sequenceDiagram
-  participant App as app.js
+  participant App as app
   participant I18n as initI18n
   participant Boot as BOOTSTRAP_EN_CATALOG
-  participant JSON as dist/i18n/locales
+  participant JSON as locale JSON
   participant DOM as document
 
-  App->>I18n: detect saved or browser locale
-  Note over Boot: auth and errors keys embedded before fetch
-  I18n->>JSON: fetch en then active locale catalog
-  JSON-->>I18n: cached MessageCatalog
-  I18n->>DOM: lang dir translate=no
-  I18n->>DOM: I18N_LOCALE_CHANGED on setLocale
+  App->>I18n: choose saved/browser locale
+  Note over Boot: auth and error keys available before fetch
+  I18n->>JSON: fetch English and active catalog
+  JSON-->>I18n: cached catalog
+  I18n->>DOM: set lang/dir and hydrate
+  I18n->>DOM: emit I18N_LOCALE_CHANGED on switch
 ```
 
-- `modules/i18n/index.ts` owns locale detection, catalog loading, `t(...)`, `hydrateI18n(...)`, `I18N_LOCALE_CHANGED`, RTL `dir` for `ar`, `ur`, and `fa`, and shared date/number formatting helpers.
-- **Public locales** (picker order by speaker count): `en`, `zh`, `hi`, `es`, `ar`, `fr`, `bn`, `pt`, `id`, `ur`, `ru`, `de`, `ja`, `sw`, `vi`, `tr`, `ko`, `fa`, `th`, `it`, `ms`, `pl`, `uk`. **`pseudo`** is supported for localhost/test QA only (not in the public picker).
-- Catalogs live in `modules/i18n/locales/*.json`, ship as `dist/i18n/locales/*.json`, and are verified for key parity by `scripts/verify-i18n-locales.mjs` during the web build.
-- `BOOTSTRAP_EN_CATALOG` embeds all `auth.*` and `errors.*` keys so sign-in, bootstrap, 2FA, and password-reset copy is available before the full catalog fetch completes.
-- **Language picker:** `locale-select.ts` renders a shared accessible listbox (keyboard navigation, click-outside close) with vendored 3x2 SVG flags from `assets/flags/`. Used on the auth topbar and in Settings → Customization.
-- On startup the app uses the saved `scrumboy.locale` preference when present; otherwise it normalizes the browser language.
-- Locale changes hydrate static `data-i18n-*` DOM in place and trigger targeted re-renders for state-derived copy in views and dialogs that stay open; listeners must detach on dialog close.
-- **`index.html`** marks the shell `translate="no"` so browser translation does not double-translate Scrumboy's own i18n UI.
-
-See also [`docs/i18n.md`](../i18n.md) (catalogs, landings, change gates) and [`AGENTS.md`](../../.agents/AGENTS.md) (localization rules).
-
-## API error localization
-
-- Backend validation failures may include stable `error.details.reason` (snake_case). `apiErrorMessage()` maps known reasons to catalog keys; `apiErrorMessageOrRaw()` keeps raw backend text for dynamic import/backup diagnostics.
-- Field hover hints (`field-tooltips.ts`) resolve tooltip copy through `t(...)` at render time.
+Public locale catalogs cover 23 languages; `pseudo` remains localhost/test QA only. RTL direction applies to Arabic, Urdu and Persian.
 
 ## Client routes
 
 | Path | View |
-|------|------|
-| `/` | projects list (full mode); anonymous server mode serves marketing landing at `/` before SPA boot |
+|---|---|
+| `/` | projects list in Full Mode; Anonymous Mode landing before SPA boot |
 | `/dashboard` | dashboard |
-| `/{slug}` | board (`?openTodoId=` opens a todo) |
-| `/{slug}/t/{id}` | board with todo open |
-| `/auth/reset-password` | password reset form |
+| `/{slug}` | board |
+| `/{slug}/t/{id}` | board with story open |
+| `/{slug}/archive` | archived stories |
+| `/auth/reset-password` | reset-password form |
 
-Unmatched client paths, and board/archive destinations that return API 404, are rewritten to `/` (full mode: SPA `replaceState`; anonymous mode: full navigation so the server can serve the marketing landing). Signed-out full mode preserves the original same-origin path as auth `next` so a private-board deep link can open after login without changing existence-hiding 404s.
+Login/bootstrap/2FA use auth overlays rather than separate routes. Unmatched private-board/archive destinations that resolve to not-found return to the safe application root without weakening existence-hiding behavior.
 
-Login, bootstrap, and 2FA render as **auth overlays** when unauthenticated (not separate URL routes). Anonymous-mode server routes `/{locale}/` marketing landings in `spa.go` (see `scrumboy_http_routing.md`).
-
-Theme preference defaults to `system` (`theme.ts` / `THEME_SYSTEM`), resolving via `prefers-color-scheme`. Effective dark leaves `data-theme` unset (CSS `:root` dark tokens); light sets `[data-theme="light"]`. Pre-hydration CSS may still look dark. Density via `--ui-scale`. PWA: `sw.js` with version injected at server startup, `manifest.json`.
+Theme, density, board filter layout, board sort, VoiceFlow, notifications and Wall canvas preferences are browser/user-level frontend preferences layered over server-authoritative project permissions.

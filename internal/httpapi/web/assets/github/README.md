@@ -1,0 +1,1 @@
+GitHub Invertocat assets are unmodified copies of the Black and White SVG variants in GitHub's official logo download (`https://brand.github.com/foundations/logo`). The marks are used only to identify the GitHub integration in Scrumboy. GitHub marks remain trademarks of GitHub, Inc. Refer to its published brand requirements for authorized use.

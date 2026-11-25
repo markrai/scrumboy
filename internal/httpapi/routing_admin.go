@@ -51,6 +51,11 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 		return
 	}
 
+	if rest[0] == "integrations" {
+		s.handleAdminIntegrations(w,r,userID,rest[1:])
+		return
+	}
+
 	if rest[0] == "users" {
 		if len(rest) == 1 {
 			// GET /api/admin/users or POST /api/admin/users
@@ -161,9 +166,8 @@ func (s *Server) handleAdminUsersUpdateRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Only allow "admin" or "user" - do NOT allow "owner" promotion via API
-	if in.Role != "admin" && in.Role != "user" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "role must be 'admin' or 'user'", nil)
+	if in.Role != "admin" && in.Role != "user" && in.Role != "guest" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "role must be 'admin', 'user', or 'guest'", nil)
 		return
 	}
 

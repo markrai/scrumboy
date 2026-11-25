@@ -1,0 +1,107 @@
+package httpapi
+
+import (
+    "context"
+    "net/http"
+    "strconv"
+    "strings"
+    "time"
+    "testing"
+
+    "scrumboy/internal/store"
+)
+
+func TestAutomationEnableAndProjectHistoryREST(t *testing.T){
+    t.Setenv("SCRUMBOY_GITHUB_AUTOMATION_EXECUTION_ENABLED","false")
+    ts,db,cleanup:=newTestHTTPServer(t,"full")
+    defer cleanup()
+    ownerClient:=newCookieClient(t)
+    owner:=bootstrapUserClient(t,ownerClient,ts.URL,"Owner","automation-exec-owner@example.com","password123")
+    ownerID:=int64(owner["id"].(float64))
+    st:=store.New(db,nil)
+    ctx:=context.Background()
+    project,err:=st.CreateProject(store.WithUserID(ctx,ownerID),"Automation Execute")
+    if err!=nil{t.Fatal(err)}
+    connection,err:=st.CreateIntegrationConnection(ctx,ownerID,store.CreateIntegrationConnectionInput{
+        Provider:"github",ExternalAccountID:"881",Name:"Engineering",
+    })
+    if err!=nil{t.Fatal(err)}
+    repo,err:=st.RegisterIntegrationResource(ctx,ownerID,connection.ID,store.RegisterIntegrationResourceInput{
+        Kind:"repository",ExternalID:"442",Name:"engineering/repo",URL:"https://github.com/engineering/repo",
+    })
+    if err!=nil{t.Fatal(err)}
+    if err:=st.AttachIntegrationResource(ctx,ownerID,project.ID,repo.ID);err!=nil{t.Fatal(err)}
+    viewer,err:=st.CreateUser(ctx,"automation-exec-viewer@example.com","password123","Viewer")
+    if err!=nil{t.Fatal(err)}
+    if err:=st.AddProjectMember(store.WithUserID(ctx,ownerID),ownerID,project.ID,viewer.ID,store.RoleViewer);err!=nil{t.Fatal(err)}
+    viewerClient:=newCookieClient(t)
+    loginUserClient(t,viewerClient,ts.URL,"automation-exec-viewer@example.com","password123")
+    outsider,err:=st.CreateUser(ctx,"automation-exec-outsider@example.com","password123","Outsider")
+    if err!=nil{t.Fatal(err)}
+    _=outsider
+    outsiderClient:=newCookieClient(t)
+    loginUserClient(t,outsiderClient,ts.URL,"automation-exec-outsider@example.com","password123")
+
+    base:=ts.URL+"/api/board/"+project.Slug+"/integrations/automation-rules"
+    var rule store.IntegrationAutomationRule
+    resp,body:=doJSON(t,ownerClient,http.MethodPost,base,map[string]any{
+        "name":"Project notification","resourceId":repo.ID,"eventType":"pull_request.merged","actionType":"notify",
+    },&rule)
+    if resp.StatusCode!=http.StatusCreated{t.Fatalf("create %d %s",resp.StatusCode,body)}
+    var enabled store.IntegrationAutomationRule
+    ruleURL:=base+"/"+strconv.FormatInt(rule.ID,10)
+    resp,body=doJSON(t,ownerClient,http.MethodPatch,ruleURL,map[string]any{"enabled":true},&enabled)
+    if resp.StatusCode!=http.StatusOK{t.Fatalf("enable %d %s",resp.StatusCode,body)}
+    consentURL:=ruleURL+"/execution-approval"
+    resp,body=doJSON(t,ownerClient,http.MethodPost,consentURL,map[string]any{
+        "confirm":"APPROVE_NOTIFY_EXECUTION","ruleUpdatedAtMs":enabled.UpdatedAt.UnixMilli(),
+    },nil)
+    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("legacy approval route still active %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,ownerClient,http.MethodDelete,consentURL,nil,nil)
+    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("legacy revocation route still active %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,viewerClient,http.MethodPatch,ruleURL,map[string]any{"enabled":false},nil)
+    if resp.StatusCode!=http.StatusForbidden{t.Fatalf("viewer disabled rule %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,outsiderClient,http.MethodPatch,ruleURL,map[string]any{"enabled":false},nil)
+    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("outsider disabled rule %d %s",resp.StatusCode,body)}
+    time.Sleep(4*time.Millisecond)
+    event:=store.GitHubAutomationEvent{
+        DeliveryID:"736add23-94ec-4b12-b73b-8cf6f5317d81",
+        InstallationID:"881",RepositoryExternalID:"442",ItemNumber:51,
+        EventType:"pull_request.merged",PayloadSHA256:strings.Repeat("a",64),
+    }
+    if ok,err:=st.AdmitGitHubAutomation(ctx,event);err!=nil||!ok{t.Fatalf("admit %v %v",ok,err)}
+    matches,err:=st.ClaimGitHubAutomation(ctx,time.Now().Add(time.Second),5,45*time.Second)
+    if err!=nil||len(matches)!=1{t.Fatalf("claim matched event %+v %v",matches,err)}
+    if _,err:=st.MatchAndCompleteGitHubAutomation(ctx,matches[0].ID,matches[0].LeaseToken,time.Now().Add(2*time.Second));err!=nil{t.Fatal(err)}
+    claimed,err:=st.ClaimIntegrationAutomationActions(ctx,time.Now().Add(3*time.Second),5,45*time.Second)
+    if err!=nil||len(claimed)!=1{t.Fatalf("claim action %+v %v",claimed,err)}
+    if status,err:=st.SettleIntegrationAutomationAction(ctx,claimed[0].ID,claimed[0].LeaseToken,time.Now().Add(4*time.Second));err!=nil||status!="completed"{
+        t.Fatalf("settle %s %v",status,err)
+    }
+    actionsURL:=ts.URL+"/api/board/"+project.Slug+"/integrations/automation-actions"
+    var actionHistory struct{
+        ExecutionAvailable bool `json:"executionAvailable"`
+    }
+    resp,body=doJSON(t,viewerClient,http.MethodGet,actionsURL,nil,&actionHistory)
+    if resp.StatusCode!=http.StatusOK||!actionHistory.ExecutionAvailable{t.Fatalf("viewer history %d %s %+v",resp.StatusCode,body,actionHistory)}
+    resp,body=doJSON(t,outsiderClient,http.MethodGet,actionsURL,nil,nil)
+    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("outsider history %d %s",resp.StatusCode,body)}
+    auditURL:=actionsURL+"/"+strconv.FormatInt(claimed[0].ID,10)+"/audit"
+    var audit struct{Audit []store.IntegrationAutomationActionAudit `json:"audit"`}
+    resp,body=doJSON(t,viewerClient,http.MethodGet,auditURL,nil,&audit)
+    if resp.StatusCode!=http.StatusOK||len(audit.Audit)!=3||audit.Audit[0].Transition!="completed"{
+        t.Fatalf("viewer action audit %d %s %+v",resp.StatusCode,body,audit)
+    }
+    resp,body=doJSON(t,outsiderClient,http.MethodGet,auditURL,nil,nil)
+    if resp.StatusCode!=http.StatusNotFound{t.Fatalf("outsider action audit %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,viewerClient,http.MethodGet,auditURL+"?limit=101",nil,nil)
+    if resp.StatusCode!=http.StatusBadRequest{t.Fatalf("unbounded audit %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,viewerClient,http.MethodPost,auditURL,map[string]any{},nil)
+    if resp.StatusCode!=http.StatusMethodNotAllowed{t.Fatalf("audit POST %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,ownerClient,http.MethodGet,actionsURL+"?limit=101",nil,nil)
+    if resp.StatusCode!=http.StatusBadRequest{t.Fatalf("unbounded history %d %s",resp.StatusCode,body)}
+    resp,body=doJSON(t,ownerClient,http.MethodPatch,ruleURL,map[string]any{"enabled":false},nil)
+    if resp.StatusCode!=http.StatusOK{t.Fatalf("disable %d %s",resp.StatusCode,body)}
+    listed,err:=st.ListIntegrationAutomationRules(ctx,ownerID,project.ID)
+    if err!=nil||len(listed)!=1||listed[0].Enabled{t.Fatalf("rule not disabled %+v %v",listed,err)}
+}

@@ -1,83 +1,111 @@
 # Board and Kanban UX
 
-Board data flows from slug URL through REST into rendered lanes and drag-drop mutations.
+Board state is loaded by slug, filtered and sorted server-side, then rendered into project-defined workflow lanes. Active-board reads exclude archived stories.
 
 ```mermaid
 flowchart TB
-  URL["URL /{slug}"]
-  Router[router.ts]
+  URL["/{slug} + query filters"]
+  Router[router]
   Load[loadBoardBySlug]
-  API["GET api board slug"]
-  Render[board-rendering.ts]
-  DnD[drag-drop Sortable]
-  Patch["PATCH move update todos"]
+  API["GET /api/board/{slug}"]
+  Store[store board query]
+  Render[board rendering]
+  DnD[Sortable drag and drop]
+  Patch[move/update REST]
 
-  URL --> Router --> Load --> API --> Render
-  Render --> DnD
-  DnD --> Patch --> API
+  URL --> Router --> Load --> API --> Store
+  Store --> API --> Render
+  Render --> DnD --> Patch --> Store
 ```
 
-## Priority tiers (per project)
-
-Each board has ordered definitions in `project_priorities`: stable `key`,
-display `name`, `#RRGGBB` color, and `position`. Todos store an optional
-project-local `priority_key`; cards render the matching tier but board ordering
-and filters do not use priority in this release.
+## Board query state
 
 ```mermaid
 flowchart LR
-  Settings[Settings priorities UI]
-  Tiers[project_priorities]
-  BoardRead[Initial board priorityOrder]
-  Todo[todos priority_key]
-  Badge[Todo picker and board badge]
+  Tags[ordered tag filters]
+  Search[text search]
+  Sprint[sprint filter]
+  Assignee[assignee filter]
+  Priority[priority filter]
+  Sort["sort: manual newest oldest due"]
+  Query[board/lane SQL]
+  Active["archived_at IS NULL"]
 
-  Settings --> Tiers --> BoardRead --> Badge
-  Tiers --> Todo --> Badge
+  Tags --> Query
+  Search --> Query
+  Sprint --> Query
+  Assignee --> Query
+  Priority --> Query
+  Sort --> Query
+  Active --> Query
 ```
 
-Maintainers create, rename, recolor, and delete tiers. A project may have at
-most 12 and must keep one; an assigned tier cannot be deleted. Readers can use
-`GET /api/board/{slug}/priorities`. Initial slug and legacy board projections
-own `priorityOrder` through the application board-read service, while lane
-pagination intentionally does not repeat project definitions.
+The SPA preserves filter/sort state in the board URL. Large boards can fall back to per-lane pagination using cursors that match the selected sort order. Due-date sorting places undated stories after dated ones.
 
-## Workflow columns (per project)
+## Priority tiers
 
-Lanes are **not** hard-coded. Each project stores an ordered list in `project_workflow_columns`: stable `key`, display label, color, sort order, and exactly one `is_done` flag.
+Each durable project owns ordered `project_priorities` definitions with stable keys, names, colors and positions. Todos hold an optional project-local `priority_key`.
+
+```mermaid
+flowchart LR
+  Settings[Settings Priorities]
+  Tiers[project_priorities]
+  Todo[todos.priority_key]
+  Board[board priority definitions]
+  Filter[priority filter]
+  Badge[story/card priority UI]
+
+  Settings --> Tiers
+  Tiers --> Todo
+  Tiers --> Board
+  Board --> Filter
+  Todo --> Badge
+```
+
+Maintainers manage priority tiers and assign/clear story priorities. Viewers can read the definitions and filter the board by a specific tier or no priority.
+
+## Workflow columns
 
 ```mermaid
 flowchart TB
-  Proj[Project]
-  WF[project_workflow_columns]
-  Template[Default template on create]
-  Settings[Settings workflow UI add rename reorder recolor]
-  DoneLane[One column is_done]
-  API[Board JSON columnOrder]
-  Lanes[Rendered swimlanes]
+  Project[Project]
+  Columns[project_workflow_columns]
+  Settings[Settings Workflow]
+  Done[exactly one is_done column]
+  Todos[todos.column_key]
+  Board[columnOrder and lanes]
 
-  Proj --> WF
-  Template --> WF
-  Settings --> WF
-  WF --> DoneLane
-  WF --> API --> Lanes
+  Project --> Columns
+  Settings --> Columns
+  Columns --> Done
+  Columns --> Todos
+  Columns --> Board
 ```
 
-Default template keys (example only; boards can diverge):
+Projects can add, rename, recolor and reorder up to the supported workflow-column limit, and choose the lane that counts as done. Todos reference stable column keys rather than a hard-coded status enum.
+
+## Story state beyond lanes
 
 ```mermaid
-flowchart LR
-  subgraph example [Default template example]
-    B[backlog]
-    NS[not_started]
-    IP[doing]
-    T[testing]
-    D["done (is_done)"]
-    B --> NS --> IP --> T --> D
-  end
+flowchart TB
+  Todo[Story Todo]
+  Due[due_at reminders and due sort]
+  Custom[typed custom fields]
+  Archive[archived_at]
+  Notes[Markdown images drawings Notes ink]
+  Refs[story links and GitHub References]
+  Wall[optional Wall placement]
+  Tags[tags sprint assignee priority estimation]
+
+  Todo --> Due
+  Todo --> Custom
+  Todo --> Archive
+  Todo --> Notes
+  Todo --> Refs
+  Todo --> Wall
+  Todo --> Tags
 ```
 
-Projects may add lanes (at most **12** columns; `maxWorkflowColumns` in `internal/store/workflows.go`), rename labels, recolor columns, reorder them, and choose which lane counts as done. Todos reference lanes by `column_key`, not a fixed enum. The default mid-lane display name is “In Progress”; its stable key is `doing` (not `in_progress`).
+Archive/restore removes a story from ordinary board queries without hard-deleting it. The archive has its own listing route. GitHub repository and issue/PR references are separate from title/body/workflow state and do not automatically move or edit a story.
 
-Lane colors and sprint chips use `styles.css` CSS variables. The server filters board scope via `sprintId` / repeated `tag` / `search` / `assignee` / `priority` query params on `GET /api/board/{slug}` (and lane pagination); repeated REST tags use AND, the REST `sprintId` query value is a project-local sprint number, and filtering itself is implemented in the store. MCP `board_get.sprintId` intentionally uses the distinct stored sprint row ID returned by `sprints_list`, while MCP `board_get` accepts preferred `tags` (logical AND) or legacy scalar
-`tag`. The SPA preserves the full ordered tag list and other filters in board URLs and exposes assignee, sort, and priority controls alongside the sprint/tag/search chips. On durable projects, each `tag` filter resolves through the same canonical-name grouping as chip listings (`TagGroupKey`), with OR across a group's physical aliases and AND across logical groups. Agile field labels and native `title` hover hints (`field-tooltips.ts`) localize with the active locale.
+See `scrumboy_github_integration.md` for external-reference authority and `scrumboy_wall_canvas.md` for Wall placements.

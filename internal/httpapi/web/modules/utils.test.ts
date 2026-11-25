@@ -1,7 +1,21 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initI18n, resetI18nForTests } from "./i18n/index.js";
-import { confirmDelete, showConfirmDialog, showPromptDialog } from "./utils.js";
+import { confirmDelete, showConfirmDialog, showPromptDialog, showToast } from "./utils.js";
+
+// dom/elements.ts looks up #toast when it is first imported, before any test can add markup.
+const toastEl = vi.hoisted(() => {
+  const el = document.createElement("div");
+  el.id = "toast";
+  el.className = "toast";
+  el.setAttribute("popover", "manual");
+  return el;
+});
+
+vi.mock("./dom/elements.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./dom/elements.js")>()),
+  toast: toastEl,
+}));
 
 const enCatalog = {
   "common.cancel": "Cancel",
@@ -267,6 +281,101 @@ describe("showPromptDialog lifecycle", () => {
 
     await expect(showPromptDialog()).rejects.toThrow("showModal failed");
     expect(document.querySelector("dialog")).toBeNull();
+  });
+});
+
+describe("showToast", () => {
+  type PopoverStub = { open: boolean; showPopover: ReturnType<typeof vi.fn>; hidePopover: ReturnType<typeof vi.fn> };
+
+  // happy-dom has no Popover API. Emulate the parts showToast relies on: showPopover() throws when the
+  // popover is already open (as browsers may), hidePopover(), and the :popover-open pseudo-class.
+  function installPopoverStub(showPopoverImpl?: () => void): PopoverStub {
+    const stub: PopoverStub = {
+      open: false,
+      showPopover: vi.fn(showPopoverImpl ?? (() => {
+        if (stub.open) throw new DOMException("Popover is already open", "InvalidStateError");
+        stub.open = true;
+      })),
+      hidePopover: vi.fn(() => {
+        stub.open = false;
+      }),
+    };
+    const nativeMatches = HTMLElement.prototype.matches;
+    Object.assign(toastEl, {
+      showPopover: stub.showPopover,
+      hidePopover: stub.hidePopover,
+      matches(selector: string): boolean {
+        return selector === ":popover-open" ? stub.open : nativeMatches.call(this, selector);
+      },
+    });
+    return stub;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    document.body.innerHTML = "";
+    document.body.appendChild(toastEl);
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    for (const key of ["showPopover", "hidePopover", "matches"]) {
+      delete (toastEl as unknown as Record<string, unknown>)[key];
+    }
+    toastEl.textContent = "";
+    toastEl.classList.remove("toast--show");
+  });
+
+  it("shows a second toast for its own full lifetime", () => {
+    const popover = installPopoverStub();
+
+    showToast("First");
+    expect(toastEl.textContent).toBe("First");
+    expect(toastEl.classList.contains("toast--show")).toBe(true);
+    expect(popover.open).toBe(true);
+
+    vi.advanceTimersByTime(1500);
+    expect(() => showToast("Second")).not.toThrow();
+    expect(toastEl.textContent).toBe("Second");
+    expect(popover.open).toBe(true);
+    // Re-shown so it is placed above anything opened in the top layer since the first toast.
+    expect(popover.showPopover).toHaveBeenCalledTimes(2);
+
+    // The first toast's timer would have fired here.
+    vi.advanceTimersByTime(1000);
+    expect(toastEl.textContent).toBe("Second");
+    expect(toastEl.classList.contains("toast--show")).toBe(true);
+    expect(popover.open).toBe(true);
+
+    vi.advanceTimersByTime(1499);
+    expect(toastEl.classList.contains("toast--show")).toBe(true);
+
+    vi.advanceTimersByTime(1);
+    expect(toastEl.classList.contains("toast--show")).toBe(false);
+    expect(popover.open).toBe(false);
+  });
+
+  it("falls back to the plain toast when showPopover fails", () => {
+    installPopoverStub(() => {
+      throw new DOMException("Not supported", "NotSupportedError");
+    });
+
+    expect(() => showToast("Tag rejected")).not.toThrow();
+    expect(toastEl.textContent).toBe("Tag rejected");
+    expect(toastEl.classList.contains("toast--show")).toBe(true);
+
+    vi.advanceTimersByTime(2500);
+    expect(toastEl.classList.contains("toast--show")).toBe(false);
+  });
+
+  it("works without the Popover API", () => {
+    expect(() => showToast("Saved")).not.toThrow();
+    expect(toastEl.textContent).toBe("Saved");
+    expect(toastEl.classList.contains("toast--show")).toBe(true);
+
+    vi.advanceTimersByTime(2500);
+    expect(toastEl.classList.contains("toast--show")).toBe(false);
   });
 });
 

@@ -165,6 +165,22 @@ type userJSON struct {
 	IsService        bool      `json:"isService"`
 }
 
+type boardCapabilitiesJSON struct {
+	CreateBoards bool `json:"createBoards"`
+}
+
+type currentUserJSON struct {
+	userJSON
+	Capabilities boardCapabilitiesJSON `json:"capabilities"`
+}
+
+func currentUserToJSON(u store.User) currentUserJSON {
+	return currentUserJSON{
+		userJSON:     userToJSON(u),
+		Capabilities: boardCapabilitiesJSON{CreateBoards: u.CanCreateBoards()},
+	}
+}
+
 // userStatusJSON omits createdAt for /api/auth/status (status response contract).
 func userStatusJSON(u store.User) map[string]any {
 	return map[string]any{

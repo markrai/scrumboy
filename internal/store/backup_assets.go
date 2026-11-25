@@ -125,6 +125,9 @@ func (s *Store) ImportProjectsWithAssets(ctx context.Context, data *ExportData, 
 // PreflightImport runs every validation an import performs before writing, without writing. The
 // archive import service calls it before staging any image files.
 func (s *Store) PreflightImport(ctx context.Context, data *ExportData, mode Mode, importMode string, fromArchive bool) error {
+	if err := requireBoardCreation(ctx, s.db); err != nil {
+		return err
+	}
 	if err := validateBackupData(data, fromArchive); err != nil {
 		return err
 	}

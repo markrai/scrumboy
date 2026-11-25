@@ -97,4 +97,32 @@ describe('keybinding metadata compatibility', () => {
     expect(() => keybindings.chordFromKeyboardEvent(withKey)).not.toThrow();
     expect(keybindings.chordFromKeyboardEvent(withKey)).toBe('ctrl+a');
   });
+
+  it('preserves native Tab traversal through interactive rule controls', async () => {
+    const { navigate } = await import('../router.js');
+    const keybindings = await import('./keybindings.js');
+    keybindings.initKeybindings({ openSettings: vi.fn() });
+    const form = document.createElement('form');
+    form.innerHTML = '<input type="text"><select><option>Repository</option></select><button type="button">Create Rule</button>';
+    document.body.appendChild(form);
+    for (const element of form.querySelectorAll<HTMLElement>('input, select, button')) {
+      element.focus();
+      expect(document.activeElement).toBe(element);
+      for (const shiftKey of [false, true]) {
+        const event = new KeyboardEvent('keydown', {
+          key: 'Tab', code: 'Tab', shiftKey, bubbles: true, cancelable: true,
+        });
+        element.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      }
+    }
+    expect(navigate).not.toHaveBeenCalled();
+    (document.activeElement as HTMLElement).blur();
+    const event = new KeyboardEvent('keydown', {
+      key: 'Tab', code: 'Tab', shiftKey: true, bubbles: true, cancelable: true,
+    });
+    document.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(navigate).toHaveBeenCalledWith('/dashboard');
+  });
 });

@@ -870,7 +870,7 @@ System-level user management, gated by **system role** (owner/admin), not projec
 | Tool | Input | Output |
 |------|-------|--------|
 | `admin_listUsers` | `{}` | `data.items` - all users (`userId`, `email`, `name`, `systemRole`, `isBootstrap`, `isService`, `createdAt`); requires **owner or admin** |
-| `admin_updateUserRole` | `userId`, `role` (`admin` \| `user` only) | `data.user` (updated); requires **owner**. Promotion to `owner` is not exposed through this tool, matching the REST admin API. Demoting the last owner → `VALIDATION_ERROR` |
+| `admin_updateUserRole` | `userId`, `role` (`admin` \| `user` \| `guest`) | `data.user` (updated); requires **owner**. Promotion to `owner` is not exposed through this tool, matching the REST admin API. Demoting the last owner → `VALIDATION_ERROR` |
 | `admin_updateUser` | `userId`, `name` and/or `email` (at least one) | `data.user` (updated); requires **owner**. Email is trimmed, lowercased and validated like user creation; an address another user already has → `CONFLICT`. Service accounts → `FORBIDDEN`. Sessions, OIDC links and memberships follow the user id and are unaffected |
 | `admin_deleteUser` | `userId` | `data` with `status: "deleted"`, `userId`; requires **owner**. Self-deletion and deleting the last owner → `VALIDATION_ERROR` |
 | `admin_createServiceAccount` | `name` | `data.account` with `userId`, `stableUserId`, `name`, `isService`, `createdAt`; requires **owner or admin** and issues no credential |

@@ -7,7 +7,7 @@
         {
           "file": "scrumboy_overview.md",
           "title": "System overview",
-          "desc": "Context and package map"
+          "desc": "Monolith context packages integrations"
         }
       ]
     },
@@ -18,7 +18,7 @@
         {
           "file": "scrumboy_deployment_ops.md",
           "title": "Deployment and ops",
-          "desc": "Docker SQLite backup upgrade"
+          "desc": "Docker SQLite secrets backup upgrade"
         }
       ]
     },
@@ -45,7 +45,7 @@
         {
           "file": "scrumboy_data_model.md",
           "title": "Data model",
-          "desc": "SQLite store migrations"
+          "desc": "SQLite schema migrations integrations"
         }
       ]
     },
@@ -91,9 +91,14 @@
       "label": "Integrations",
       "docs": [
         {
+          "file": "scrumboy_github_integration.md",
+          "title": "GitHub integration",
+          "desc": "Instance-owned App references inbound webhooks automations"
+        },
+        {
           "file": "scrumboy_realtime_events.md",
           "title": "Realtime events",
-          "desc": "SSE webhooks push"
+          "desc": "SSE outbound delivery and event pipelines"
         },
         {
           "file": "scrumboy_mcp_agora.md",

@@ -1,6 +1,6 @@
 # Wall (Scrumbaby)
 
-Spatial canvas for sticky notes and canonical project Stories/Todos on durable projects. Open it from the board topbar (desktop only) or press **W** on the board. A pinned story is not a copy: its title, workflow lane, tags, assignee, sprint, estimation, priority, archive state, and other content remain owned by the normal Todo.
+Spatial canvas for sticky notes and canonical project Stories/Todos on durable projects. Open it from the board topbar on desktop or mobile, or press **W** on a keyboard-equipped board. A pinned story is not a copy: its title, workflow lane, tags, assignee, sprint, estimation, priority, archive state, and other content remain owned by the normal Todo.
 
 ## Controls
 
@@ -32,6 +32,10 @@ Spatial canvas for sticky notes and canonical project Stories/Todos on durable p
 - **Pan the canvas** - Scroll wheel, **middle-mouse drag**, hold **Space** and drag on empty canvas, or use the **arrow keys** (hold **Shift** for larger steps).
 - **Zoom** - **Shift**+scroll. **Ctrl**+scroll (Windows/Linux) or **⌘**+scroll (Mac) also zoom, and pinch-to-zoom on trackpads uses that modifier.
 - **Fit view** - Click the **⊡** button (top-right, beside close) or press **F** while the wall is open. Recenters on all notes and pinned stories (or origin when empty). Your pan/zoom per board is remembered in the browser.
+
+## Drawing on the Wall
+
+When Wall drawing is enabled, use the drawing control or **D** to enter/leave Draw mode. The Wall uses the shared drawing engine for pen/highlighter strokes and erasing, but stores strokes in Wall world coordinates so they stay aligned while the canvas pans and zooms. Drawing saves use a pending/acknowledged queue; unsafely unsettled work triggers a close warning instead of silently disappearing. Collaborators receive the normal Wall refresh path after durable updates.
 
 Viewers can open the Wall and pinned stories read-only. Contributors and maintainers can pin, move, and remove story placements under the same Wall mutation permission checks used for sticky-note writes. Archived stories remain visible with a muted treatment; hard-deleting a Todo removes its placement automatically.
 

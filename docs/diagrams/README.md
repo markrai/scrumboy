@@ -1,5 +1,7 @@
 # Scrumboy architecture diagrams
 
+**Current snapshot:** audited against the v3.43.0 application architecture, including migrations through 100, GitHub integration, durable delivery, drawing/Wall state, archive/due/custom-field board state, and current system/project roles.
+
 Mermaid diagrams for the Scrumboy monolith (Go server + embedded TypeScript SPA + SQLite).
 
 **Interactive viewer:** open [`index.html`](index.html) via a local HTTP server (browser cannot load markdown from `file://`).
