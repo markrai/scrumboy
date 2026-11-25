@@ -594,6 +594,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		}
 		actorRole = role
 	}
+	if in.CreatedByUserIDPresent && (!ok || userID == 0 || actorRole != RoleMaintainer) {
+		return Todo{}, ErrUnauthorized
+	}
 
 	// Durable projects only: contributor/view edit scope. Temporary boards (any expires_at) use link collaboration
 	// for updates, same model as create — skip role-based edit scope.
@@ -743,9 +746,6 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		}
 		creatorChanged = !sameInt64Ptr(existing.CreatedByUserID, in.CreatedByUserID)
 		if creatorChanged {
-			if !ok || userID == 0 || actorRole != RoleMaintainer {
-				return Todo{}, ErrUnauthorized
-			}
 			var creatorExists bool
 			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)`, *in.CreatedByUserID).Scan(&creatorExists); err != nil {
 				return Todo{}, fmt.Errorf("check creator exists: %w", err)

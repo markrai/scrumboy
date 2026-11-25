@@ -1,102 +1,373 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
 
+func creatorPatch(id *int64) UpdateTodoInput {
+	return UpdateTodoInput{
+		KeepTitle:              true,
+		KeepBody:               true,
+		KeepTags:               true,
+		KeepEstimationPoints:   true,
+		KeepAssigneeUserID:     true,
+		CreatedByUserID:        id,
+		CreatedByUserIDPresent: true,
+	}
+}
+
+func creatorAuditCount(t *testing.T, st *Store, ctx context.Context, todoID int64) int {
+	t.Helper()
+	var count int
+	if err := st.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM audit_events
+		WHERE action = 'todo_creator_changed' AND target_id = ?
+	`, todoID).Scan(&count); err != nil {
+		t.Fatalf("count todo_creator_changed audits: %v", err)
+	}
+	return count
+}
+
 func TestUpdateTodo_ReassignCreator(t *testing.T) {
-	st, cleanup, ctx, project, maintainer, contributor, _ := setupAssigneeTestProject(t)
+	st, cleanup, ctx, project, maintainer, _, _ := setupAssigneeTestProject(t)
 	defer cleanup()
 	ctxM := WithUserID(ctx, maintainer.ID)
-	ctxC := WithUserID(ctx, contributor.ID)
 
+	nonMember, err := st.CreateUser(ctx, "creator-target@example.com", "password", "Historical creator")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
 	todo, err := st.CreateTodo(ctxM, project.ID, CreateTodoInput{
 		Title: "Moved ticket", ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
 		t.Fatalf("CreateTodo: %v", err)
 	}
-	if todo.CreatedByUserID == nil || *todo.CreatedByUserID != maintainer.ID {
-		t.Fatalf("creator = %v, want %d", todo.CreatedByUserID, maintainer.ID)
+	assertTodoCreator(t, todo, &maintainer.ID)
+
+	var events []TodoLifecycleEvent
+	st.SetTodoLifecyclePublisher(func(_ context.Context, event TodoLifecycleEvent) {
+		events = append(events, event)
+	})
+
+	t.Run("authorized same value is a no-op", func(t *testing.T) {
+		events = nil
+		got, err := st.UpdateTodo(ctxM, todo.ID, creatorPatch(ptrInt64(maintainer.ID)), ModeFull)
+		if err != nil {
+			t.Fatalf("UpdateTodo: %v", err)
+		}
+		assertTodoCreator(t, got, &maintainer.ID)
+		if count := creatorAuditCount(t, st, ctx, todo.ID); count != 0 {
+			t.Fatalf("todo_creator_changed audits = %d, want 0", count)
+		}
+		if len(events) != 0 {
+			t.Fatalf("same-value creator patch published lifecycle events: %+v", events)
+		}
+	})
+
+	for _, tc := range []struct {
+		name string
+		id   *int64
+	}{
+		{name: "null", id: nil},
+		{name: "zero", id: ptrInt64(0)},
+		{name: "negative", id: ptrInt64(-1)},
+		{name: "nonexistent", id: ptrInt64(999999)},
+	} {
+		t.Run(tc.name+" target is invalid", func(t *testing.T) {
+			if _, err := st.UpdateTodo(ctxM, todo.ID, creatorPatch(tc.id), ModeFull); !errors.Is(err, ErrValidation) {
+				t.Fatalf("err = %v, want ErrValidation", err)
+			}
+		})
 	}
 
-	patch := func(id *int64) UpdateTodoInput {
-		return UpdateTodoInput{
+	t.Run("maintainer assigns an existing non-member", func(t *testing.T) {
+		events = nil
+		got, err := st.UpdateTodo(ctxM, todo.ID, creatorPatch(ptrInt64(nonMember.ID)), ModeFull)
+		if err != nil {
+			t.Fatalf("UpdateTodo: %v", err)
+		}
+		assertTodoCreator(t, got, &nonMember.ID)
+
+		persisted, err := st.GetTodoByLocalID(ctxM, project.ID, todo.LocalID, ModeFull)
+		if err != nil {
+			t.Fatalf("GetTodoByLocalID: %v", err)
+		}
+		assertTodoCreator(t, persisted, &nonMember.ID)
+		if role, err := st.GetProjectRole(ctx, project.ID, nonMember.ID); err != nil || role != "" {
+			t.Fatalf("creator role = %q, err = %v; attribution must not grant membership", role, err)
+		}
+		if _, err := st.UpdateTodo(WithUserID(ctx, nonMember.ID), todo.ID, UpdateTodoInput{
 			KeepTitle: true, KeepBody: true, KeepTags: true,
 			KeepEstimationPoints: true, KeepAssigneeUserID: true,
-			CreatedByUserID: id, CreatedByUserIDPresent: true,
+		}, ModeFull); !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrUnauthorized) {
+			t.Fatalf("attributed non-member update err = %v, want access denial", err)
 		}
-	}
+		if count := creatorAuditCount(t, st, ctx, todo.ID); count != 1 {
+			t.Fatalf("todo_creator_changed audits = %d, want 1", count)
+		}
+		if len(events) != 1 || events[0].Type != TodoEventUpdated || !containsString(events[0].ChangedFields, "creator") {
+			t.Fatalf("creator reassignment lifecycle events = %+v", events)
+		}
+	})
 
-	// Non-maintainers cannot reassign.
-	if _, err := st.UpdateTodo(ctxC, todo.ID, patch(ptrInt64(contributor.ID)), ModeFull); !errors.Is(err, ErrUnauthorized) {
-		t.Fatalf("contributor reassign err = %v, want ErrUnauthorized", err)
-	}
-	// Cannot clear, cannot point at a missing user.
-	if _, err := st.UpdateTodo(ctxM, todo.ID, patch(nil), ModeFull); !errors.Is(err, ErrValidation) {
-		t.Fatalf("clear err = %v, want ErrValidation", err)
-	}
-	if _, err := st.UpdateTodo(ctxM, todo.ID, patch(ptrInt64(999999)), ModeFull); !errors.Is(err, ErrValidation) {
-		t.Fatalf("missing user err = %v, want ErrValidation", err)
-	}
-
-	got, err := st.UpdateTodo(ctxM, todo.ID, patch(ptrInt64(contributor.ID)), ModeFull)
-	if err != nil {
-		t.Fatalf("maintainer reassign: %v", err)
-	}
-	if got.CreatedByUserID == nil || *got.CreatedByUserID != contributor.ID {
-		t.Fatalf("returned creator = %v, want %d", got.CreatedByUserID, contributor.ID)
-	}
-	reread, err := st.GetTodoByLocalID(ctxM, project.ID, todo.LocalID, ModeFull)
-	if err != nil {
-		t.Fatalf("GetTodo: %v", err)
-	}
-	if reread.CreatedByUserID == nil || *reread.CreatedByUserID != contributor.ID {
-		t.Fatalf("persisted creator = %v, want %d", reread.CreatedByUserID, contributor.ID)
-	}
-
-	// Omitting the field leaves the creator alone.
-	unchanged, err := st.UpdateTodo(ctxM, todo.ID, UpdateTodoInput{
-		Title: "Renamed", Body: "", Tags: nil,
-		KeepBody: true, KeepTags: true, KeepEstimationPoints: true, KeepAssigneeUserID: true,
-	}, ModeFull)
-	if err != nil {
-		t.Fatalf("plain update: %v", err)
-	}
-	if unchanged.CreatedByUserID == nil || *unchanged.CreatedByUserID != contributor.ID {
-		t.Fatalf("creator changed by unrelated update: %v", unchanged.CreatedByUserID)
-	}
+	t.Run("omitted creator preserves attribution", func(t *testing.T) {
+		got, err := st.UpdateTodo(ctxM, todo.ID, UpdateTodoInput{
+			Title: "Renamed", KeepBody: true, KeepTags: true,
+			KeepEstimationPoints: true, KeepAssigneeUserID: true,
+		}, ModeFull)
+		if err != nil {
+			t.Fatalf("UpdateTodo: %v", err)
+		}
+		assertTodoCreator(t, got, &nonMember.ID)
+		if count := creatorAuditCount(t, st, ctx, todo.ID); count != 1 {
+			t.Fatalf("creator audit count changed after omitted field: %d", count)
+		}
+	})
 }
 
-// A contributor who is only allowed to edit the body of their assigned todo
-// must get an error, not a silent success, when sending createdByUserId.
-func TestUpdateTodo_ReassignCreatorRejectedForBodyOnlyScope(t *testing.T) {
-	st, cleanup, ctx, project, maintainer, contributor, _ := setupAssigneeTestProject(t)
+func TestUpdateTodo_CreatorAuthorizationBoundaries(t *testing.T) {
+	st, cleanup, ctx, project, maintainer, contributor, viewer := setupAssigneeTestProject(t)
 	defer cleanup()
 	ctxM := WithUserID(ctx, maintainer.ID)
 	ctxC := WithUserID(ctx, contributor.ID)
 
 	todo, err := st.CreateTodo(ctxM, project.ID, CreateTodoInput{
-		Title: "Assigned", ColumnKey: DefaultColumnBacklog, AssigneeUserID: ptrInt64(contributor.ID),
+		Title: "Authorization", Body: "original", ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
 		t.Fatalf("CreateTodo: %v", err)
 	}
-
-	_, err = st.UpdateTodo(ctxC, todo.ID, UpdateTodoInput{
-		KeepTitle: true, KeepBody: true, KeepTags: true,
-		KeepEstimationPoints: true, KeepAssigneeUserID: true,
-		CreatedByUserID: ptrInt64(contributor.ID), CreatedByUserIDPresent: true,
+	assigned, err := st.CreateTodo(ctxM, project.ID, CreateTodoInput{
+		Title: "Assigned", Body: "original assigned", ColumnKey: DefaultColumnBacklog,
+		AssigneeUserID: ptrInt64(contributor.ID),
 	}, ModeFull)
-	if !errors.Is(err, ErrUnauthorized) {
-		t.Fatalf("err = %v, want ErrUnauthorized", err)
+	if err != nil {
+		t.Fatalf("CreateTodo assigned: %v", err)
 	}
-	reread, err := st.GetTodoByLocalID(ctxM, project.ID, todo.LocalID, ModeFull)
+
+	var events []TodoLifecycleEvent
+	st.SetTodoLifecyclePublisher(func(_ context.Context, event TodoLifecycleEvent) {
+		events = append(events, event)
+	})
+
+	for _, tc := range []struct {
+		name    string
+		actor   context.Context
+		todoID  int64
+		target  int64
+		wantErr error
+	}{
+		{name: "contributor different value", actor: ctxC, todoID: todo.ID, target: contributor.ID, wantErr: ErrUnauthorized},
+		{name: "contributor same value", actor: ctxC, todoID: todo.ID, target: maintainer.ID, wantErr: ErrUnauthorized},
+		{name: "contributor nonexistent target is authorized first", actor: ctxC, todoID: todo.ID, target: 999999, wantErr: ErrUnauthorized},
+		{name: "viewer", actor: WithUserID(ctx, viewer.ID), todoID: todo.ID, target: maintainer.ID, wantErr: ErrNotFound},
+		{name: "unauthenticated durable caller", actor: ctx, todoID: todo.ID, target: maintainer.ID, wantErr: ErrUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := st.UpdateTodo(tc.actor, tc.todoID, creatorPatch(ptrInt64(tc.target)), ModeFull); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+
+	t.Run("assigned contributor combined mutation rolls back", func(t *testing.T) {
+		combined := creatorPatch(ptrInt64(maintainer.ID))
+		combined.KeepBody = false
+		combined.Body = "unauthorized body"
+		if _, err := st.UpdateTodo(ctxC, assigned.ID, combined, ModeFull); !errors.Is(err, ErrUnauthorized) {
+			t.Fatalf("err = %v, want ErrUnauthorized", err)
+		}
+		persisted, err := st.GetTodoByLocalID(ctxM, project.ID, assigned.LocalID, ModeFull)
+		if err != nil {
+			t.Fatalf("GetTodoByLocalID: %v", err)
+		}
+		if persisted.Body != "original assigned" {
+			t.Fatalf("body = %q, want rollback to original assigned", persisted.Body)
+		}
+		assertTodoCreator(t, persisted, &maintainer.ID)
+	})
+
+	if creatorAuditCount(t, st, ctx, todo.ID) != 0 || creatorAuditCount(t, st, ctx, assigned.ID) != 0 {
+		t.Fatal("rejected creator patches generated todo_creator_changed audits")
+	}
+	if len(events) != 0 {
+		t.Fatalf("rejected creator patches published lifecycle events: %+v", events)
+	}
+
+	t.Run("omitted creator preserves body-only contributor behavior", func(t *testing.T) {
+		got, err := st.UpdateTodo(ctxC, assigned.ID, UpdateTodoInput{
+			KeepTitle: true, Body: "allowed body", KeepTags: true,
+			KeepEstimationPoints: true, KeepAssigneeUserID: true,
+		}, ModeFull)
+		if err != nil {
+			t.Fatalf("UpdateTodo: %v", err)
+		}
+		if got.Body != "allowed body" {
+			t.Fatalf("body = %q, want allowed body", got.Body)
+		}
+		assertTodoCreator(t, got, &maintainer.ID)
+	})
+}
+
+func TestUpdateTodo_CreatorTemporaryAnonymousAndNoAuthBoundaries(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	owner, err := st.BootstrapUser(ctx, "temporary-creator-owner@example.com", "password", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ownerCtx := WithUserID(ctx, owner.ID)
+
+	temporary, err := st.CreateAnonymousBoard(ownerCtx)
+	if err != nil {
+		t.Fatalf("CreateAnonymousBoard temporary: %v", err)
+	}
+	temporaryTodo, err := st.CreateTodo(ownerCtx, temporary.ID, CreateTodoInput{Title: "temporary"}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo temporary: %v", err)
+	}
+	for _, tc := range []struct {
+		name  string
+		actor context.Context
+		id    *int64
+	}{
+		{name: "unauthenticated link holder same value", actor: ctx, id: ptrInt64(owner.ID)},
+		{name: "temporary creator without project role same value", actor: ownerCtx, id: ptrInt64(owner.ID)},
+		{name: "unauthenticated invalid value is still unauthorized", actor: ctx, id: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := st.UpdateTodo(tc.actor, temporaryTodo.ID, creatorPatch(tc.id), ModeFull); !errors.Is(err, ErrUnauthorized) {
+				t.Fatalf("err = %v, want ErrUnauthorized", err)
+			}
+		})
+	}
+	assertTodoCreator(t, temporaryTodo, &owner.ID)
+	if count := creatorAuditCount(t, st, ctx, temporaryTodo.ID); count != 0 {
+		t.Fatalf("temporary rejected creator audits = %d, want 0", count)
+	}
+
+	anonymous, err := st.CreateAnonymousBoard(ctx)
+	if err != nil {
+		t.Fatalf("CreateAnonymousBoard anonymous: %v", err)
+	}
+	anonymousTodo, err := st.CreateTodo(ctx, anonymous.ID, CreateTodoInput{Title: "anonymous"}, ModeAnonymous)
+	if err != nil {
+		t.Fatalf("CreateTodo anonymous: %v", err)
+	}
+	if err := st.EnsureMaintainerMembership(ctx, anonymous.ID, owner.ID); err != nil {
+		t.Fatalf("EnsureMaintainerMembership: %v", err)
+	}
+	if _, err := st.UpdateTodo(ownerCtx, anonymousTodo.ID, creatorPatch(ptrInt64(owner.ID)), ModeAnonymous); !errors.Is(err, ErrValidation) {
+		t.Fatalf("anonymous creator patch err = %v, want ErrValidation", err)
+	}
+
+	preBootstrap, preBootstrapCleanup := newTestStore(t)
+	defer preBootstrapCleanup()
+	project, err := preBootstrap.CreateProject(ctx, "Pre-bootstrap creator")
+	if err != nil {
+		t.Fatalf("CreateProject pre-bootstrap: %v", err)
+	}
+	preBootstrapTodo, err := preBootstrap.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "pre-bootstrap"}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo pre-bootstrap: %v", err)
+	}
+	if _, err := preBootstrap.UpdateTodo(ctx, preBootstrapTodo.ID, creatorPatch(ptrInt64(1)), ModeFull); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("pre-bootstrap creator patch err = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestUpdateTodo_CreatorGuestSystemAndServiceBoundaries(t *testing.T) {
+	st, cleanup, ctx, project, maintainer, contributor, _ := setupAssigneeTestProject(t)
+	defer cleanup()
+	ctxM := WithUserID(ctx, maintainer.ID)
+	if project.OwnerUserID == nil {
+		t.Fatal("fixture project has no owner")
+	}
+	ownerID := *project.OwnerUserID
+	ownerCtx := WithUserID(ctx, ownerID)
+	todo, err := st.CreateTodo(ctxM, project.ID, CreateTodoInput{Title: "identity boundaries"}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo: %v", err)
+	}
+
+	guest, err := st.CreateUser(ctx, "creator-guest@example.com", "password", "Guest")
+	if err != nil {
+		t.Fatalf("CreateUser guest: %v", err)
+	}
+	if err := st.UpdateUserRole(ownerCtx, ownerID, guest.ID, SystemRoleGuest); err != nil {
+		t.Fatalf("UpdateUserRole guest: %v", err)
+	}
+	if err := st.AddProjectMember(ctxM, maintainer.ID, project.ID, guest.ID, RoleViewer); err != nil {
+		t.Fatalf("AddProjectMember guest: %v", err)
+	}
+	if _, err := st.UpdateTodo(WithUserID(ctx, guest.ID), todo.ID, creatorPatch(ptrInt64(maintainer.ID)), ModeFull); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("guest creator patch err = %v, want ErrNotFound", err)
+	}
+
+	admin, err := st.CreateUser(ctx, "creator-admin@example.com", "password", "Admin outsider")
+	if err != nil {
+		t.Fatalf("CreateUser admin: %v", err)
+	}
+	if err := st.UpdateUserRole(ownerCtx, ownerID, admin.ID, SystemRoleAdmin); err != nil {
+		t.Fatalf("UpdateUserRole admin: %v", err)
+	}
+	if _, err := st.UpdateTodo(WithUserID(ctx, admin.ID), todo.ID, creatorPatch(ptrInt64(maintainer.ID)), ModeFull); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("system admin creator patch err = %v, want ErrNotFound", err)
+	}
+
+	service, err := st.CreateServiceAccount(ownerCtx, ownerID, "Creator service")
+	if err != nil {
+		t.Fatalf("CreateServiceAccount: %v", err)
+	}
+	if err := st.AddProjectMember(ctxM, maintainer.ID, project.ID, service.ID, RoleContributor); err != nil {
+		t.Fatalf("AddProjectMember service contributor: %v", err)
+	}
+	serviceCtx := WithServiceIdentity(WithUserID(ctx, service.ID), service.ID, true)
+	if _, err := st.UpdateTodo(serviceCtx, todo.ID, creatorPatch(ptrInt64(contributor.ID)), ModeFull); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("service contributor creator patch err = %v, want ErrUnauthorized", err)
+	}
+	if err := st.UpdateProjectMemberRole(ctxM, maintainer.ID, project.ID, service.ID, RoleMaintainer); err != nil {
+		t.Fatalf("promote service to Maintainer: %v", err)
+	}
+	got, err := st.UpdateTodo(serviceCtx, todo.ID, creatorPatch(ptrInt64(contributor.ID)), ModeFull)
+	if err != nil {
+		t.Fatalf("service Maintainer creator patch: %v", err)
+	}
+	assertTodoCreator(t, got, &contributor.ID)
+}
+
+func TestUpdateTodo_CreatorPatchPreservesArchivedTodoProtection(t *testing.T) {
+	st, cleanup, ctx, project, maintainer, contributor, _ := setupAssigneeTestProject(t)
+	defer cleanup()
+	ctxM := WithUserID(ctx, maintainer.ID)
+	todo, err := st.CreateTodo(ctxM, project.ID, CreateTodoInput{Title: "archived creator"}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo: %v", err)
+	}
+	if _, err := st.ArchiveTodoByLocalID(ctxM, project.ID, todo.LocalID, ModeFull); err != nil {
+		t.Fatalf("ArchiveTodoByLocalID: %v", err)
+	}
+
+	var events []TodoLifecycleEvent
+	st.SetTodoLifecyclePublisher(func(_ context.Context, event TodoLifecycleEvent) {
+		events = append(events, event)
+	})
+	if _, err := st.UpdateTodo(ctxM, todo.ID, creatorPatch(ptrInt64(contributor.ID)), ModeFull); !errors.Is(err, ErrConflict) {
+		t.Fatalf("archived creator patch err = %v, want ErrConflict", err)
+	}
+	persisted, err := st.GetTodoByLocalID(ctxM, project.ID, todo.LocalID, ModeFull)
 	if err != nil {
 		t.Fatalf("GetTodoByLocalID: %v", err)
 	}
-	if reread.CreatedByUserID == nil || *reread.CreatedByUserID != maintainer.ID {
-		t.Fatalf("creator changed: %v", reread.CreatedByUserID)
+	assertTodoCreator(t, persisted, &maintainer.ID)
+	if count := creatorAuditCount(t, st, ctx, todo.ID); count != 0 {
+		t.Fatalf("archived creator audits = %d, want 0", count)
+	}
+	if len(events) != 0 {
+		t.Fatalf("rejected archived patch published lifecycle events: %+v", events)
 	}
 }
