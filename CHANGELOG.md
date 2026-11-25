@@ -2,6 +2,12 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## [3.44.1] - 2026-11-25
+
+### Fixed
+
+- **Trello label import (PR #385)** - Fixed board imports failing on labels containing unsupported characters, excessive length, or duplicate names. Label names are adjusted when necessary while preserving distinct labels, colors and card associations. Import previews now warn when label names require adjustment.
+
 ## [3.44.0] - 2026-11-25
 
 ### Added
