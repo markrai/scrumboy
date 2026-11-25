@@ -28,11 +28,26 @@ type BindOptions = {
 
 const DATE_OPTS: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
 
+/** Follows nextCursor to the end so no account or token is hidden behind a page boundary. */
+async function fetchAllPages<T>(path: string): Promise<T[]> {
+  const out: T[] = [];
+  let cursor = "";
+  for (let page = 0; page < 100; page++) {
+    const sep = path.includes("?") ? "&" : "?";
+    const res = await apiFetch<{ items: T[]; nextCursor?: string | null } | null>(
+      `${path}${sep}limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+    );
+    out.push(...(res?.items ?? []));
+    if (!res?.nextCursor) break;
+    cursor = res.nextCursor;
+  }
+  return out;
+}
+
 export async function renderServiceAccountsSectionHTML(isOwner: boolean): Promise<string> {
   let body: string;
   try {
-    const res = await apiFetch<{ items: ServiceAccount[] } | null>("/api/admin/service-accounts?limit=100");
-    const items = res?.items ?? [];
+    const items = await fetchAllPages<ServiceAccount>("/api/admin/service-accounts");
     body = items.length === 0
       ? `<div class="muted" data-i18n-text="settings.serviceAccounts.empty">No service accounts yet.</div>`
       : `
@@ -186,10 +201,8 @@ async function showServiceAccountTokensDialog(accountId: number, accountName: st
 
   const refresh = async () => {
     try {
-      const res = await apiFetch<{ items: ServiceToken[] } | null>(
-        `/api/admin/service-accounts/${accountId}/tokens?limit=100`,
-      );
-      bodyEl.innerHTML = renderTokenRows(res?.items ?? [], isOwner);
+      const items = await fetchAllPages<ServiceToken>(`/api/admin/service-accounts/${accountId}/tokens`);
+      bodyEl.innerHTML = renderTokenRows(items, isOwner);
     } catch (err: any) {
       bodyEl.innerHTML = `<div class="muted" role="alert">${escapeHTML(apiErrorMessageOrRaw(err, { fallbackKey: "settings.serviceAccounts.tokens.loadFailed" }))}</div>`;
     }

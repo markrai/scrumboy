@@ -2,11 +2,24 @@ import { apiFetch } from '../api.js';
 import { attachDialogClose, bindDialogLocale, escapeHTML, showConfirmDialog, showToast } from '../utils.js';
 import { apiErrorMessageOrRaw, formatDate, t } from '../i18n/index.js';
 const DATE_OPTS = { month: "short", day: "numeric", year: "numeric" };
+/** Follows nextCursor to the end so no account or token is hidden behind a page boundary. */
+async function fetchAllPages(path) {
+    const out = [];
+    let cursor = "";
+    for (let page = 0; page < 100; page++) {
+        const sep = path.includes("?") ? "&" : "?";
+        const res = await apiFetch(`${path}${sep}limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+        out.push(...(res?.items ?? []));
+        if (!res?.nextCursor)
+            break;
+        cursor = res.nextCursor;
+    }
+    return out;
+}
 export async function renderServiceAccountsSectionHTML(isOwner) {
     let body;
     try {
-        const res = await apiFetch("/api/admin/service-accounts?limit=100");
-        const items = res?.items ?? [];
+        const items = await fetchAllPages("/api/admin/service-accounts");
         body = items.length === 0
             ? `<div class="muted" data-i18n-text="settings.serviceAccounts.empty">No service accounts yet.</div>`
             : `
@@ -158,8 +171,8 @@ async function showServiceAccountTokensDialog(accountId, accountName, isOwner) {
     const pendingRevokes = new Set();
     const refresh = async () => {
         try {
-            const res = await apiFetch(`/api/admin/service-accounts/${accountId}/tokens?limit=100`);
-            bodyEl.innerHTML = renderTokenRows(res?.items ?? [], isOwner);
+            const items = await fetchAllPages(`/api/admin/service-accounts/${accountId}/tokens`);
+            bodyEl.innerHTML = renderTokenRows(items, isOwner);
         }
         catch (err) {
             bodyEl.innerHTML = `<div class="muted" role="alert">${escapeHTML(apiErrorMessageOrRaw(err, { fallbackKey: "settings.serviceAccounts.tokens.loadFailed" }))}</div>`;

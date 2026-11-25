@@ -178,6 +178,50 @@ func TestServiceAccountREST_Validation(t *testing.T) {
 	}
 }
 
+// An Admin must not be able to reach human accounts or their personal API tokens through the
+// service-account routes: the id must belong to a service account, not just pass the role gate.
+func TestServiceAccountREST_AdminCannotTouchHumanAccountsOrTokens(t *testing.T) {
+	f, _ := newServiceAccountHTTPFixture(t)
+	admin := serviceAccountRESTClient(t, f, "admin")
+
+	// Owner's personal API token.
+	resp, body := doJSON(t, f.owner, http.MethodPost, f.ts+"/api/me/tokens", map[string]any{"name": "personal"}, nil)
+	if resp.StatusCode >= 300 {
+		t.Skipf("personal token route unavailable: %d %s", resp.StatusCode, body)
+	}
+	var personal struct {
+		ID      int64  `json:"id"`
+		TokenID int64  `json:"tokenId"`
+		Token   string `json:"token"`
+	}
+	_ = json.Unmarshal(body, &personal)
+	tokenID := personal.ID
+	if tokenID == 0 {
+		tokenID = personal.TokenID
+	}
+	if tokenID == 0 {
+		t.Skipf("could not read personal token id: %s", body)
+	}
+
+	resp, body = doJSON(t, admin, http.MethodDelete, fmt.Sprintf("%s/api/admin/service-tokens/%d", f.ts, tokenID), nil, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("admin revoke owner's personal token: %d %s, want 404", resp.StatusCode, body)
+	}
+	resp, body = doJSON(t, admin, http.MethodGet, fmt.Sprintf("%s/api/admin/service-accounts/%d/tokens", f.ts, f.ownerID), nil, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("admin list human's tokens: %d %s, want 404", resp.StatusCode, body)
+	}
+	resp, body = doJSON(t, f.owner, http.MethodDelete, fmt.Sprintf("%s/api/admin/service-accounts/%d", f.ts, f.ownerID), nil, nil)
+	if resp.StatusCode < 400 {
+		t.Errorf("owner delete human via service route: %d %s, want error", resp.StatusCode, body)
+	}
+	// The owner is still there and can still list accounts.
+	resp, body = doJSON(t, f.owner, http.MethodGet, f.ts+"/api/admin/service-accounts", nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("owner list after attempts: %d %s", resp.StatusCode, body)
+	}
+}
+
 // A human user id is not a service account: minting for one must fail and return no plaintext.
 func TestServiceAccountREST_CannotMintForHumanUser(t *testing.T) {
 	f, _ := newServiceAccountHTTPFixture(t)
