@@ -37,6 +37,7 @@ import { bindCalendarTabInteractions, loadCalendarTabContent, } from './settings
 import { recordLocalMutation } from '../realtime/guard.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { bindApiTokensInteractions, invalidateApiTokensCache, renderApiTokensSectionHTML } from './settings-api-tokens.js';
+import { bindServiceAccountsInteractions, renderServiceAccountsSectionHTML } from './settings-service-accounts.js';
 import { bindSettingsTabsFit, fitSettingsTabsNav } from './settings-tabs-fit.js';
 import { bindPublicLocaleSelect, renderPublicLocaleSelectHTML, syncPublicLocaleSelect } from '../i18n/locale-select.js';
 import { appHomePath } from '../app-home.js';
@@ -2172,6 +2173,11 @@ export async function renderSettingsModal(options) {
     }
     // Setup user management actions (users tab)
     if (getSettingsActiveTab() === "users") {
+        bindServiceAccountsInteractions({
+            signal,
+            rerender: () => renderSettingsModal(),
+            isOwner: getUser()?.systemRole === "owner",
+        });
         // Promote button
         document.querySelectorAll('[data-action="promote"]').forEach(btn => {
             btn.addEventListener("click", async (e) => {
@@ -2831,6 +2837,7 @@ async function renderUsersTabContent() {
         </table>
         ${isOwner || isAdmin ? `<div style="margin-top: 16px;"><button class="btn btn--ghost" id="createUserBtn" data-i18n-text="settings.users.createUser">Create User</button></div>` : ""}
       </div>
+      ${isOwner || isAdmin ? await renderServiceAccountsSectionHTML(isOwner) : ""}
     `;
     }
     catch (err) {
