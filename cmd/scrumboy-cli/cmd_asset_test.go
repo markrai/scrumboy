@@ -2,14 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testAssetID = "11111111-2222-4333-8444-555555555555"
@@ -114,5 +118,83 @@ func TestAssetErrors(t *testing.T) {
 	}
 	if id, err := assetID("https://h/api/assets/" + strings.ToUpper(testAssetID) + "?x=" + "22222222-2222-4333-8444-555555555555"); err != nil || id != testAssetID {
 		t.Fatalf("assetID = %q, %v", id, err)
+	}
+}
+
+func TestRawRejectsOversizedResponses(t *testing.T) {
+	big := bytes.Repeat([]byte{'x'}, maxResponseBytes+1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch strings.TrimPrefix(r.URL.Path, "/mcp/assets/") {
+		case "declared":
+			w.Header().Set("Content-Length", strconv.Itoa(len(big)))
+			_, _ = w.Write(big)
+		case "exact":
+			w.(http.Flusher).Flush()
+			_, _ = w.Write(big[:maxResponseBytes])
+		case "forbidden":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"error":{"code":"FORBIDDEN","message":"no access"}}`)
+		default:
+			w.Header().Set("Content-Type", "image/png")
+			w.(http.Flusher).Flush()
+			_, _ = w.Write(big)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cl := NewClient(srv.URL, "sb_test", "test")
+	ctx := context.Background()
+
+	for _, path := range []string{"/mcp/assets/declared", "/mcp/assets/streamed"} {
+		if _, data, err := cl.Raw(ctx, http.MethodGet, path, "", nil); err == nil || !strings.Contains(err.Error(), "larger than 32 MiB") || data != nil {
+			t.Fatalf("%s: err=%v, %d bytes", path, err, len(data))
+		}
+	}
+	if _, data, err := cl.Raw(ctx, http.MethodGet, "/mcp/assets/exact", "", nil); err != nil || len(data) != maxResponseBytes {
+		t.Fatalf("exactly the limit: err=%v, %d bytes", err, len(data))
+	}
+	var apiErr *APIError
+	if _, _, err := cl.Raw(ctx, http.MethodGet, "/mcp/assets/forbidden", "", nil); !errors.As(err, &apiErr) || apiErr.Code != "FORBIDDEN" || apiErr.Status != http.StatusForbidden {
+		t.Fatalf("structured error: %v", err)
+	}
+
+	h := newHarness(t, srv.URL, nil)
+	out := filepath.Join(t.TempDir(), "big.png")
+	if code := h.run("asset", "get", testAssetID, "-o", out); code != 1 || !strings.Contains(h.err.String(), "larger than 32 MiB") {
+		t.Fatalf("get exit %d: %s", code, h.err)
+	}
+	if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("oversized download left a file: %v", err)
+	}
+}
+
+func TestRawRefreshesOnceOn401AndRefusesRedirects(t *testing.T) {
+	var redirectHits int
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { redirectHits++ }))
+	t.Cleanup(target.Close)
+	img := []byte("\x89PNG")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/mcp/assets/moved":
+			http.Redirect(w, r, target.URL+"/mcp/assets/moved", http.StatusFound)
+		case r.Header.Get("Authorization") != "Bearer fresh":
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"error":{"code":"AUTH_REQUIRED","message":"Authentication required"}}`)
+		default:
+			_, _ = w.Write(img)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	refreshes := 0
+	cl := NewClient(srv.URL, "stale", "test")
+	cl.Refresh = func(context.Context) (string, time.Time, error) {
+		refreshes++
+		return "fresh", time.Now().Add(time.Hour), nil
+	}
+	if _, data, err := cl.Raw(context.Background(), http.MethodGet, "/mcp/assets/"+testAssetID, "", nil); err != nil || !bytes.Equal(data, img) || refreshes != 1 {
+		t.Fatalf("refresh-on-401: err=%v data=%q refreshes=%d", err, data, refreshes)
+	}
+	if _, _, err := cl.Raw(context.Background(), http.MethodGet, "/mcp/assets/moved", "", nil); err == nil || !strings.Contains(err.Error(), "redirect") || redirectHits != 0 {
+		t.Fatalf("redirect: err=%v, target hits=%d", err, redirectHits)
 	}
 }

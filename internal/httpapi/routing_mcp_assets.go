@@ -73,5 +73,5 @@ func (s *Server) handleMCPAssets(w http.ResponseWriter, r *http.Request) {
 		s.handleAssetUpload(w, r, project.ID)
 		return
 	}
-	s.handleAssets(w, r, []string{rest})
+	s.handleAssets(w, r, []string{rest}, "no-store")
 }

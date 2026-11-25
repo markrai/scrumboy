@@ -50,7 +50,7 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	case "assets":
 		if s.inlineImagesEnabled {
-			s.handleAssets(w, r, parts[2:])
+			s.handleAssets(w, r, parts[2:], assetCacheControl)
 			return
 		}
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)

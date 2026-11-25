@@ -10,11 +10,13 @@ import (
 	"scrumboy/internal/store"
 )
 
+const assetCacheControl = "private, no-cache"
+
 // handleAssets serves GET/HEAD /api/assets/{uuid}. Members (Viewer or above) of the asset's
 // durable project may read it. Everyone else, signed in or not, may read it only through the
 // public-board boundary: the project must resolve as an eligible public board and a non-archived
 // story must embed the asset. Every denial and unknown asset is a 404.
-func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request, rest []string) {
+func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request, rest []string, cacheControl string) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
@@ -55,7 +57,7 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request, rest []str
 		}
 		setPublicResponseHeaders(w)
 	}
-	s.serveAssetFile(w, r, info.Asset)
+	s.serveAssetFile(w, r, info.Asset, cacheControl)
 }
 
 func (s *Server) writeAssetPublicError(w http.ResponseWriter, err error) {
@@ -67,7 +69,7 @@ func (s *Server) writeAssetPublicError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, "INTERNAL", "internal error", nil)
 }
 
-func (s *Server) serveAssetFile(w http.ResponseWriter, r *http.Request, a store.ProjectAsset) {
+func (s *Server) serveAssetFile(w http.ResponseWriter, r *http.Request, a store.ProjectAsset, cacheControl string) {
 	ext, ok := store.AssetExtensionForMIME(a.MimeType)
 	if !ok {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
@@ -89,7 +91,7 @@ func (s *Server) serveAssetFile(w http.ResponseWriter, r *http.Request, a store.
 	defer f.Close()
 	h := w.Header()
 	h.Set("Content-Type", a.MimeType)
-	h.Set("Cache-Control", "private, no-cache")
+	h.Set("Cache-Control", cacheControl)
 	h.Set("ETag", `"`+a.SHA256+`"`)
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")

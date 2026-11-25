@@ -346,9 +346,16 @@ func (c *Client) rawOnce(ctx context.Context, method, path, contentType string, 
 		return nil, nil, fmt.Errorf("%s answered with a redirect (HTTP %d to %s); credentials are never sent to a redirect target, so pass the server's final URL with --server",
 			c.BaseURL, resp.StatusCode, safeText(resp.Header.Get("Location")))
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	tooLarge := fmt.Errorf("response from %s (HTTP %d) is larger than %d MiB", c.BaseURL, resp.StatusCode, maxResponseBytes>>20)
+	if resp.ContentLength > maxResponseBytes {
+		return nil, nil, tooLarge
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, nil, fmt.Errorf("read response: %w", err)
+	}
+	if len(b) > maxResponseBytes {
+		return nil, nil, tooLarge
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return resp.Header, b, nil
