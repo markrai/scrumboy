@@ -46,6 +46,33 @@ func TestBuildImportBundlePreservesUnicodeLabelNames(t *testing.T) {
 	}
 }
 
+func TestBuildImportBundleMakesLabelNamesValidTags(t *testing.T) {
+	raw := []byte(`{
+		"id":"punct-board","name":"Punctuation Board",
+		"lists":[{"id":"todo","name":"Todo","pos":10,"closed":false}],
+		"labels":[
+			{"id":"a","name":"Won't fix","color":"red"},
+			{"id":"b","name":"Bug/Fix","color":"blue"},
+			{"id":"c","name":"v2.0","color":"green"},
+			{"id":"d","name":"","color":"green"},
+			{"id":"e","name":"","color":"green"}
+		],
+		"cards":[{"id":"card","name":"Labels","idList":"todo","pos":10,"closed":false,"idLabels":["a","b","c","d","e"],"idMembers":[]}]
+	}`)
+	bundle, err := BuildImportBundle(raw, fixedNow())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range bundle.ExportData.Projects[0].Tags {
+		if store.CanonicalizeTag(tag.Name) == "" {
+			t.Fatalf("label imported as invalid tag %q", tag.Name)
+		}
+	}
+	if len(bundle.ExportData.Projects[0].Todos[0].Tags) != 5 {
+		t.Fatalf("card tags = %+v", bundle.ExportData.Projects[0].Todos[0].Tags)
+	}
+}
+
 func TestBuildImportBundle_MinimalBoard(t *testing.T) {
 	raw := []byte(`{
 		"id":"board-1",

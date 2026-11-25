@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 
 	"scrumboy/internal/store"
 )
@@ -181,7 +182,7 @@ func buildTagExports(labelByID map[string]Label) (map[string]string, []store.Tag
 	labelNameByID := make(map[string]string, len(entries))
 	tagExports := make([]store.TagExport, 0, len(entries))
 	for _, entry := range entries {
-		baseName := strings.TrimSpace(entry.Label.Name)
+		baseName := labelTagName(entry.Label.Name)
 		if baseName == "" {
 			if strings.TrimSpace(entry.Label.Color) != "" && strings.TrimSpace(entry.Label.Color) != "none" {
 				baseName = "Trello " + strings.ToLower(strings.TrimSpace(entry.Label.Color)) + " label"
@@ -190,15 +191,45 @@ func buildTagExports(labelByID map[string]Label) (map[string]string, []store.Tag
 			}
 		}
 		finalName := baseName
-		usedNames[strings.ToLower(baseName)]++
-		if usedNames[strings.ToLower(baseName)] > 1 {
-			finalName = fmt.Sprintf("%s (%d)", baseName, usedNames[strings.ToLower(baseName)])
+		key := store.CanonicalizeTag(baseName)
+		usedNames[key]++
+		if n := usedNames[key]; n > 1 {
+			suffix := fmt.Sprintf(" %d", n)
+			finalName = truncateRunes(baseName, tagNameMaxRunes-len(suffix)) + suffix
 		}
 		labelNameByID[entry.ID] = finalName
 		color := trelloLabelColorHex(entry.Label.Color)
 		tagExports = append(tagExports, store.TagExport{Name: finalName, Color: color})
 	}
 	return labelNameByID, tagExports
+}
+
+// tagNameMaxRunes matches the store's tag length limit.
+const tagNameMaxRunes = 32
+
+// labelTagName turns a Trello label name into a valid tag name: tags allow only
+// letters, numbers, spaces and hyphens, so "Won't fix" becomes "Wont fix" and
+// "Bug/Fix" becomes "Bug Fix".
+func labelTagName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r == '\'' || r == '’':
+		case unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsMark(r) || r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteRune(' ')
+		}
+	}
+	return truncateRunes(strings.Join(strings.Fields(b.String()), " "), tagNameMaxRunes)
+}
+
+func truncateRunes(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return strings.TrimRight(string(runes[:n]), " -")
 }
 
 func trelloLabelColorHex(color string) *string {
