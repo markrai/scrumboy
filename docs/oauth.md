@@ -1,6 +1,6 @@
 # OAuth 2.1 for MCP Clients
 
-Scrumboy's canonical MCP Streamable HTTP endpoint, `/mcp/rpc`, supports OAuth 2.1 for clients that implement automatic discovery, PKCE, and Dynamic Client Registration (DCR) — for example Cursor and Claude Code. `/mcp/rpc` is the sole OAuth protected resource. The separate `/mcp` endpoint remains Scrumboy's legacy bootstrap/tool API and accepts session cookies or static `sb_…` API tokens, never OAuth access tokens. **No environment variables are required for a direct-TLS or loopback/localhost deployment.** When `SCRUMBOY_TRUST_PROXY=1`, OAuth issuer discovery requires either `SCRUMBOY_PUBLIC_BASE_URL` or a proxy-provided `X-Forwarded-Host` together with a forwarded HTTPS indication. See [Issuer / discovery origin](#issuer--discovery-origin) below.
+Scrumboy's canonical MCP Streamable HTTP endpoint, `/mcp/rpc`, supports OAuth 2.1 for clients that implement automatic discovery, PKCE, and Dynamic Client Registration (DCR) — for example Cursor and Claude Code. `/mcp/rpc` is the sole OAuth protected resource. The bearer-only inline-image routes `/mcp/assets/*` also accept the same access token, still bound to `/mcp/rpc` (they are not a separate resource and need no other token); see [`docs/mcp.md`](mcp.md). The separate `/mcp` endpoint remains Scrumboy's legacy bootstrap/tool API and accepts session cookies or static `sb_…` API tokens, never OAuth access tokens. **No environment variables are required for a direct-TLS or loopback/localhost deployment.** When `SCRUMBOY_TRUST_PROXY=1`, OAuth issuer discovery requires either `SCRUMBOY_PUBLIC_BASE_URL` or a proxy-provided `X-Forwarded-Host` together with a forwarded HTTPS indication. See [Issuer / discovery origin](#issuer--discovery-origin) below.
 
 Compatible clients: any MCP client that speaks HTTP OAuth discovery (RFC 8414 / RFC 9728), PKCE (RFC 7636, S256 only), Dynamic Client Registration (RFC 7591), and OAuth resource indicators. Cursor and Claude Code are the live-acceptance targets; other compatible MCP-over-HTTP clients use the same protocol.
 
@@ -34,7 +34,7 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected �
 4. If the user has no active Scrumboy session, the authorization page offers the configured sign-in methods: local password, SSO, or both. Successful sign-in returns to the pending authorization request and shows consent ("Approve access for `<client name>`?").
 5. On approval, Scrumboy redirects back to the client's `redirect_uri` with a single-use authorization code.
 6. Client exchanges the code (plus its `code_verifier`) for an access token and refresh token at `POST /oauth/token`, repeating the same `resource` value. Refresh requests also include `client_id` and the canonical `resource`.
-7. Client sends the opaque Scrumboy access token as `Authorization: Bearer <token>` only to `/mcp/rpc`.
+7. Client sends the opaque Scrumboy access token as `Authorization: Bearer <token>` to `/mcp/rpc`, and, to transfer inline images, to `/mcp/assets/*`. No other endpoint accepts it.
 
 ---
 
@@ -54,7 +54,7 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected �
 - Authorization and token requests require exactly one absolute `resource` URI identifying `<trusted-public-origin>/mcp/rpc`; missing, duplicate, malformed, or different values fail with `invalid_target`.
 - Scheme and hostname case are accepted case-insensitively for interoperability. Path, port, escaping, query, fragment, and trailing-slash semantics are not normalized. The path must be exactly `/mcp/rpc`.
 - Authorization codes, access tokens, and refresh tokens persist the canonical resource. Code and refresh redemption validate client, redirect URI, PKCE, and resource before the artifact is consumed, and consume/revoke plus access/refresh token insertion run in a single database transaction so a failed issue does not leave a spent grant without tokens.
-- `/mcp/rpc` accepts only Scrumboy's own opaque OAuth access tokens bound to its current canonical resource. Upstream OIDC-provider tokens are not MCP credentials. OAuth artifacts issued before resource binding are invalidated during migration and require one reauthorization; DCR client registrations remain usable.
+- `/mcp/rpc` (and `/mcp/assets/*`) accept only Scrumboy's own opaque OAuth access tokens bound to the current canonical `/mcp/rpc` resource. Upstream OIDC-provider tokens are not MCP credentials. OAuth artifacts issued before resource binding are invalidated during migration and require one reauthorization; DCR client registrations remain usable.
 
 **Authentication / OIDC continuation**
 

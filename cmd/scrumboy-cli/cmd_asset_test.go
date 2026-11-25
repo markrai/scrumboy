@@ -121,6 +121,57 @@ func TestAssetErrors(t *testing.T) {
 	}
 }
 
+func TestAssetTodoFlag(t *testing.T) {
+	img := []byte("\x89PNG fake image bytes")
+	file := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(file, img, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const notPositive = "--todo must be a positive todo id"
+	cases := []struct {
+		name     string
+		args     []string
+		wantCode int
+		wantPath string
+		wantErr  string
+	}{
+		{"put without --todo", []string{"asset", "put", file, "-p", "tech"}, 0, "/mcp/assets/tech", ""},
+		{"put --todo 0", []string{"asset", "put", file, "-p", "tech", "--todo", "0"}, 2, "", notPositive},
+		{"put --todo=0", []string{"asset", "put", file, "-p", "tech", "--todo=0"}, 2, "", notPositive},
+		{"put --todo -1", []string{"asset", "put", file, "-p", "tech", "--todo", "-1"}, 2, "", notPositive},
+		{"put --todo 5 after positional", []string{"asset", "put", file, "-p", "tech", "--todo", "5"}, 0, "/mcp/assets/tech?todo=5", ""},
+		{"put --todo=5 before positional", []string{"asset", "put", "--todo=5", file, "-p", "tech"}, 0, "/mcp/assets/tech?todo=5", ""},
+		{"put --todo abc", []string{"asset", "put", file, "-p", "tech", "--todo", "abc"}, 2, "", "invalid flags"},
+		{"put --todo 1.5", []string{"asset", "put", file, "-p", "tech", "--todo", "1.5"}, 2, "", "invalid flags"},
+		{"copy without --todo", []string{"asset", "copy", testAssetID, "-p", "tech"}, 0, "/mcp/assets/tech", ""},
+		{"copy --todo 0", []string{"asset", "copy", testAssetID, "-p", "tech", "--todo", "0"}, 2, "", notPositive},
+		{"copy --todo=0", []string{"asset", "copy", "--todo=0", testAssetID, "-p", "tech"}, 2, "", notPositive},
+		{"copy --todo -1", []string{"asset", "copy", testAssetID, "-p", "tech", "--todo", "-1"}, 2, "", notPositive},
+		{"copy --todo 5 after positional", []string{"asset", "copy", testAssetID, "-p", "tech", "--todo", "5"}, 0, "/mcp/assets/tech?todo=5", ""},
+		{"copy --todo 5 between flags", []string{"asset", "copy", "-p", "tech", "--todo", "5", testAssetID}, 0, "/mcp/assets/tech?todo=5", ""},
+		{"copy --todo abc", []string{"asset", "copy", testAssetID, "-p", "tech", "--todo", "abc"}, 2, "", "invalid flags"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			as := newAssetServer(t, img)
+			h := newHarness(t, as.URL, nil)
+			code := h.run(tc.args...)
+			if code != tc.wantCode || !strings.Contains(h.err.String(), tc.wantErr) {
+				t.Fatalf("exit %d, want %d; stderr %q", code, tc.wantCode, h.err)
+			}
+			if tc.wantCode != 0 {
+				if len(as.uploads) != 0 {
+					t.Fatalf("rejected --todo still uploaded: %+v", as.uploads)
+				}
+				return
+			}
+			if len(as.uploads) != 1 || as.uploads[0].path != tc.wantPath || !bytes.Equal(as.uploads[0].data, img) {
+				t.Fatalf("uploads %+v, want one to %s", as.uploads, tc.wantPath)
+			}
+		})
+	}
+}
+
 func TestRawRejectsOversizedResponses(t *testing.T) {
 	big := bytes.Repeat([]byte{'x'}, maxResponseBytes+1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

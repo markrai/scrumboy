@@ -10,6 +10,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -379,5 +380,66 @@ func TestMCPAssetRoutesOAuthAccessTokens(t *testing.T) {
 
 	if res := m.download(t, assetID, m.apiToken(t, "viewer"), ""); res.status != http.StatusOK {
 		t.Fatalf("API token download: %d", res.status)
+	}
+}
+
+func TestMCPAssetContributorTodoScopedUpload(t *testing.T) {
+	m := newMCPAssetServer(t)
+	contributorID := m.users["contributor"].ID
+	maintainerID := m.users["maintainer"].ID
+	assigned := m.createTodo(t, "Mine", "", &contributorID)
+	unassigned := m.createTodo(t, "Nobody's", "", nil)
+	othersTodo := m.createTodo(t, "Theirs", "", &maintainerID)
+	archived := m.createTodo(t, "Done", "", &contributorID)
+	if _, err := m.st.ArchiveTodosByLocalID(m.ownerCtx(), m.project.ID, []int64{archived.LocalID}, store.ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	onTodo := func(localID int64) string {
+		return m.project.Slug + "?todo=" + strconv.FormatInt(localID, 10)
+	}
+
+	const clientID = "mcp-assets-contributor"
+	m.oauthClient(t, clientID)
+	viewer := m.apiToken(t, "viewer")
+	for i, cred := range []struct{ kind, token string }{
+		{"API token", m.apiToken(t, "contributor")},
+		{"OAuth", m.oauthToken(t, clientID, "contributor", m.mcpResource())},
+	} {
+		t.Run(cred.kind, func(t *testing.T) {
+			png := testPNG(t, 40+i)
+			rows, files := m.assetRows(t), m.assetFiles(t)
+			assetID := m.uploadTo(t, onTodo(assigned.LocalID), cred.token, "", png).assetID(t)
+			if m.assetRows(t) != rows+1 || m.assetFiles(t) != files+1 {
+				t.Fatalf("upload did not persist: rows %d->%d files %d->%d", rows, m.assetRows(t), files, m.assetFiles(t))
+			}
+			var projectID, uploaderID int64
+			if err := m.sqlDB.QueryRow(`SELECT project_id, uploader_user_id FROM project_assets WHERE uuid = ?`, assetID).Scan(&projectID, &uploaderID); err != nil {
+				t.Fatal(err)
+			}
+			if projectID != m.project.ID || uploaderID != contributorID {
+				t.Fatalf("asset row project=%d uploader=%d", projectID, uploaderID)
+			}
+			if res := m.download(t, assetID, viewer, ""); res.status != http.StatusOK || !bytes.Equal(res.body, png) {
+				t.Fatalf("viewer download of contributor upload: %d", res.status)
+			}
+
+			rows, files = m.assetRows(t), m.assetFiles(t)
+			for name, c := range map[string]struct {
+				localID int64
+				want    int
+			}{
+				"unassigned todo":          {unassigned.LocalID, http.StatusForbidden},
+				"todo assigned to another": {othersTodo.LocalID, http.StatusForbidden},
+				"nonexistent todo":         {9999, http.StatusNotFound},
+				"archived own todo":        {archived.LocalID, http.StatusConflict},
+			} {
+				if res := m.uploadTo(t, onTodo(c.localID), cred.token, "", png); res.status != c.want {
+					t.Fatalf("%s: %d, want %d (%s)", name, res.status, c.want, res.body)
+				}
+			}
+			if m.assetRows(t) != rows || m.assetFiles(t) != files {
+				t.Fatal("denied contributor upload left a row or file")
+			}
+		})
 	}
 }

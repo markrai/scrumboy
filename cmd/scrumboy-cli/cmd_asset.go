@@ -203,15 +203,42 @@ func assetGet(a *app, args []string) error {
 	return nil
 }
 
+type todoFlag struct {
+	fs *flag.FlagSet
+	id int64
+}
+
+func (t *todoFlag) bind(fs *flag.FlagSet, usage string) {
+	t.fs = fs
+	fs.Int64Var(&t.id, "todo", 0, usage)
+}
+
+func (t *todoFlag) value() (int64, error) {
+	set := false
+	t.fs.Visit(func(f *flag.Flag) {
+		if f.Name == "todo" {
+			set = true
+		}
+	})
+	if set && t.id <= 0 {
+		return 0, usagef("--todo must be a positive todo id")
+	}
+	return t.id, nil
+}
+
 func assetPut(a *app, args []string) error {
-	var todo int64
+	var tf todoFlag
 	c, err := a.parse("asset put", "asset put <file> -p slug [--todo N]", args, func(fs *flag.FlagSet) {
-		fs.Int64Var(&todo, "todo", 0, "attach to this todo's local id (needed for contributors)")
+		tf.bind(fs, "local id of a todo you may edit, to authorize the upload (needed for contributors); the image is not inserted into the todo")
 	})
 	if err != nil {
 		return err
 	}
 	if err := c.wantPos(1, "an image file"); err != nil {
+		return err
+	}
+	todo, err := tf.value()
+	if err != nil {
 		return err
 	}
 	slug, err := c.requireProject()
@@ -238,14 +265,18 @@ func assetPut(a *app, args []string) error {
 }
 
 func assetCopy(a *app, args []string) error {
-	var todo int64
+	var tf todoFlag
 	c, err := a.parse("asset copy", "asset copy <id|url> -p slug [--todo N]", args, func(fs *flag.FlagSet) {
-		fs.Int64Var(&todo, "todo", 0, "attach to this todo's local id in the target project")
+		tf.bind(fs, "local id of a todo you may edit in the target project, to authorize the upload (needed for contributors); the image is not inserted into the todo")
 	})
 	if err != nil {
 		return err
 	}
 	if err := c.wantPos(1, "an asset id or URL"); err != nil {
+		return err
+	}
+	todo, err := tf.value()
+	if err != nil {
 		return err
 	}
 	slug, err := c.requireProject()

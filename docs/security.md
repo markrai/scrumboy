@@ -210,7 +210,7 @@ This is **separate** from human OIDC login. Scrumboy runs an OAuth 2.1 **authori
 | Protected resource | Canonical resource URL `<origin>/mcp/rpc` (`publicorigin` validation)                                                 |
 | Tokens             | Opaque secrets from `crypto/rand`; **SHA-256** stored; access ~1h; refresh ~30d with **rotation** and reuse detection |
 | Auth codes         | Short TTL (~60s), single-use, resource-bound                                                                          |
-| Where OAuth works  | Bearer on `/mcp/rpc` **only**                                                                                         |
+| Where OAuth works  | Bearer on `/mcp/rpc`, and on the bearer-only image routes `/mcp/assets/*` with the same token (bound to `/mcp/rpc`; not a separate protected resource) |
 | Where it does not  | Legacy `/mcp` and Agora accept session cookie or static `sb_…` tokens—not OAuth access tokens                         |
 | DCR                | `POST /oauth/register`, rate-limited; HTTPS redirect URIs (loopback HTTP allowed)                                     |
 | Token HTTP         | `Cache-Control: no-store` on token responses                                                                          |
@@ -233,6 +233,7 @@ OAuth access tokens are **not** interchangeable with human session cookies or st
 | Browser SPA / `/api/*` | Session cookie + `X-Scrumboy` on mutations            |
 | Legacy `/mcp`          | Cookie + `X-Scrumboy` for POST, or `Authorization: Bearer sb_…` |
 | `/mcp/rpc`             | Cookie, `sb_…`, or OAuth Bearer (resource-bound)      |
+| `/mcp/assets/*`        | `sb_…` or OAuth Bearer bound to `/mcp/rpc` only; the session cookie is never used; project roles apply as on `/api` |
 | Agora                  | Cookie or static token paths as implemented—not OAuth |
 
 
@@ -242,7 +243,7 @@ Anonymous and temporary boards (`expires_at` set) use process-local multi-budget
 
 `SCRUMBOY_TRUST_PROXY` and `SCRUMBOY_PUBLIC_BASE_URL` affect client IP for limits and public origin / MCP resource URLs (`internal/publicorigin`). Misconfiguration can break OAuth discovery or weaken IP-based limits.
 
-**Note images** ([inline-images.md](inline-images.md), on by default): uploads are authorized against the story's edit scope before any body bytes are read, and again when the row is inserted. Request bodies are capped with `MaxBytesReader` and parsed as a stream, so no multipart temp files are created. Concurrency is bounded (8 bodies, 2 decodes), uploads are rate-limited per user, and byte budgets cap storage. Only PNG/JPEG/GIF are accepted, identified from their bytes, structurally validated and fully decoded. SVG, polyglots and trailing data are rejected, and EXIF/GPS/XMP/text metadata is stripped losslessly. UUIDs are minted by the server and never taken from clients or archives. Image responses carry `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Cross-Origin-Resource-Policy: same-origin` and `Cache-Control: private, no-cache`, and every denial is a 404. In the browser, images are created only after sanitization, for `/api/assets/{uuid}` destinations; the DOMPurify allowlist is unchanged. `.sbz` archives are read with absolute size and entry limits, exact entry-name matching and per-image checksum verification.
+**Note images** ([inline-images.md](inline-images.md), on by default): uploads are authorized against the story's edit scope before any body bytes are read, and again when the row is inserted. Request bodies are capped with `MaxBytesReader` and parsed as a stream, so no multipart temp files are created. Concurrency is bounded (8 bodies, 2 decodes), uploads are rate-limited per user, and byte budgets cap storage. Only PNG/JPEG/GIF are accepted, identified from their bytes, structurally validated and fully decoded. SVG, polyglots and trailing data are rejected, and EXIF/GPS/XMP/text metadata is stripped losslessly. UUIDs are minted by the server and never taken from clients or archives. Image responses carry `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox` and `Cross-Origin-Resource-Policy: same-origin`, with `Cache-Control: private, no-cache` on the browser route `/api/assets/{uuid}` and `no-store` on the bearer route `/mcp/assets/{uuid}`. Download denials and unknown assets are always 404. An upload to a project the requester cannot see is 404; on a project they can see, a role or todo that does not allow uploading is 403. The bearer-only `/mcp/assets/*` routes answer a missing or invalid credential with 401. In the browser, images are created only after sanitization, for `/api/assets/{uuid}` destinations; the DOMPurify allowlist is unchanged. `.sbz` archives are read with absolute size and entry limits, exact entry-name matching and per-image checksum verification.
 
 This section is not a full API reference—see `[API.md](../API.md)` and `[docs/mcp.md](mcp.md)`.
 
