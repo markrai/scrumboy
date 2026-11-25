@@ -2,6 +2,22 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## [3.44.1] - 2026-11-25
+
+### Fixed
+
+- **Trello label import (PR #385)** - Fixed board imports failing on labels containing unsupported characters, excessive length, or duplicate names. Label names are adjusted when necessary while preserving distinct labels, colors and card associations. Import previews now warn when label names require adjustment.
+
+## [3.44.0] - 2026-11-25
+
+### Added
+
+- **CLI inline-image commands (PR #380)** - `scrumboy-cli asset get|put|copy` download, upload and copy inline images between projects (for example to move a todo to another board). They use new bearer-only `GET /mcp/assets/{uuid}` and `POST /mcp/assets/{projectSlug}` routes that reuse the existing image access rules, limits and rate limits; the OAuth token stays bound to the `/mcp/rpc` resource and the session cookie is not accepted on them. Downloads are sent with `Cache-Control: no-store`. `--todo N` authorizes a Contributor's upload against a todo they may edit; uploads never change a todo body, and an image no body embeds is removed after about seven days.
+
+### Security
+
+- **OAuth grants now cover inline images** - OAuth access tokens carry no scopes, so an MCP client already authorized for `/mcp/rpc` can also download and upload images on `/mcp/assets/*` for every project the user can access. Revoke a client's grant to remove that access.
+
 ## [3.43.1] - 2026-11-24
 
 ### Fixed
