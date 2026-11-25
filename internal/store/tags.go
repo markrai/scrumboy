@@ -14,14 +14,15 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-const maxTagRunes = 32
+// MaxTagRunes is the maximum number of Unicode code points in a canonical tag name.
+const MaxTagRunes = 32
 
 // CanonicalizeTag returns the storage and identity form of a tag name.
 //
 // The contract is: valid UTF-8; surrounding Unicode whitespace removed; NFC;
 // deterministic Unicode lowercase; NFC again; Unicode whitespace runs changed to
 // one ASCII hyphen; repeated ASCII hyphens collapsed; and edge hyphens removed.
-// The result may contain at most maxTagRunes Unicode code points. Letters and
+// The result may contain at most MaxTagRunes Unicode code points. Letters and
 // numbers are accepted, and combining marks are accepted only after a letter or
 // number (possibly after another combining mark in that same segment).
 //
@@ -72,7 +73,7 @@ func CanonicalizeTag(name string) string {
 	}
 
 	s = b.String()
-	if s == "" || utf8.RuneCountInString(s) > maxTagRunes {
+	if s == "" || utf8.RuneCountInString(s) > MaxTagRunes {
 		return ""
 	}
 	return s
@@ -411,6 +412,28 @@ func (s *Store) listTagCounts(ctx context.Context, projectID int64, viewerUserID
 	return s.listTagCountsGrouped(ctx, projectID, viewerUserID, viewerRole)
 }
 
+func (s *Store) applyGuestTagPermissions(ctx context.Context, viewer *int64, tags []TagCount) ([]TagCount, error) {
+	if viewer == nil {
+		return tags, nil
+	}
+	for _, tag := range tags {
+		if !tag.CanDeleteMine {
+			continue
+		}
+		guest, err := isGuest(ctx, s.db, *viewer)
+		if err != nil {
+			return nil, err
+		}
+		if guest {
+			for i := range tags {
+				tags[i].CanDeleteMine = false
+			}
+		}
+		break
+	}
+	return tags, nil
+}
+
 // activeBoardTagCounts overlays board-payload usage counts without changing the
 // historical tag catalog returned by ListTagCounts and tag-management APIs.
 func (s *Store) activeBoardTagCounts(ctx context.Context, projectID int64) (map[string]int, error) {
@@ -593,7 +616,7 @@ ORDER BY g.id`, args...)
 			}
 			return out[i].Name < out[j].Name
 		})
-		return out, nil
+		return s.applyGuestTagPermissions(ctx, viewerUserID, out)
 	}
 
 	grouped := make(map[string][]tagRowMeta)
@@ -666,7 +689,7 @@ ORDER BY g.id`, args...)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
+	return s.applyGuestTagPermissions(ctx, viewerUserID, out)
 }
 
 // selectedBoardTagRowIDs resolves all selected-tag metadata exceptions in one
@@ -829,7 +852,7 @@ ORDER BY name`, projectID, projectID, projectID)
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows tag counts: %w", err)
 	}
-	return out, nil
+	return s.applyGuestTagPermissions(ctx, viewerUserID, out)
 }
 
 // listTagCountsGrouped returns durable-project tags collapsed to one entry per
@@ -993,7 +1016,7 @@ ORDER BY id`, projectID, projectID)
 	}
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
+	return s.applyGuestTagPermissions(ctx, viewerUserID, out)
 }
 
 // pickGroupedTagColor resolves the color for a grouped tag using deterministic,
@@ -1823,6 +1846,14 @@ func (s *Store) DeleteMyTagByID(ctx context.Context, userID, tagID int64) ([]int
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	guest, err := isGuest(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if guest {
+		return nil, ErrForbidden
+	}
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM todo_tags WHERE tag_id = ?`, tagID); err != nil {
 		return nil, fmt.Errorf("delete todo_tags: %w", err)
 	}
@@ -1909,6 +1940,14 @@ ORDER BY g.id`, projectID, userID)
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	guest, err := isGuest(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if guest {
+		return nil, ErrForbidden
+	}
+
 	for _, tagID := range tagIDs {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM todo_tags WHERE tag_id = ?`, tagID); err != nil {
 			return nil, fmt.Errorf("delete todo_tags: %w", err)

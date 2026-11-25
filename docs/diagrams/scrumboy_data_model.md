@@ -1,81 +1,113 @@
 # Data model and persistence
 
-SQLite is the primary store for board, auth, and domain state. Uploaded wallpapers are file-backed under `DATA_DIR/user-wallpapers/` (preference JSON stays in SQLite). Note images are immutable files under `DATA_DIR/assets/` with metadata in `project_assets` and note references in `todo_assets` (derived from note bodies on every write; `project_assets.unreferenced_at` is NULL exactly while a story embeds the image). `internal/store` owns domain rules; `internal/migrate` applies numbered SQL files discovered from the embedded migrations tree (no fixed upper bound).
+SQLite is the authoritative store for board, identity, permissions, integration metadata and durable work queues. File-backed state under `DATA_DIR` holds uploaded images, wallpapers, and the optional guided GitHub credential bundle.
 
 ```mermaid
 flowchart TB
   SQL[(SQLite)]
-  Files["user-wallpapers JPEGs"]
   Store[internal/store]
-  HTTP[httpapi wallpaper routes]
+  Files["DATA_DIR files"]
 
-  subgraph domains [Store domains]
-    Proj[projects memberships]
-    Todo[todos links tags]
-    Board[board lanes workflows]
-    Priority[project priority tiers and todo priority keys]
-    Sprint[sprints burndown]
-    AuthDom[users sessions api tokens oidc]
-    OAuthDom[oauth_clients codes access refresh]
-    FirstPwd[first_password_grants]
-    Prefs[user_preferences]
-    OrgSet[org_settings]
-    WallDom[wall notes edges]
-    Audit[audit trail]
-    WHook[webhook subscriptions]
-    PushDom[push subscriptions]
+  subgraph core [Projects and stories]
+    Projects[projects project_members workflow columns]
+    Todos[todos tags links assignees sprints priorities]
+    Archive[todo archived_at due_at custom fields]
+    Public[public-board preferences]
+  end
+
+  subgraph visual [Visual content]
+    Wall[wall notes edges story placements wall drawings]
+    Notes[story drawings and notes ink]
+    Assets[project_assets and todo_assets]
+  end
+
+  subgraph identity [Identity and authorization]
+    Users[users sessions API tokens service accounts]
+    OIDC[OIDC identities mobile handoff]
+    OAuth[OAuth clients codes access refresh]
+    Prefs[user_preferences org_settings]
+    Audit[audit_events instance audit]
+  end
+
+  subgraph integrations [Delivery and integrations]
+    OutWH[webhooks durable webhook deliveries]
+    GHConn[integration connections resources project resources]
+    GHRefs[integration todo resources and GitHub items]
+    GHInbox[GitHub inbound and automation event inboxes]
+    Auto[integration automation rules matches actions audit]
+  end
+
+  subgraph agenda [Agenda and calendar]
+    Cal[project calendar sources snapshots agenda settings]
   end
 
   Store --> SQL
-  Store --> domains
-  HTTP --> Files
-  HTTP --> SQL
+  SQL --> core
+  SQL --> visual
+  SQL --> identity
+  SQL --> integrations
+  SQL --> agenda
+  Files --> Assets
 ```
 
-Wallpaper preference (`user_preferences` key `wallpaper`) records mode/color/revision in SQLite; the normalized JPEG for image mode lives only on disk at `DATA_DIR/user-wallpapers/<user-id>.jpg`. Preference rows carry a `provenance` column (`legacy` / `org_default` / user-written) so future org bulk-apply can skip customized values.
+## Integration relationships
 
-`org_settings` holds org-wide admin defaults (e.g. seeded `emailNotifications`, default board for new users). Seeds apply at user-creation time only and never rewrite existing preference or membership rows.
+```mermaid
+erDiagram
+  PROJECTS ||--o{ INTEGRATION_PROJECT_RESOURCES : allows
+  INTEGRATION_CONNECTIONS ||--o{ INTEGRATION_RESOURCES : owns
+  INTEGRATION_RESOURCES ||--o{ INTEGRATION_PROJECT_RESOURCES : attached_to
+  TODOS ||--o{ INTEGRATION_TODO_RESOURCES : references
+  INTEGRATION_RESOURCES ||--o{ INTEGRATION_TODO_RESOURCES : repository_ref
+  TODOS ||--o{ INTEGRATION_TODO_GITHUB_ITEMS : references
+  INTEGRATION_RESOURCES ||--o{ INTEGRATION_TODO_GITHUB_ITEMS : scopes
+  PROJECTS ||--o{ INTEGRATION_AUTOMATION_RULES : configures
+  INTEGRATION_RESOURCES ||--o{ INTEGRATION_AUTOMATION_RULES : targets
+  INTEGRATION_GITHUB_AUTOMATION_EVENTS ||--o{ INTEGRATION_GITHUB_AUTOMATION_MATCHES : produces
+  INTEGRATION_AUTOMATION_RULES ||--o{ INTEGRATION_GITHUB_AUTOMATION_MATCHES : matches
+  INTEGRATION_GITHUB_AUTOMATION_EVENTS ||--o{ INTEGRATION_AUTOMATION_ACTIONS : queues
+  INTEGRATION_AUTOMATION_ACTIONS ||--o{ INTEGRATION_AUTOMATION_ACTION_AUDIT : transitions
+```
 
-OAuth authorization codes and access/refresh tokens (after migration 057) require a non-empty `resource` (canonical MCP audience `<origin>/mcp/rpc`). `oauth_clients` has no resource column. `first_password_grants` references `users(id)` and `sessions(token_hash)`. Expired OAuth artifacts are cleaned by hourly `store.DeleteExpiredOAuthArtifacts`.
+`integration_resources.availability` is independent of repository identity. A complete GitHub scan can mark a repository `unavailable` while keeping its stable provider ID, project associations and existing story references.
+
+The inbound GitHub tables store delivery metadata and payload digests, not raw webhook JSON or provider credentials. Guided App private keys and webhook secrets are outside SQLite in the protected credential bundle.
 
 ## Migration pipeline
 
 ```mermaid
 sequenceDiagram
-  participant Main as main.go
+  participant Main as cmd/scrumboy
   participant Mig as migrate.Apply
   participant DB as SQLite
 
-  Main->>Mig: open db path from DATA_DIR
-  Mig->>DB: ensure schema_migrations table
-  Note over Mig: knownVersions reads embedded migrations sql sorted no fixed upper bound
-  loop each discovered NNN sql not in schema_migrations
-    Mig->>DB: applyOne version
+  Main->>Mig: open DB and enumerate embedded NNN migrations
+  Mig->>DB: ensure schema_migrations
+  loop each unapplied migration in numeric order
+    Mig->>DB: apply transactionally
+    Mig->>DB: record migration filename
   end
-  Main->>Main: store.New with optional 2FA encryption key
+  Main->>Main: initialize store and runtime services
 ```
 
-As of this tree the highest embedded file is
-`064_add_todo_created_by_user_id.sql`. Migration 061 adds the reversible
-`projects.sprints_enabled` capability, 062 creates and seeds
-`project_priorities`, 063 adds nullable `todos.priority_key`, and 064 adds
-nullable `todos.created_by_user_id`. New files
-under `internal/migrate/migrations/` are applied automatically; do not encode a
-fixed upper bound in the migration runner.
+As of v3.43.0 the embedded schema reaches **migration 100**. Important later groups include:
 
-`project_priorities` belongs to one project and has an immutable project-local
-`key`, editable `name`/`color`, and contiguous `position`. A todo's nullable
-`priority_key` is valid only when the same project owns that tier. Supported
-CRUD and import paths enforce this membership invariant; tier deletion is
-blocked while in use.
+| Range | Major additions |
+|------|------------------|
+| 065-070 | Agenda/calendar sources, snapshots and mobile OIDC handoff |
+| 071-079 | Story archival, service-token groundwork, Wall story placement, public boards, due dates, inline assets, custom fields |
+| 080-086 | Service accounts, instance auditing, webhook provenance and bounded durable outbound delivery |
+| 087-089 | Story drawings, Wall drawings and Notes ink |
+| 090-091 | Guest system-role membership restrictions and temporary-board semantics |
+| 092-096 | Provider-neutral integration foundation, story repository links, GitHub inbound inbox, resource availability, structured GitHub issue/PR references |
+| 097-100 | Automation rules, GitHub automation events/matches, durable actions/audit, single-toggle enable semantics |
 
-`todos.created_by_user_id` records immutable historical attribution at create
-time when an authenticated actor exists. It is not a membership or
-authorization grant. Removing a creator from a project leaves the attribution
-intact; deleting the user sets it to `NULL`. `NULL` also represents
-unauthenticated creation and rows that predate migration 064. The todo dialog
-shows the creator only when that identifier currently resolves through the
-board's authorized member projection; storage can therefore retain attribution
-that the UI intentionally does not display.
+Migration discovery has no hard-coded upper bound. PR #366 retains alias handling for earlier staging-only integration migration filenames so a previously exercised test database does not replay the renumbered 092-100 series.
 
-Authorization checks live in store methods (`CheckProjectRole`, system roles), not only in HTTP handlers.
+## Authorization facts
+
+- Store methods, not only HTTP handlers, enforce system/project role boundaries.
+- System roles and project roles are separate.
+- Historical attribution fields such as `created_by_user_id` do not grant access.
+- Public-board reads use isolated projections and do not expose private integration management surfaces.
+- Service-account provenance and Guest role state do not silently expand project authority.

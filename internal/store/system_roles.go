@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 // requireOwner ensures the user has the 'owner' system role.
@@ -94,4 +95,96 @@ func countOwnersTx(ctx context.Context, tx *sql.Tx) (int, error) {
 		return 0, fmt.Errorf("count owners: %w", err)
 	}
 	return n, nil
+}
+
+func (u User) CanCreateBoards() bool {
+	return !u.IsService && u.SystemRole != SystemRoleGuest
+}
+
+func isGuest(ctx context.Context, q sqlRowQueryer, userID int64) (bool, error) {
+	var guest bool
+	if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND system_role = 'guest')`, userID).Scan(&guest); err != nil {
+		return false, fmt.Errorf("check guest role: %w", err)
+	}
+	return guest, nil
+}
+
+func requireBoardCreation(ctx context.Context, q sqlRowQueryer) error {
+	userID, ok := UserIDFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	var role string
+	var service bool
+	err := q.QueryRowContext(ctx, `SELECT system_role, is_service <> 0 FROM users WHERE id = ?`, userID).Scan(&role, &service)
+	if err == sql.ErrNoRows {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("check board creation permission: %w", err)
+	}
+	if isService, ok := ServiceIdentityFromContext(ctx, userID); ok {
+		service = service || isService
+	}
+	actor := User{SystemRole: effectiveSystemRole(role, service), IsService: service}
+	if actor.CanCreateBoards() {
+		return nil
+	}
+	if service {
+		return ErrServiceAccountRestricted
+	}
+	return ErrForbidden
+}
+
+func validateGuestMembership(ctx context.Context, tx *sql.Tx, projectID, userID int64, role ProjectRole) error {
+	guest, err := isGuest(ctx, tx, userID)
+	if err != nil || !guest {
+		return err
+	}
+	var temporary bool
+	if err := tx.QueryRowContext(ctx, `SELECT expires_at IS NOT NULL FROM projects WHERE id = ?`, projectID).Scan(&temporary); err != nil {
+		return fmt.Errorf("check guest membership project: %w", err)
+	}
+	if !temporary && role != RoleViewer {
+		return fmt.Errorf("%w: guests can only be viewers on regular boards", ErrValidation)
+	}
+	return nil
+}
+
+func validateGuestRoleChange(ctx context.Context, tx *sql.Tx, requesterID, userID int64) error {
+	rows, err := tx.QueryContext(ctx, `
+SELECT CASE WHEN own.user_id IS NOT NULL THEN p.name END, pm.role
+FROM project_members pm
+JOIN projects p ON p.id = pm.project_id
+LEFT JOIN project_members own ON own.project_id = pm.project_id AND own.user_id = ?
+WHERE pm.user_id = ? AND pm.role <> 'viewer' AND p.expires_at IS NULL
+ORDER BY p.name, p.id`, requesterID, userID)
+	if err != nil {
+		return fmt.Errorf("check guest role memberships: %w", err)
+	}
+	defer rows.Close()
+	var boards []string
+	hidden := 0
+	for rows.Next() {
+		var name sql.NullString
+		var role string
+		if err := rows.Scan(&name, &role); err != nil {
+			return fmt.Errorf("scan guest role membership: %w", err)
+		}
+		if !name.Valid {
+			hidden++
+			continue
+		}
+		boards = append(boards, fmt.Sprintf("%s (%s): change to Viewer or remove membership", name.String, role))
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("list guest role memberships: %w", err)
+	}
+	if hidden > 0 {
+		boards = append(boards, fmt.Sprintf("additional memberships on boards outside your membership: %d", hidden))
+	}
+	if len(boards) > 0 {
+		return fmt.Errorf("%w: resolve these board memberships before assigning Guest: %s", ErrConflict, strings.Join(boards, ", "))
+	}
+	return nil
 }

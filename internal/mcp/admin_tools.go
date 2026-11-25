@@ -39,12 +39,12 @@ func adminUserToItem(u store.User) adminUserItem {
 // parseAdminUpdatableSystemRole validates the role a caller of
 // admin_updateUserRole may set. Mirrors handleAdminUsersUpdateRole in
 // internal/httpapi/routing_admin.go, which deliberately only allows
-// "admin" or "user" via the API -- promotion to "owner" is not exposed
+// "admin", "user", or "guest" via the API -- promotion to "owner" is not exposed
 // through this route, even though the store-level UpdateUserRole would
 // otherwise accept it. Pure function so it is unit testable without a store.
 func parseAdminUpdatableSystemRole(role string) (store.SystemRole, *adapterError) {
-	if role != "admin" && role != "user" {
-		return "", newAdapterError(http.StatusBadRequest, CodeValidationError, "role must be 'admin' or 'user'", map[string]any{"field": "role"})
+	if role != "admin" && role != "user" && role != "guest" {
+		return "", newAdapterError(http.StatusBadRequest, CodeValidationError, "role must be 'admin', 'user', or 'guest'", map[string]any{"field": "role"})
 	}
 	parsed, ok := store.ParseSystemRole(role)
 	if !ok {

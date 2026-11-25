@@ -98,6 +98,10 @@ type storeAPI interface {
 	CreateWebhook(ctx context.Context, actorUserID int64, input store.CreateWebhookInput) (store.Webhook, error)
 	ListProjectWebhooks(ctx context.Context, actorUserID, projectID int64, limit int, beforeID int64) ([]store.Webhook, *int64, error)
 	DeleteProjectWebhook(ctx context.Context, actorUserID, projectID, webhookID int64) error
+	ListProjectIntegrationResources(ctx context.Context, actorID, projectID int64) ([]store.IntegrationResource, error)
+	ListTodoIntegrationResources(ctx context.Context, actorID, projectID, localID int64) ([]store.IntegrationResource, error)
+	LinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
+	UnlinkTodoIntegrationResource(ctx context.Context, actorID, projectID, localID, resourceID int64) error
 	GetUser(ctx context.Context, userID int64) (store.User, error)
 	useradminapp.UserRoleMutationStore
 	useradminapp.UserDeletionStore
@@ -288,6 +292,28 @@ func (a *Adapter) BindCreatorNotificationRequestPublisher(publisher todoapp.Crea
 	}
 	a.configureTodoMutationServices(publisher)
 	a.creatorRequestsBound = true
+}
+
+// AuthenticateBearerRequest resolves the actor behind an Authorization: Bearer credential (static
+// API token or OAuth access token bound to the MCP resource) for routes under /mcp/ that are
+// served outside the adapter, such as /mcp/assets/*. The session cookie is deliberately never
+// consulted, so those routes cannot be driven cross-site with ambient browser credentials.
+// ok is false (with a nil error) for a missing or invalid credential; err reports a store failure.
+func (a *Adapter) AuthenticateBearerRequest(r *http.Request) (ctx context.Context, ok bool, err error) {
+	if a.mode == "anonymous" {
+		return r.Context(), false, nil
+	}
+	if isBearer, _ := parseBearerAuthorization(r.Header.Get("Authorization")); !isBearer {
+		return r.Context(), false, nil
+	}
+	res := a.resolveRequestAuth(r, true)
+	if res.Err != nil {
+		return r.Context(), false, res.Err
+	}
+	if res.BearerAuthFailed || !res.Authenticated || res.SessionCookie {
+		return r.Context(), false, nil
+	}
+	return res.Ctx, true, nil
 }
 
 // BindMutationAdmitter installs optional expiring-board mutation admission.
@@ -507,6 +533,10 @@ func (a *Adapter) implementedTools() []string {
 		"todos_linksList",
 		"todos_linkAdd",
 		"todos_linkRemove",
+		"integrations_resourcesList",
+		"todos_externalLinksList",
+		"todos_externalLinkAdd",
+		"todos_externalLinkRemove",
 		"sprints_list",
 		"sprints_get",
 		"sprints_getActive",

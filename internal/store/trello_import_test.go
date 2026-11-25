@@ -3,8 +3,11 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -177,6 +180,147 @@ func TestImportTrelloProject_RollsBackOnMetadataMismatch(t *testing.T) {
 	}
 	if todoCount != 0 {
 		t.Fatalf("expected rollback to leave 0 todos, got %d", todoCount)
+	}
+}
+
+func TestImportTrelloProject_PreservesProblematicLabelsAndCardAssociations(t *testing.T) {
+	st, sqlDB, cleanup := newTrelloTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "trello-labels@example.com", "password123", "Trello Labels")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	userCtx := store.WithUserID(ctx, user.ID)
+	longPrefix := strings.Repeat("a", store.MaxTagRunes)
+	board := trelloimport.Board{
+		ID:   "problematic-labels",
+		Name: "Problematic Trello Labels",
+		Lists: []trelloimport.List{
+			{ID: "doing", Name: "Doing", Pos: 10},
+			{ID: "done", Name: "Done", Pos: 20},
+		},
+		Labels: []trelloimport.Label{
+			{ID: "punctuation", Name: "Bug/Fix", Color: "blue"},
+			{ID: "modern-fallback", Color: "green_light"},
+			{ID: "bug-one", Name: "Bug", Color: "red"},
+			{ID: "bug-two", Name: "Bug", Color: "yellow"},
+			{ID: "genuine-suffix", Name: "Bug 2", Color: "green"},
+			{ID: "long-one", Name: longPrefix + "x", Color: "orange"},
+			{ID: "long-two", Name: longPrefix + "y", Color: "purple"},
+			{ID: "nfc", Name: "Café", Color: "pink"},
+			{ID: "nfd", Name: "Cafe\u0301", Color: "lime"},
+		},
+		Cards: []trelloimport.Card{
+			{ID: "card-a", Name: "Card A", IDList: "doing", Pos: 10, IDLabels: []string{"punctuation", "bug-one", "modern-fallback"}},
+			{ID: "card-b", Name: "Card B", IDList: "doing", Pos: 20, IDLabels: []string{"bug-two", "genuine-suffix", "long-one", "nfc"}},
+			{ID: "card-c", Name: "Card C", IDList: "done", Pos: 10, IDLabels: []string{"long-two", "nfd", "punctuation"}},
+		},
+	}
+	raw, err := json.Marshal(board)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := trelloimport.BuildImportBundle(raw, time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildImportBundle: %v", err)
+	}
+	if len(bundle.Preview.HardErrors) != 0 {
+		t.Fatalf("preview hard errors: %v", bundle.Preview.HardErrors)
+	}
+
+	project, err := st.ImportTrelloProject(userCtx, bundle.ExportData, bundle.ProjectImportMetadata, bundle.TodoImportMetadataByLocalID, store.ModeFull)
+	if err != nil {
+		t.Fatalf("ImportTrelloProject: %v", err)
+	}
+	if project.Name != board.Name || project.ID == 0 {
+		t.Fatalf("imported project = %+v", project)
+	}
+
+	var projectCount, todoCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM projects WHERE id = ?`, project.ID).Scan(&projectCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM todos WHERE project_id = ?`, project.ID).Scan(&todoCount); err != nil {
+		t.Fatal(err)
+	}
+	if projectCount != 1 || todoCount != len(board.Cards) {
+		t.Fatalf("project count=%d todo count=%d", projectCount, todoCount)
+	}
+
+	expectedColors := make(map[string]string, len(board.Labels))
+	for _, tag := range bundle.ExportData.Projects[0].Tags {
+		canonical := store.CanonicalizeTag(tag.Name)
+		if canonical == "" || tag.Color == nil {
+			t.Fatalf("invalid expected tag: %+v", tag)
+		}
+		expectedColors[canonical] = *tag.Color
+	}
+	rows, err := sqlDB.Query(`
+SELECT tg.name, COALESCE(utc.color, '')
+FROM tags tg
+JOIN project_tags pt ON pt.tag_id = tg.id
+LEFT JOIN user_tag_colors utc ON utc.tag_id = tg.id AND utc.user_id = ?
+WHERE pt.project_id = ?
+ORDER BY tg.name`, user.ID, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedColors := make(map[string]string, len(board.Labels))
+	for rows.Next() {
+		var name, color string
+		if err := rows.Scan(&name, &color); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		if canonical := store.CanonicalizeTag(name); canonical == "" || canonical != name {
+			rows.Close()
+			t.Fatalf("stored invalid or noncanonical tag %q", name)
+		}
+		storedColors[name] = color
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(storedColors, expectedColors) {
+		t.Fatalf("stored tag colors = %#v, want %#v", storedColors, expectedColors)
+	}
+	if len(storedColors) != len(board.Labels) {
+		t.Fatalf("stored %d distinct tags for %d source labels", len(storedColors), len(board.Labels))
+	}
+
+	expectedTodoTags := make(map[string][]string, len(board.Cards))
+	for _, todo := range bundle.ExportData.Projects[0].Todos {
+		for _, name := range todo.Tags {
+			expectedTodoTags[todo.Title] = append(expectedTodoTags[todo.Title], store.CanonicalizeTag(name))
+		}
+		sort.Strings(expectedTodoTags[todo.Title])
+	}
+	rows, err = sqlDB.Query(`
+SELECT td.title, tg.name
+FROM todos td
+JOIN todo_tags tt ON tt.todo_id = td.id
+JOIN tags tg ON tg.id = tt.tag_id
+WHERE td.project_id = ?
+ORDER BY td.title, tg.name`, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedTodoTags := make(map[string][]string, len(board.Cards))
+	for rows.Next() {
+		var title, name string
+		if err := rows.Scan(&title, &name); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		storedTodoTags[title] = append(storedTodoTags[title], name)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(storedTodoTags, expectedTodoTags) {
+		t.Fatalf("stored todo tags = %#v, want %#v", storedTodoTags, expectedTodoTags)
 	}
 }
 

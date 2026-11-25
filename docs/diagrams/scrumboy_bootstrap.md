@@ -1,6 +1,6 @@
 # Application bootstrap
 
-Startup sequence in `cmd/scrumboy/main.go`.
+Startup in `cmd/scrumboy/main.go` builds persistence and security prerequisites before opening the HTTP listener.
 
 ```mermaid
 flowchart LR
@@ -9,49 +9,77 @@ flowchart LR
   Mig[migrate.Apply]
   Key[ResolveStartupEncryptionKey]
   Store[store.New]
-  Color[BackfillDominantColors]
-  OIDC[oidc.New optional]
+  Assets[asset stores and janitor]
+  OIDC[optional OIDC]
+  PublicOrigin[publicorigin resolver]
+  GitHub[prepareGitHub]
   MCP[mcp.New]
-  Agora[agora.New]
-  Srv[httpapi.NewServer]
-  MailQ[newMailQueue always]
-  MailW[newMailWorker if SMTPConfigured]
-  Listen[http.Server Listen TLS optional]
+  Server[httpapi.NewServer]
+  Publishers[wire lifecycle publishers]
+  Listen[HTTP or HTTPS listen]
 
-  Env --> DB --> Mig --> Key --> Store --> Color
-  Color --> OIDC
-  OIDC --> MCP --> Agora --> Srv --> Listen
-  Srv --> MailQ
-  MailQ -. when SMTPConfigured .-> MailW
+  Env --> DB --> Mig --> Key --> Store
+  Store --> Assets
+  Store --> OIDC
+  OIDC --> PublicOrigin
+  PublicOrigin --> GitHub
+  GitHub --> MCP --> Server --> Publishers --> Listen
 ```
 
-`ResolveStartupEncryptionKey` runs after migrations and before `store.New`. If encrypted security data already exists (TOTP secrets and/or encrypted calendar feed URLs), an invalid or missing `SCRUMBOY_ENCRYPTION_KEY` fails startup. On a fresh database with no encrypted data, an invalid key is logged and ignored (2FA setup, password-reset encryption, and calendar URL encryption stay disabled until a valid key is configured).
-
-`httpapi.NewServer` always creates `newMailQueue`. If `SMTPConfigured(host, port, from)`, it builds `mailer.New`, `newMailWorker`, and starts `mWorker.Run(mailCtx)`.
-
-Shutdown (`main.go`): `http.Server.Shutdown` then `srv.Close(closeCtx)`. `Server.Close` seals webhook and mail queues, begins worker shutdown, cancels accept loops, and waits on `webhookDone` / `mailDone` (bounded by context).
-
-## Background work
+`prepareGitHub` has three paths:
 
 ```mermaid
 flowchart TB
-  Hourly[Hourly ticker main.go]
-  Hourly --> Expire[DeleteExpiredProjects temp boards]
-  Hourly --> OAuthClean[DeleteExpiredOAuthArtifacts]
-  Hourly --> Wal[PRAGMA wal_checkpoint TRUNCATE]
+  Start[prepareGitHub]
+  Manual{manual App ID or PEM configured?}
+  Saved{protected guided bundle exists?}
+  Origin{Full Mode and canonical HTTPS public origin?}
 
-  Fanout[eventbus fanout consumers]
-  Fanout --> SSE[sse bridge to Hub]
-  Fanout --> WH[webhook dispatcher queue]
-  Fanout --> PushN[push notifier todo assigned]
+  Start --> Manual
+  Manual -->|yes| ManualProvider[load operator PEM and optional manual webhook secret]
+  Manual -->|no| Saved
+  Saved -->|yes| Restore[validate bundle permissions and restore provider plus receiver]
+  Saved -->|no| Origin
+  Origin -->|yes| Manifest[create Owner-only Manifest enrollment service]
+  Origin -->|no| Disabled[GitHub integration not configured]
 
-  WH --> Worker[webhook worker goroutine]
-  MailQ2[mail queue]
-  MailQ2 --> MailWorker[mail worker goroutine]
+  Manifest --> Save[callback saves protected bundle]
+  Save --> Hot[Server.ActivateGitHub hot activation]
 ```
 
-Hourly order in `main.go`: `DeleteExpiredProjects` → `DeleteExpiredOAuthArtifacts` → WAL checkpoint.
+Manual App settings take precedence over a saved guided bundle without rewriting it. Guided credentials must pass platform privacy validation before startup continues.
 
-`NewServer` wires the SSE bridge, webhook queue plus worker, mail queue (and mail worker when SMTP is configured), and push notifier into `eventbus.NewFanout` before serving traffic. After `NewServer`, `main.go` calls `st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)` to close the todo-assigned → eventbus loop.
+## Server workers
 
-`httpapi.NewServer` also receives feature flags from config: `WallEnabled`, `MarkdownNotesEnabled`, and `MermaidNotesEnabled`.
+```mermaid
+flowchart TB
+  Server[httpapi.NewServer]
+  Fan[eventbus fanout]
+  OutWH[best-effort outbound webhook worker]
+  DurableWH[durable outbound webhook worker]
+  MailT[transactional mail worker]
+  MailN[notification mail worker]
+  Push[push notifier]
+  GH[GitHub inbound service]
+
+  Server --> Fan
+  Fan --> OutWH
+  Server --> DurableWH
+  Server --> MailT
+  Server --> MailN
+  Fan --> Push
+  Server -.->|when GitHub receiver configured| GH
+  GH --> GHRecon[repository reconciliation loop]
+  GH --> GHMatch[automation matching loop]
+  GH --> GHExec[notification action loop]
+```
+
+The GitHub service owns its own bounded polling/lease loop and is not the same worker as Scrumboy's outbound project-webhook dispatcher.
+
+## Periodic maintenance
+
+The main hourly maintenance covers temporary-project expiry, OAuth artifact cleanup and WAL checkpointing. Other subsystems have their own bounded maintenance, including asset cleanup, durable outbound webhook maintenance, and GitHub inbound/automation retention.
+
+## Shutdown
+
+`http.Server.Shutdown` stops new HTTP work. `Server.Close` then seals/drains outbound delivery queues, stops mail workers, cancels the GitHub inbound service, and waits on worker completion subject to the shutdown context. The server marks GitHub runtime activation closed so a late Manifest callback cannot start a new provider worker during shutdown.

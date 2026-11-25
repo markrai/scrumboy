@@ -1,60 +1,97 @@
 # Authentication and permissions
 
-Two-layer model: HTTP establishes actor identity; `store` enforces system and project roles.
+Scrumboy separates **instance-wide system roles** from **per-project roles**. HTTP establishes identity; transaction-authoritative store methods decide access.
 
 ```mermaid
 flowchart TB
   Cred[Credential]
-  Cred --> Cookie[scrumboy_session cookie]
-  Cred --> Token[API token sb_* header]
-  Cred --> OIDC[OIDC callback flow]
+  Cookie[session cookie]
+  Token["sb_ API token"]
+  OAuth[OAuth access token on canonical MCP]
+  OIDC[OIDC login]
+  Ctx[requestContext actor]
+  Handler[HTTP MCP handler]
+  Store[store authorization]
+  Result[allow 403 or existence-hiding 404]
 
-  Cookie --> Ctx[requestContext user id in ctx]
-  Token --> Ctx
-  OIDC --> Ctx
-
-  Ctx --> Handler[HTTP handler]
-  Handler --> StoreCheck[store CheckProjectRole etc]
-  StoreCheck --> Allow[allow or 403]
+  Cred --> Cookie --> Ctx
+  Cred --> Token --> Ctx
+  Cred --> OAuth --> Ctx
+  Cred --> OIDC --> Ctx
+  Ctx --> Handler --> Store --> Result
 ```
+
+## System roles
+
+| Role | Instance authority |
+|---|---|
+| Owner | user administration, role assignment, owner-only sensitive setup such as guided GitHub App enrollment |
+| Admin | instance administration allowed by admin APIs, including GitHub installation management |
+| User | no instance-wide administration |
+| Guest | assigned regular boards are read-only; temporary-board collaboration by shared link remains possible; cannot create/import/claim boards |
+
+System roles **never grant project membership**.
+
+## Project roles
+
+| Role | Project authority |
+|---|---|
+| Viewer | read project/story state and retained integration references |
+| Contributor | limited project mutations, including allowed reference/tag operations; body edit only when assigned under normal story rules |
+| Maintainer | project configuration, members, full story management, repository association and automation rule management |
+
+Temporary/anonymous boards use separate link/expiry semantics and do not expose durable-project integration surfaces.
+
+## GitHub authority composition
+
+```mermaid
+flowchart LR
+  OwnerAdmin[Owner or Admin]
+  Maintainer[Project Maintainer]
+  Contributor[Project Contributor]
+  Viewer[Project Viewer]
+
+  OwnerAdmin --> Install[Discover connect refresh disconnect GitHub installation]
+  Maintainer --> Repo[Attach or explicitly unlink repository from project]
+  Maintainer --> Rules[Create edit enable disable automation rule]
+  Contributor --> Refs[Link refresh remove story GitHub refs]
+  Viewer --> Read[Read retained refs rules matches history]
+
+  Install --> ProjectCheck[Project-scoped operations still require membership]
+  Repo --> ProjectCheck
+  Rules --> ProjectCheck
+  Refs --> ProjectCheck
+  Read --> ProjectCheck
+```
+
+An instance Owner/Admin cannot bypass project membership merely because they control the GitHub App. Conversely, project membership never exposes App private keys, webhook secrets or installation tokens.
 
 ## Login paths
 
 ```mermaid
 flowchart LR
   Local[Email password]
-  TOTP[2FA TOTP step]
-  OIDCFlow[OIDC authorization code flow]
-  Bootstrap[Bootstrap first user]
-  Identity[Lookup issuer and subject]
-  Existing[Existing linked user]
-  Provision[Provision only when verified email is unowned]
-  Connect[Explicit Connect SSO from authenticated settings]
-  SetPassword[Set first Scrumboy password from settings]
-  StepUp[Sensitive OIDC step-up]
-  Grant[Session-bound first-password grant]
-  LocalPW[Write first local password]
+  TOTP[2FA]
+  OIDCFlow[OIDC authorization code]
+  Bootstrap[First-user bootstrap]
+  Identity[issuer subject lookup]
+  Existing[existing linked user]
+  Provision[provision verified unowned email]
+  Connect[explicit Connect SSO]
+  StepUp[sensitive provider step-up]
+  Grant[first-password grant]
+  Password[write first local password]
+  Session[session]
 
-  Local --> TOTP
+  Local --> TOTP --> Session
   OIDCFlow --> Identity
-  Identity --> Existing
-  Identity --> Provision
+  Identity --> Existing --> Session
+  Identity --> Provision --> Session
   Connect --> OIDCFlow
-  SetPassword --> StepUp
-  StepUp --> Grant
-  Grant --> LocalPW
-  Bootstrap --> Session[CreateSession cookie]
-  TOTP --> Session
-  Existing --> Session
-  Provision --> Session
+  StepUp --> Grant --> Password
+  Bootstrap --> Session
 ```
 
-Normal OIDC login never links by matching email and never rewrites the canonical `users.email`. A local user connects a new identity explicitly after current-password confirmation, Scrumboy 2FA when enabled, and fresh provider authentication. An SSO-only user sets a first local password only after a separate provider step-up and a short-lived session-bound grant.
+Normal OIDC login never silently links by email and never rewrites the canonical user email. Sensitive local-password establishment for an SSO-only account uses a separate step-up and short-lived session-bound grant.
 
-- **Full mode:** sessions, users, API tokens, admin routes
-- **Anonymous mode:** `requestContext` ignores cookies; temp boards have no owner until claimed
-- **2FA:** requires `SCRUMBOY_ENCRYPTION_KEY` once encrypted auth/security data exists (TOTP and/or password-reset tokens)
-- **Pre-auth locale picker:** auth shell (sign-in, bootstrap, 2FA, password reset) exposes the shared public locale listbox in the topbar; copy comes from the i18n bootstrap catalog until the full locale JSON loads.
-- **Post-login redirect:** bootstrap, login, and 2FA completion redirect via sanitized `next` from auth state (strips stale OIDC query noise).
-
-See `docs/roles-and-permissions.md` for role matrix detail.
+See [roles-and-permissions.md](../roles-and-permissions.md) for the complete matrix.

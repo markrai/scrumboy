@@ -2,6 +2,46 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## [3.44.1] - 2026-11-25
+
+### Fixed
+
+- **Trello label import (PR #385)** - Fixed board imports failing on labels containing unsupported characters, excessive length, or duplicate names. Label names are adjusted when necessary while preserving distinct labels, colors and card associations. Import previews now warn when label names require adjustment.
+
+## [3.44.0] - 2026-11-25
+
+### Added
+
+- **CLI inline-image commands (PR #380)** - `scrumboy-cli asset get|put|copy` download, upload and copy inline images between projects (for example to move a todo to another board). They use new bearer-only `GET /mcp/assets/{uuid}` and `POST /mcp/assets/{projectSlug}` routes that reuse the existing image access rules, limits and rate limits; the OAuth token stays bound to the `/mcp/rpc` resource and the session cookie is not accepted on them. Downloads are sent with `Cache-Control: no-store`. `--todo N` authorizes a Contributor's upload against a todo they may edit; uploads never change a todo body, and an image no body embeds is removed after about seven days.
+
+### Security
+
+- **OAuth grants now cover inline images** - OAuth access tokens carry no scopes, so an MCP client already authorized for `/mcp/rpc` can also download and upload images on `/mcp/assets/*` for every project the user can access. Revoke a client's grant to remove that access.
+
+## [3.43.1] - 2026-11-24
+
+### Fixed
+
+- **Actionable invalid-tag messages (PR #378)** - Rejected tag names now explain the rule instead of only "Please enter a valid tag": "Tags: max 32 chars; letters/numbers, spaces, hyphens." This applies to both `invalid_tag` and `invalid_tag_name` and matches the server's canonicalization, where spaces become hyphens and punctuation such as `_` is rejected.
+- **Toasts visible above open dialogs** - Toasts raised while a modal dialog is open, such as a rejected tag when saving a todo, now appear above the dialog instead of dimmed behind its backdrop. Browsers without the Popover API keep the ordinary fixed-position toast.
+- **Toast lifetime and wrapping** - A new toast replaces the current one and gets its own full display time instead of being dismissed early by the previous toast's timer. Long messages now wrap on narrow screens instead of being cut off with an ellipsis.
+
+## [3.43.0] - 2026-11-24
+
+### Added
+
+- **Instance-owned GitHub App integration** - Full Mode instance administrators can connect a GitHub App they own, discover the repositories granted to that installation, and associate selected repositories with individual Scrumboy projects. The architecture has no shared Scrumboy.com relay or centrally managed GitHub App.
+- **GitHub issue and pull-request references** - New and existing stories have a dedicated References tab that can browse open/closed issues and pull requests from project-linked repositories, filter results by title, and attach read-only references. Project, repository and role boundaries are enforced server-side; Viewer access remains read-only.
+- **Signed GitHub webhook reconciliation** - Optional GitHub webhooks verify the raw-body HMAC signature before parsing, deduplicate delivery IDs, use a bounded durable inbox with leases/retries/dead-letter recovery, and reconcile repository metadata without silently deleting project or card references when GitHub access disappears.
+- **GitHub notification automations** - Project Maintainers can create disabled-by-default rules for supported issue and pull-request events, preview them safely, enable future verified-event execution, and inspect recent matches, notification history and transition audits. Rules create in-app notification records only; they do not modify GitHub, cards or public-board visibility.
+- **Self-hosted GitHub App onboarding foundation** - Owner-only GitHub App Manifest enrollment, protected credential persistence, restart recovery and no-restart runtime activation are included alongside the existing manual App ID/PEM/secret configuration. A clean-instance live wizard smoke test remains tracked separately in issue #371 and is not required for the manually configured runtime.
+- **Guest system role** - Owners can assign a Guest role for people who need Viewer access to assigned regular boards while retaining temporary-board collaboration. Guests cannot create regular boards.
+
+### Security
+
+- **Managed GitHub credentials** - Guided App private keys and webhook secrets stay outside SQLite. Managed bundles use restrictive POSIX permissions and, on Windows, a protected DACL granting access only to the current user, SYSTEM and Administrators; insecure/corrupt bundles fail closed. Dedicated Windows CI and protected backup/restore tests cover this path.
+- **Automation and tenant boundaries** - Webhook admission, repository ownership, project association, rule version/activation time, repository availability and installation state are rechecked before execution. Replayed deliveries, stale leases, disabled/edited rules and revoked repository access cannot create duplicate or stale notifications.
+
 ## [3.42.6] - 2026-11-23
 
 ### Improved

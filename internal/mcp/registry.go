@@ -26,6 +26,10 @@ func (a *Adapter) registerTools() {
 	a.tools["todos_linksList"] = a.handleTodosLinksList
 	a.tools["todos_linkAdd"] = a.handleTodosLinkAdd
 	a.tools["todos_linkRemove"] = a.handleTodosLinkRemove
+	a.tools["integrations_resourcesList"] = a.handleIntegrationResourcesList
+	a.tools["todos_externalLinksList"] = a.handleTodosExternalLinksList
+	a.tools["todos_externalLinkAdd"] = a.handleTodosExternalLinkAdd
+	a.tools["todos_externalLinkRemove"] = a.handleTodosExternalLinkRemove
 	a.tools["sprints_list"] = a.handleSprintsList
 	a.tools["sprints_get"] = a.handleSprintsGet
 	a.tools["sprints_getActive"] = a.handleSprintsGetActive

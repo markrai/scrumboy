@@ -126,6 +126,7 @@ Behavior is implemented at the endpoint boundary in `internal/mcp`.
 |---|---:|---:|---:|
 | `/mcp` | Yes | Yes | No |
 | `/mcp/rpc` | Yes | Yes | Yes, only when bound to `<origin>/mcp/rpc` |
+| `/mcp/assets/*` | No (ignored) | Yes | Yes, the same token bound to `<origin>/mcp/rpc` |
 
 If `Authorization: Bearer` is present, a failed token never falls back to a valid cookie. On legacy `/mcp`, a rejected Bearer returns the existing **401** `AUTH_REQUIRED` envelope and no OAuth discovery challenge. OAuth tokens are deliberately rejected there. Without a Bearer, `/mcp` preserves its existing cookie and unauthenticated capability/bootstrap behavior. Cookie-authenticated legacy `POST /mcp` calls must also send `X-Scrumboy: 1`; this deliberate-request header prevents a browser session from being used for a cross-origin tool mutation. Legacy `GET /mcp` is read-only and does not require it. Static API-token calls remain header-exempt.
 
@@ -146,6 +147,8 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
 **Bootstrap:** When the user table is empty (`CountUsers == 0`), capabilities include `bootstrapAvailable: true` and `auth.authenticatedToolsUsable: false`. Most tools return **`CAPABILITY_UNAVAILABLE`** (*unavailable before bootstrap*) until the first user exists.
 
 **OAuth 2.1 (full mode only):** `/mcp/rpc` is the sole OAuth protected resource. Clients discover its Scrumboy authorization server through the path-derived RFC 9728 metadata URL in the 401 challenge. See **[`docs/oauth.md`](oauth.md)** for DCR, PKCE, resource binding, authorize/token/revoke, and token lifetimes. `/mcp` never accepts these OAuth tokens.
+
+**Inline images over bearer auth:** `/mcp/assets/{uuid}` (`GET`, download) and `/mcp/assets/{projectSlug}` (`POST` multipart `file`, optional `?todo={localId}`, upload) serve the same images, role rules, size limits and rate limits as `/api/assets/{uuid}` and `POST /api/board/{slug}/assets`, but authenticate only with `Authorization: Bearer` (an `sb_` API token or an OAuth access token for the `/mcp/rpc` resource). The session cookie is ignored there, so a browser cannot drive them cross-site. They exist so clients such as `scrumboy-cli` can move images between projects; they return 404 when inline images are disabled. They are not a separate OAuth protected resource: the token is the one issued for `/mcp/rpc`. A missing or invalid credential is 401. Project permissions are enforced as on the browser routes: 404 for a project or image the user cannot see, and 403 when the user's role, or the `?todo=` story, does not allow the upload. Downloads send `Cache-Control: no-store`; the browser route `/api/assets/{uuid}` keeps `private, no-cache`. OAuth access tokens carry no scopes, so any client already authorized for `/mcp/rpc` can also use these routes for every project the user can access; revoke a client's grant to remove that access.
 
 ## Capabilities
 
@@ -209,6 +212,10 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "todos_linksList",
     "todos_linkAdd",
     "todos_linkRemove",
+    "integrations_resourcesList",
+    "todos_externalLinksList",
+    "todos_externalLinkAdd",
+    "todos_externalLinkRemove",
     "sprints_list",
     "sprints_get",
     "sprints_getActive",
@@ -247,7 +254,16 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "admin_listUsers",
     "admin_updateUserRole",
     "admin_updateUser",
-    "admin_deleteUser"
+    "admin_deleteUser",
+    "admin_createServiceAccount",
+    "admin_listServiceAccounts",
+    "admin_deleteServiceAccount",
+    "admin_createServiceToken",
+    "admin_listServiceTokens",
+    "admin_revokeServiceToken",
+    "webhooks_create",
+    "webhooks_list",
+    "webhooks_delete"
   ]
 }
 ```
@@ -298,6 +314,15 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()`. For the cur
 - `todos_linksList`
 - `todos_linkAdd`
 - `todos_linkRemove`
+
+**External integration resources**
+
+- `integrations_resourcesList` lists resources associated with a project.
+- `todos_externalLinksList` lists the external resources linked to a card.
+- `todos_externalLinkAdd` links a project-associated resource to a card.
+- `todos_externalLinkRemove` unlinks a resource from a card.
+
+These tools are separate from `todos_linksList` and related story-to-story link tools. Project members with Viewer or higher may read external references; Contributors or higher may attach or remove card references. Resource registration and project association are separate administrative actions. Temporary or anonymous boards do not support this integration. See [integration architecture](architecture/integrations-foundation.md) and [GitHub App setup](github-app.md).
 
 Linked stories are **directed** from `localId` to `targetLocalId`, and `linkType` describes `localId` as
 the subject (`blocks` = localId blocks target; `parent` = localId is parent of target; `duplicates` =
@@ -627,6 +652,10 @@ todos_move
 todos_linksList
 todos_linkAdd
 todos_linkRemove
+integrations_resourcesList
+todos_externalLinksList
+todos_externalLinkAdd
+todos_externalLinkRemove
 sprints_list
 sprints_get
 sprints_getActive

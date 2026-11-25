@@ -259,6 +259,7 @@ const (
 	SystemRoleOwner SystemRole = "owner"
 	SystemRoleAdmin SystemRole = "admin"
 	SystemRoleUser  SystemRole = "user"
+	SystemRoleGuest SystemRole = "guest"
 )
 
 func (r SystemRole) String() string {
@@ -273,6 +274,8 @@ func ParseSystemRole(v string) (SystemRole, bool) {
 		return SystemRoleAdmin, true
 	case "user":
 		return SystemRoleUser, true
+	case "guest":
+		return SystemRoleGuest, true
 	default:
 		return "", false
 	}

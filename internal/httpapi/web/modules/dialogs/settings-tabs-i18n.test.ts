@@ -139,6 +139,7 @@ vi.mock('../core/keybindings.js', () => ({
   formatChordForDisplay: (chord: string) => chord,
   getResolvedChordForAction: () => 'shift+s',
   isTypingInTextField: () => false,
+  isInteractiveElementFocused: () => ['SELECT', 'BUTTON'].includes(document.activeElement?.tagName ?? ''),
   reloadKeybindingsFromStorage: vi.fn(),
   saveKeybindingOverride: vi.fn(),
   setKeybindingsCaptureListening: vi.fn(),
@@ -301,6 +302,23 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     localStorage.clear();
     vi.restoreAllMocks();
     window.history.replaceState({}, '', '/');
+  });
+
+  it('keeps native Tab navigation for focused settings form controls', async () => {
+    await setupSettingsView({ activeTab: 'customization' });
+    const dialog = document.getElementById('settingsDialog') as HTMLDialogElement;
+    const form = document.createElement('form');
+    form.innerHTML = '<select><option>GitHub repository</option></select><button type="button">Create Rule</button>';
+    dialog.querySelector('.dialog__content')!.appendChild(form);
+    const { getSettingsActiveTab } = await import('../state/selectors.js');
+    for (const element of form.querySelectorAll<HTMLElement>('select, button')) {
+      element.focus();
+      expect(document.activeElement).toBe(element);
+      const event = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true });
+      element.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(getSettingsActiveTab()).toBe('customization');
+    }
   });
 
   it('Charts: re-localizes chart copy from cache and re-mounts without fetching /sprints or /burndown', async () => {
@@ -705,7 +723,7 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
 
     const boardTabs = Array.from(boardRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
     const personalTabs = Array.from(personalRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
-    expect(boardTabs).toEqual(['sprints', 'workflow', 'priorities', 'customFields', 'calendar', 'charts']);
+    expect(boardTabs).toEqual(['sprints', 'workflow', 'priorities', 'customFields', 'calendar', 'charts', 'automations']);
     expect(personalTabs).toEqual(['profile', 'customization', 'tag-colors', 'backup']);
   });
 
@@ -1090,7 +1108,7 @@ describe('settings Sharing tab visibility', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  async function tabsFor(options: { role: string; capability: boolean; temporary?: boolean; publicAccess?: boolean }): Promise<string[]> {
+  async function tabsFor(options: { role: string; capability: boolean; temporary?: boolean; publicAccess?: boolean; activeTab?: string }): Promise<string[]> {
     await initI18nFor('en');
     const settings = await import('./settings.js');
     const mutations = await import('../state/mutations.js');
@@ -1105,7 +1123,7 @@ describe('settings Sharing tab visibility', () => {
     mutations.setProjectId(5);
     mutations.setBoardMembers([{ userId: 1, role: options.role, name: 'Alex' }] as any);
     mutations.setBoardAccess(options.publicAccess ? access.PUBLIC_BOARD_ACCESS : { kind: options.temporary ? 'temporary' : 'member' });
-    mutations.setSettingsActiveTab('sharing');
+    mutations.setSettingsActiveTab(options.activeTab ?? 'sharing');
     await settings.renderSettingsModal();
     await flushPromises();
     return Array.from(document.querySelectorAll('[data-tab]')).map((el) => el.getAttribute('data-tab') ?? '');
@@ -1129,5 +1147,23 @@ describe('settings Sharing tab visibility', () => {
     expect(tabs).not.toContain('sharing');
     expect(document.querySelector('[data-sharing-root]')).toBeNull();
     expect(apiFetchMock.mock.calls.some((call) => String(call[0]).includes('/publication'))).toBe(false);
+  });
+
+  it.each(['viewer','contributor','maintainer'])('shows project Automations to durable %s members', async (role) => {
+    const tabs = await tabsFor({ role, capability: false, activeTab: 'automations' });
+    expect(tabs).toContain('automations');
+    expect(document.querySelector('[data-automation-root]')).not.toBeNull();
+    expect(apiFetchMock.mock.calls.some((call) => call[0] === '/api/board/ignite/integrations/automation-rules')).toBe(true);
+  });
+
+  it.each([
+    ['public read-only visitor', { role: 'viewer', capability: true, publicAccess: true }],
+    ['temporary project', { role: 'maintainer', capability: true, temporary: true }],
+    ['not a project member', { role: 'none', capability: true }],
+  ])('hides Automations from %s without loading rule metadata', async (_label, settings) => {
+    const tabs = await tabsFor({ ...settings, activeTab: 'automations' });
+    expect(tabs).not.toContain('automations');
+    expect(document.querySelector('[data-automation-root]')).toBeNull();
+    expect(apiFetchMock.mock.calls.some((call) => String(call[0]).includes('/automation-rules'))).toBe(false);
   });
 });

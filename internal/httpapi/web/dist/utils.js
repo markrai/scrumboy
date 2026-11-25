@@ -96,10 +96,39 @@ function escapeHTML(s) {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
 }
+const TOAST_DURATION_MS = 2500;
+let toastTimer;
+function hideToastPopover(el) {
+    try {
+        if (typeof el.hidePopover === "function" && el.matches(":popover-open"))
+            el.hidePopover();
+    }
+    catch {
+        // Popover API missing or misbehaving; the CSS class alone controls visibility.
+    }
+}
 function showToast(msg) {
-    toast.textContent = msg;
-    toast.classList.add("toast--show");
-    setTimeout(() => toast.classList.remove("toast--show"), 2500);
+    const el = toast;
+    if (toastTimer !== undefined)
+        clearTimeout(toastTimer);
+    el.textContent = msg;
+    // A modal <dialog> lives in the browser top layer and paints over any z-index. A manual popover joins
+    // the top layer too; hiding and re-showing moves it above a dialog opened after the previous toast.
+    // If promotion fails, the toast stays a plain fixed-position element (see .toast in styles.css).
+    hideToastPopover(el);
+    try {
+        if (typeof el.showPopover === "function")
+            el.showPopover();
+    }
+    catch {
+        // Fall back to the fixed-position toast.
+    }
+    el.classList.add("toast--show");
+    toastTimer = setTimeout(() => {
+        toastTimer = undefined;
+        el.classList.remove("toast--show");
+        hideToastPopover(el);
+    }, TOAST_DURATION_MS);
 }
 /**
  * Process an image file: validate size (max 1MB), crop to center square, resize to 128x128 PNG.

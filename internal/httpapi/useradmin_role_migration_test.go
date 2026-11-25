@@ -157,19 +157,19 @@ func TestUserAdminRESTRoleMigrationDelegatesAfterValidation(t *testing.T) {
 		},
 		{
 			name: "missing role", method: http.MethodPatch, target: "1", body: `{}`,
-			wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST", wantMessage: "role must be 'admin' or 'user'",
+			wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST", wantMessage: "role must be 'admin', 'user', or 'guest'",
 		},
 		{
 			name: "owner role", method: http.MethodPatch, target: "1", body: `{"role":"owner"}`,
-			wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST", wantMessage: "role must be 'admin' or 'user'",
+			wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST", wantMessage: "role must be 'admin', 'user', or 'guest'",
 		},
 		{
 			name: "uppercase role", method: http.MethodPatch, target: "1", body: `{"role":"ADMIN"}`,
-			wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST", wantMessage: "role must be 'admin' or 'user'",
+			wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST", wantMessage: "role must be 'admin', 'user', or 'guest'",
 		},
 		{
 			name: "whitespace role", method: http.MethodPatch, target: "1", body: `{"role":" admin "}`,
-			wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST", wantMessage: "role must be 'admin' or 'user'",
+			wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST", wantMessage: "role must be 'admin', 'user', or 'guest'",
 		},
 	}
 

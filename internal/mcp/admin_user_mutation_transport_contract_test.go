@@ -357,12 +357,12 @@ func TestMCPAdminUserMutationAuthorityTargetAndOwnerInvariantPrecedence(t *testi
 				status                    int
 			}{
 				{"invalid id before owner check", "admin_updateUserRole", "VALIDATION_ERROR", "invalid userId", fx.adminClient, map[string]any{"userId": 0, "role": "admin"}, 400},
-				{"malformed role before owner check and target", "admin_updateUserRole", "VALIDATION_ERROR", "role must be 'admin' or 'user'", fx.adminClient, map[string]any{"userId": missingID, "role": "ADMIN"}, 400},
+				{"malformed role before owner check and target", "admin_updateUserRole", "VALIDATION_ERROR", "role must be 'admin', 'user', or 'guest'", fx.adminClient, map[string]any{"userId": missingID, "role": "ADMIN"}, 400},
 				{"admin owner check before missing target", "admin_updateUserRole", "FORBIDDEN", "forbidden", fx.adminClient, map[string]any{"userId": missingID, "role": "admin"}, 403},
 				{"regular owner check before target", "admin_updateUserRole", "FORBIDDEN", "forbidden", fx.userClient, map[string]any{"userId": missingID, "role": "admin"}, 403},
 				{"owner reaches missing target", "admin_updateUserRole", "NOT_FOUND", "not found", fx.ownerClient, map[string]any{"userId": missingID, "role": "admin"}, 404},
-				{"owner spelling is rejected", "admin_updateUserRole", "VALIDATION_ERROR", "role must be 'admin' or 'user'", fx.ownerClient, map[string]any{"userId": fx.user.ID, "role": "owner"}, 400},
-				{"whitespace is not normalized", "admin_updateUserRole", "VALIDATION_ERROR", "role must be 'admin' or 'user'", fx.ownerClient, map[string]any{"userId": fx.user.ID, "role": " admin "}, 400},
+				{"owner spelling is rejected", "admin_updateUserRole", "VALIDATION_ERROR", "role must be 'admin', 'user', or 'guest'", fx.ownerClient, map[string]any{"userId": fx.user.ID, "role": "owner"}, 400},
+				{"whitespace is not normalized", "admin_updateUserRole", "VALIDATION_ERROR", "role must be 'admin', 'user', or 'guest'", fx.ownerClient, map[string]any{"userId": fx.user.ID, "role": " admin "}, 400},
 				{"last owner self downgrade reaches store", "admin_updateUserRole", "VALIDATION_ERROR", "validation: cannot demote the last owner", fx.ownerClient, map[string]any{"userId": fx.owner.ID, "role": "admin"}, 400},
 				{"admin self delete is blocked before store self check", "admin_deleteUser", "FORBIDDEN", "forbidden", fx.adminClient, map[string]any{"userId": fx.admin.ID}, 403},
 				{"owner self delete reaches store self check", "admin_deleteUser", "VALIDATION_ERROR", "validation: cannot delete yourself", fx.ownerClient, map[string]any{"userId": fx.owner.ID}, 400},
@@ -394,7 +394,7 @@ func TestMCPAdminUserMutationInputShapeDifferences(t *testing.T) {
 				{"extra role input", "admin_updateUserRole", "invalid input", "", map[string]any{"userId": fx.user.ID, "role": "admin", "extra": true}},
 				{"extra delete input", "admin_deleteUser", "invalid input", "", map[string]any{"userId": fx.user.ID, "extra": true}},
 			}
-			missingMessage := "role must be 'admin' or 'user'"
+			missingMessage := "role must be 'admin', 'user', or 'guest'"
 			if transport == "jsonrpc" {
 				missingMessage = "missing required field: role"
 			}
