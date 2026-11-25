@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -57,7 +58,7 @@ func priorityTierDefinitionReason(key, name, color string, requireKey, allowEmpt
 		return ReasonInvalidPriorityKey
 	}
 	name = strings.TrimSpace(name)
-	if name == "" || len(name) > maxPriorityNameLen {
+	if name == "" || utf8.RuneCountInString(name) > maxPriorityNameLen {
 		return ReasonInvalidPriorityTierName
 	}
 	color = strings.TrimSpace(color)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -182,7 +183,7 @@ func validateAgendaTimezone(raw string) (string, error) {
 
 func validateAgendaTitle(raw string) (string, error) {
 	name := strings.TrimSpace(raw)
-	if name == "" || len(name) > maxAgendaTitleLen {
+	if name == "" || utf8.RuneCountInString(name) > maxAgendaTitleLen {
 		return "", priorityError(ErrValidation, ReasonInvalidAgendaTitle, "invalid agenda title")
 	}
 	return name, nil
@@ -267,7 +268,7 @@ WHERE id = ? AND project_id = ?`, sourceID, projectID)
 
 func (s *Store) CreateCalendarSource(ctx context.Context, projectID int64, in CreateCalendarSourceInput) (CalendarSource, error) {
 	name := strings.TrimSpace(in.Name)
-	if name == "" || len(name) > maxCalendarSourceNameLen {
+	if name == "" || utf8.RuneCountInString(name) > maxCalendarSourceNameLen {
 		return CalendarSource{}, priorityError(ErrValidation, ReasonInvalidCalendarSourceName, "invalid calendar source name")
 	}
 	srcType := strings.TrimSpace(in.Type)
@@ -338,7 +339,7 @@ func (s *Store) UpdateCalendarSource(ctx context.Context, projectID, sourceID in
 	name := existing.Name
 	if in.Name != nil {
 		name = strings.TrimSpace(*in.Name)
-		if name == "" || len(name) > maxCalendarSourceNameLen {
+		if name == "" || utf8.RuneCountInString(name) > maxCalendarSourceNameLen {
 			return CalendarSource{}, priorityError(ErrValidation, ReasonInvalidCalendarSourceName, "invalid calendar source name")
 		}
 	}
