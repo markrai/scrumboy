@@ -294,6 +294,28 @@ func (a *Adapter) BindCreatorNotificationRequestPublisher(publisher todoapp.Crea
 	a.creatorRequestsBound = true
 }
 
+// AuthenticateBearerRequest resolves the actor behind an Authorization: Bearer credential (static
+// API token or OAuth access token bound to the MCP resource) for routes under /mcp/ that are
+// served outside the adapter, such as /mcp/assets/*. The session cookie is deliberately never
+// consulted, so those routes cannot be driven cross-site with ambient browser credentials.
+// ok is false (with a nil error) for a missing or invalid credential; err reports a store failure.
+func (a *Adapter) AuthenticateBearerRequest(r *http.Request) (ctx context.Context, ok bool, err error) {
+	if a.mode == "anonymous" {
+		return r.Context(), false, nil
+	}
+	if isBearer, _ := parseBearerAuthorization(r.Header.Get("Authorization")); !isBearer {
+		return r.Context(), false, nil
+	}
+	res := a.resolveRequestAuth(r, true)
+	if res.Err != nil {
+		return r.Context(), false, res.Err
+	}
+	if res.BearerAuthFailed || !res.Authenticated || res.SessionCookie {
+		return r.Context(), false, nil
+	}
+	return res.Ctx, true, nil
+}
+
 // BindMutationAdmitter installs optional expiring-board mutation admission.
 func (a *Adapter) BindMutationAdmitter(fn MutationAdmitter) {
 	a.admitMutation = fn
