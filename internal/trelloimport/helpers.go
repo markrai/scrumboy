@@ -158,6 +158,10 @@ func workflowColumnColor(position int, isDone bool) string {
 }
 
 func buildTagExports(labelByID map[string]Label) (map[string]string, []store.TagExport, int, error) {
+	return buildTagExportsWithAllocationState(labelByID, newLabelNameAllocationState(len(labelByID)))
+}
+
+func buildTagExportsWithAllocationState(labelByID map[string]Label, allocationState *labelNameAllocationState) (map[string]string, []store.TagExport, int, error) {
 	type labelEntry struct {
 		ID    string
 		Label Label
@@ -206,7 +210,6 @@ func buildTagExports(labelByID map[string]Label) (map[string]string, []store.Tag
 	}
 
 	allocatedNames := make(map[string]struct{}, len(entries))
-	nextSuffixByBase := make(map[string]int, len(entries))
 	labelNameByID := make(map[string]string, len(entries))
 	tagExports := make([]store.TagExport, 0, len(entries))
 	adjustedCount := 0
@@ -217,7 +220,7 @@ func buildTagExports(labelByID map[string]Label) (map[string]string, []store.Tag
 			label.originalValid,
 			allocatedNames,
 			reservedOriginalNames,
-			nextSuffixByBase,
+			allocationState,
 			len(entries)+len(reservedOriginalNames)+1,
 		)
 		if err != nil {
@@ -282,13 +285,31 @@ func labelTagName(name string) string {
 	return truncateTagName(candidate, store.MaxTagRunes)
 }
 
+type labelSuffixPrefixKey struct {
+	canonicalPrefix string
+	digitWidth      int
+}
+
+type labelNameAllocationState struct {
+	nextSuffixByBase   map[string]int
+	nextSuffixByPrefix map[labelSuffixPrefixKey]int
+	candidateAttempts  int
+}
+
+func newLabelNameAllocationState(capacity int) *labelNameAllocationState {
+	return &labelNameAllocationState{
+		nextSuffixByBase:   make(map[string]int, capacity),
+		nextSuffixByPrefix: make(map[labelSuffixPrefixKey]int, capacity),
+	}
+}
+
 func allocateLabelTagName(
 	baseName string,
 	baseCanonical string,
 	originalValid bool,
 	allocated map[string]struct{},
 	reservedOriginals map[string]struct{},
-	nextSuffixByBase map[string]int,
+	allocationState *labelNameAllocationState,
 	maxAttempts int,
 ) (string, string, error) {
 	_, alreadyAllocated := allocated[baseCanonical]
@@ -297,25 +318,47 @@ func allocateLabelTagName(
 		return baseName, baseCanonical, nil
 	}
 
-	n := nextSuffixByBase[baseCanonical]
+	n := allocationState.nextSuffixByBase[baseCanonical]
 	if n < 2 {
 		n = 2
 	}
-	for attempts := 0; attempts < maxAttempts; attempts++ {
-		suffix := fmt.Sprintf(" %d", n)
-		baseLimit := store.MaxTagRunes - len([]rune(suffix))
+	for attempts := 0; attempts < maxAttempts; {
+		suffixNumber := fmt.Sprintf("%d", n)
+		digitWidth := len(suffixNumber)
+		suffix := " " + suffixNumber
+		baseLimit := store.MaxTagRunes - 1 - digitWidth
 		prefix := truncateTagName(baseName, baseLimit)
 		if prefix == "" {
 			prefix = truncateTagName(baseCanonical, baseLimit)
 		}
+		canonicalPrefix := store.CanonicalizeTag(prefix)
+		if canonicalPrefix == "" {
+			return "", "", fmt.Errorf("could not truncate Trello label %q for suffix %d", baseName, n)
+		}
+		prefixKey := labelSuffixPrefixKey{canonicalPrefix: canonicalPrefix, digitWidth: digitWidth}
+		if next := allocationState.nextSuffixByPrefix[prefixKey]; next > n {
+			n = next
+			continue
+		}
+
 		candidate := prefix + suffix
 		canonical := store.CanonicalizeTag(candidate)
+		allocationState.candidateAttempts++
+		attempts++
 		_, used := allocated[canonical]
 		_, reserved := reservedOriginals[canonical]
 		if canonical != "" && !used && !reserved {
-			nextSuffixByBase[baseCanonical] = n + 1
+			if n == int(^uint(0)>>1) {
+				return "", "", fmt.Errorf("could not advance the suffix for Trello label %q", baseName)
+			}
+			allocationState.nextSuffixByBase[baseCanonical] = n + 1
+			allocationState.nextSuffixByPrefix[prefixKey] = n + 1
 			return candidate, canonical, nil
 		}
+		if n == int(^uint(0)>>1) {
+			break
+		}
+		allocationState.nextSuffixByPrefix[prefixKey] = n + 1
 		n++
 	}
 
@@ -330,19 +373,45 @@ func truncateTagName(name string, maxCanonicalRunes int) string {
 		return name
 	}
 
-	runes := []rune(name)
-	if len(runes) > maxCanonicalRunes {
-		runes = runes[:maxCanonicalRunes]
-	}
-	for len(runes) > 0 {
-		candidate := strings.TrimSpace(string(runes))
-		canonical := store.CanonicalizeTag(candidate)
-		if canonical != "" && len([]rune(canonical)) <= maxCanonicalRunes {
-			return candidate
+	compacted := compactTagDisplayForTruncation(name)
+	var prefix strings.Builder
+	var best string
+	for _, r := range compacted {
+		prefix.WriteRune(r)
+		if unicode.IsSpace(r) || r == '-' {
+			continue
 		}
-		runes = runes[:len(runes)-1]
+		candidate := prefix.String()
+		canonical := store.CanonicalizeTag(candidate)
+		if canonical == "" || len([]rune(canonical)) > maxCanonicalRunes {
+			break
+		}
+		best = candidate
 	}
-	return ""
+	return best
+}
+
+func compactTagDisplayForTruncation(name string) string {
+	var b strings.Builder
+	var pendingSeparator rune
+	for _, r := range name {
+		if unicode.IsSpace(r) || r == '-' {
+			if b.Len() > 0 && pendingSeparator == 0 {
+				if r == '-' {
+					pendingSeparator = '-'
+				} else {
+					pendingSeparator = ' '
+				}
+			}
+			continue
+		}
+		if pendingSeparator != 0 {
+			b.WriteRune(pendingSeparator)
+			pendingSeparator = 0
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func trelloLabelColorHex(color string) *string {

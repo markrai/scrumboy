@@ -273,6 +273,167 @@ func TestBuildTagExportsSuffixesAcrossDigitBoundary(t *testing.T) {
 	}
 }
 
+func TestBuildTagExportsSharesSuffixProgressAcrossTruncatedPrefixes(t *testing.T) {
+	const distinctBases = 1100
+	labels := sharedPrefixCollisionLabels(distinctBases)
+	state := newLabelNameAllocationState(len(labels))
+	nameByID, tags, adjusted, err := buildTagExportsWithAllocationState(labels, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nameByID) != distinctBases*2 || len(tags) != distinctBases*2 || adjusted != distinctBases {
+		t.Fatalf("names=%d tags=%d adjusted=%d", len(nameByID), len(tags), adjusted)
+	}
+	if state.candidateAttempts != distinctBases {
+		t.Fatalf("candidate attempts=%d, want %d for %d duplicate allocations", state.candidateAttempts, distinctBases, distinctBases)
+	}
+
+	seen := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		canonical := store.CanonicalizeTag(tag.Name)
+		if canonical == "" {
+			t.Fatalf("invalid tag %q", tag.Name)
+		}
+		if _, exists := seen[canonical]; exists {
+			t.Fatalf("duplicate canonical tag %q", canonical)
+		}
+		seen[canonical] = struct{}{}
+	}
+	for _, suffix := range []int{9, 10, 99, 100, 999, 1000} {
+		baseIndex := suffix - 2
+		id := sharedPrefixCollisionLabelID(baseIndex, "b")
+		want := strings.Repeat("a", store.MaxTagRunes-1-len(strconv.Itoa(suffix))) + "-" + strconv.Itoa(suffix)
+		if got := store.CanonicalizeTag(nameByID[id]); got != want {
+			t.Fatalf("suffix %d canonical name=%q, want %q", suffix, got, want)
+		}
+	}
+
+	reordered := make(map[string]Label, len(labels))
+	ids := make([]string, 0, len(labels))
+	for id := range labels {
+		ids = append(ids, id)
+	}
+	for i := len(ids) - 1; i >= 0; i-- {
+		reordered[ids[i]] = labels[ids[i]]
+	}
+	secondState := newLabelNameAllocationState(len(reordered))
+	secondNames, secondTags, secondAdjusted, err := buildTagExportsWithAllocationState(reordered, secondState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(nameByID, secondNames) || !reflect.DeepEqual(tags, secondTags) || adjusted != secondAdjusted {
+		t.Fatal("shared-prefix allocation changed with map insertion order")
+	}
+	if secondState.candidateAttempts != state.candidateAttempts {
+		t.Fatalf("candidate attempts changed with map insertion order: %d != %d", secondState.candidateAttempts, state.candidateAttempts)
+	}
+}
+
+func TestTruncateTagNameUsesCanonicalRuneBudget(t *testing.T) {
+	decomposed := strings.Repeat("e\u0301", 12)
+	tests := []struct {
+		name   string
+		input  string
+		budget int
+		want   string
+	}{
+		{
+			name:   "long whitespace retains following text",
+			input:  "Alpha" + strings.Repeat(" ", 80) + "Beta Gamma",
+			budget: 15,
+			want:   "Alpha Beta Gamm",
+		},
+		{
+			name:   "leading trailing and repeated hyphens",
+			input:  "---Alpha----Beta----Gamma---",
+			budget: 10,
+			want:   "Alpha-Beta",
+		},
+		{
+			name:   "decomposed sequences use NFC budget",
+			input:  decomposed,
+			budget: 10,
+			want:   strings.Repeat("e\u0301", 10),
+		},
+		{
+			name:   "overlong canonical name retains later segment",
+			input:  strings.Repeat("A", 20) + strings.Repeat(" ", 80) + strings.Repeat("B", 20),
+			budget: store.MaxTagRunes,
+			want:   strings.Repeat("A", 20) + " " + strings.Repeat("B", 11),
+		},
+		{
+			name:   "four digit suffix leaves meaningful prefix",
+			input:  strings.Repeat("A", 25) + strings.Repeat(" ", 80) + "BetaGamma",
+			budget: store.MaxTagRunes - len([]rune(" 1000")),
+			want:   strings.Repeat("A", 25) + " B",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncateTagName(tc.input, tc.budget)
+			if got != tc.want {
+				t.Fatalf("truncateTagName(%q, %d)=%q, want %q", tc.input, tc.budget, got, tc.want)
+			}
+			canonical := store.CanonicalizeTag(got)
+			if canonical == "" || len([]rune(canonical)) > tc.budget {
+				t.Fatalf("truncated name is invalid or over budget: %q -> %q", got, canonical)
+			}
+		})
+	}
+
+	validDisplays := []string{
+		"Alpha" + strings.Repeat(" ", 80) + "Beta",
+		"---Alpha----Beta---",
+		"Cafe\u0301",
+	}
+	for _, display := range validDisplays {
+		canonical := store.CanonicalizeTag(display)
+		if canonical == "" {
+			t.Fatalf("invalid preservation fixture %q", display)
+		}
+		if got := truncateTagName(display, len([]rune(canonical))); got != display {
+			t.Fatalf("valid display was rewritten: got %q, want %q", got, display)
+		}
+	}
+
+	prefix := truncateTagName(strings.Repeat("A", 25)+strings.Repeat(" ", 80)+"BetaGamma", store.MaxTagRunes-len([]rune(" 1000")))
+	if candidate := prefix + " 1000"; store.CanonicalizeTag(candidate) == "" {
+		t.Fatalf("four-digit suffix candidate is invalid: %q", candidate)
+	}
+}
+
+func BenchmarkBuildTagExportsSharedTruncatedPrefixes(b *testing.B) {
+	labels := sharedPrefixCollisionLabels(1100)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		state := newLabelNameAllocationState(len(labels))
+		if _, _, _, err := buildTagExportsWithAllocationState(labels, state); err != nil {
+			b.Fatal(err)
+		}
+		if state.candidateAttempts != 1100 {
+			b.Fatalf("candidate attempts=%d, want 1100", state.candidateAttempts)
+		}
+	}
+}
+
+func sharedPrefixCollisionLabels(count int) map[string]Label {
+	labels := make(map[string]Label, count*2)
+	for i := 0; i < count; i++ {
+		code := strconv.FormatInt(int64(i), 36)
+		code = strings.Repeat("0", 2-len(code)) + code
+		baseName := strings.Repeat("a", store.MaxTagRunes-2) + code
+		for _, instance := range []string{"a", "b"} {
+			id := sharedPrefixCollisionLabelID(i, instance)
+			labels[id] = Label{ID: id, Name: baseName}
+		}
+	}
+	return labels
+}
+
+func sharedPrefixCollisionLabelID(baseIndex int, instance string) string {
+	return "shared-" + strconv.Itoa(baseIndex) + "-" + instance
+}
+
 func TestTransformBoardLabelAssociationsAndWarnings(t *testing.T) {
 	board := &Board{
 		ID:    "labels",
