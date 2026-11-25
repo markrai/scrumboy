@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -164,7 +165,7 @@ func TestCustomFieldsRESTDefinitionContracts(t *testing.T) {
 			t.Fatalf("invalid key status=%d %s", resp.StatusCode, body)
 		}
 		errObj = customFieldRESTError(t, body)
-		if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "validation: invalid custom field key" || errObj["details"] != nil {
+		if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "validation: invalid custom field key" || !reflect.DeepEqual(errObj["details"], map[string]any{"reason": "invalid_custom_field_key"}) {
 			t.Fatalf("invalid key error=%s", body)
 		}
 		resp, body = doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": strings.Repeat("n", 101), "type": "text"}, nil)
@@ -172,7 +173,7 @@ func TestCustomFieldsRESTDefinitionContracts(t *testing.T) {
 			t.Fatalf("long name status=%d %s", resp.StatusCode, body)
 		}
 		errObj = customFieldRESTError(t, body)
-		if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "validation: invalid custom field name" || errObj["details"] != nil {
+		if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "validation: invalid custom field name" || !reflect.DeepEqual(errObj["details"], map[string]any{"reason": "invalid_custom_field_name"}) {
 			t.Fatalf("long name error=%s", body)
 		}
 	})

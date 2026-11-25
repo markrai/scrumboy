@@ -227,6 +227,7 @@ var validationReasonPrefixes = []struct {
 	{"invalid workflow column color ", "invalid_workflow_column_color"},
 	{"invalid tag color ", "invalid_tag_color"},
 	{"invalid tag ", "invalid_tag"},
+	{"due reminder lead time ", "invalid_due_reminder_lead_hours"},
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string, details any) {

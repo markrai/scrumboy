@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type CreateTodoInput struct {
@@ -38,7 +39,7 @@ func validateDueAt(v *time.Time) error {
 	}
 	ms := v.UTC().UnixMilli()
 	if ms <= 0 || ms >= maxDueAtMs {
-		return fmt.Errorf("%w: dueAt out of range", ErrValidation)
+		return reasoned(ErrValidation, ReasonInvalidDueAt, ErrValidation.Error()+": dueAt out of range")
 	}
 	return nil
 }
@@ -68,10 +69,10 @@ func cloneTimePtr(v *time.Time) *time.Time {
 
 func (s *Store) CreateTodo(ctx context.Context, projectID int64, in CreateTodoInput, mode Mode) (Todo, error) {
 	in.Title = strings.TrimSpace(in.Title)
-	if in.Title == "" || len(in.Title) > 200 {
+	if in.Title == "" || utf8.RuneCountInString(in.Title) > 200 {
 		return Todo{}, fmt.Errorf("%w: invalid title", ErrValidation)
 	}
-	if len(in.Body) > 20000 {
+	if utf8.RuneCountInString(in.Body) > 20000 {
 		return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
 	}
 	if err := validateEstimationPoints(in.EstimationPoints); err != nil {
@@ -621,7 +622,7 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 			if len(in.CustomFields) > 0 {
 				return Todo{}, ErrUnauthorized
 			}
-			if len(in.Body) > 20000 {
+			if utf8.RuneCountInString(in.Body) > 20000 {
 				return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
 			}
 			bodyChanged := existing.Body != in.Body
@@ -668,10 +669,10 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	}
 
 	in.Title = strings.TrimSpace(in.Title)
-	if in.Title == "" || len(in.Title) > 200 {
+	if in.Title == "" || utf8.RuneCountInString(in.Title) > 200 {
 		return Todo{}, fmt.Errorf("%w: invalid title", ErrValidation)
 	}
-	if len(in.Body) > 20000 {
+	if utf8.RuneCountInString(in.Body) > 20000 {
 		return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
 	}
 	if err := validateEstimationPoints(in.EstimationPoints); err != nil {

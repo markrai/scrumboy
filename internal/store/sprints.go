@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // SprintState represents the lifecycle state of a sprint.
@@ -139,7 +140,7 @@ func sprintNameExistsTx(ctx context.Context, tx *sql.Tx, projectID int64, name s
 
 func (s *Store) CreateSprint(ctx context.Context, projectID int64, name string, plannedStartAt, plannedEndAt time.Time) (Sprint, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || len(name) > 200 {
+	if name == "" || utf8.RuneCountInString(name) > 200 {
 		return Sprint{}, fmt.Errorf("%w: invalid sprint name", ErrValidation)
 	}
 	if !plannedEndAt.After(plannedStartAt) && !plannedEndAt.Equal(plannedStartAt) {
@@ -571,7 +572,7 @@ func (s *Store) UpdateSprint(ctx context.Context, sprintID int64, in UpdateSprin
 	var args []any
 	if in.Name != nil {
 		name := strings.TrimSpace(*in.Name)
-		if name == "" || len(name) > 200 {
+		if name == "" || utf8.RuneCountInString(name) > 200 {
 			return fmt.Errorf("%w: invalid sprint name", ErrValidation)
 		}
 		if dup, err := sprintNameExistsTx(ctx, tx, sp.ProjectID, name, sprintID); err != nil {

@@ -54,7 +54,7 @@ func (s *Server) handlePreparedSlugBoardInitial(
 ) {
 	tags, err := parseBoardTagFilters(r.URL.Query()["tag"])
 	if err != nil {
-		writeValidationError(w, err.Error(), "too_many_tag_filters", map[string]any{"field": "tag"})
+		writeValidationError(w, err.Error(), "too_many_tag_filters", map[string]any{"field": "tag", "max": maxBoardTagFilters})
 		return
 	}
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
@@ -185,7 +185,7 @@ func (s *Server) handlePreparedSlugBoardLane(
 	columnKey := normalizeLaneKey(rawColumnKey)
 	tags, err := parseBoardTagFilters(r.URL.Query()["tag"])
 	if err != nil {
-		writeValidationError(w, err.Error(), "too_many_tag_filters", map[string]any{"field": "tag"})
+		writeValidationError(w, err.Error(), "too_many_tag_filters", map[string]any{"field": "tag", "max": maxBoardTagFilters})
 		return
 	}
 	search := strings.TrimSpace(r.URL.Query().Get("search"))

@@ -216,7 +216,7 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 		}
 		tags, err := parseBoardTagFilters(r.URL.Query()["tag"])
 		if err != nil {
-			writeValidationError(w, err.Error(), "too_many_tag_filters", map[string]any{"field": "tag"})
+			writeValidationError(w, err.Error(), "too_many_tag_filters", map[string]any{"field": "tag", "max": maxBoardTagFilters})
 			return true
 		}
 		search := strings.TrimSpace(r.URL.Query().Get("search"))

@@ -117,7 +117,7 @@ func rejectSoleMaintainerDeletionTx(ctx context.Context, tx *sql.Tx, userID int6
 		return fmt.Errorf("check sole maintainer: %w", err)
 	}
 	if count > 0 {
-		return fmt.Errorf("%w: account is the sole maintainer of %d project(s); another maintainer must be added or the project deleted first", ErrConflict, count)
+		return reasoned(ErrConflict, ReasonSoleMaintainer, fmt.Sprintf("%s: account is the sole maintainer of %d project(s); another maintainer must be added or the project deleted first", ErrConflict, count))
 	}
 	return nil
 }
@@ -141,7 +141,7 @@ func rejectOwnedProjectDeletionTx(ctx context.Context, tx *sql.Tx, userID int64)
 		return fmt.Errorf("check owned projects: %w", err)
 	}
 	if count > 0 {
-		return fmt.Errorf("%w: account owns %d project(s); transfer ownership or delete the project first", ErrConflict, count)
+		return reasoned(ErrConflict, ReasonOwnsProjects, fmt.Sprintf("%s: account owns %d project(s); transfer ownership or delete the project first", ErrConflict, count))
 	}
 	return nil
 }
@@ -231,7 +231,7 @@ func (s *Store) AddProjectMember(ctx context.Context, requesterID, projectID, ta
 		return err
 	}
 	if existingRole != "" {
-		return fmt.Errorf("%w: user is already a member", ErrConflict)
+		return reasoned(ErrConflict, ReasonAlreadyMember, ErrConflict.Error()+": user is already a member")
 	}
 
 	if err := validateGuestMembership(ctx, tx, projectID, targetUserID, role); err != nil {
@@ -421,7 +421,7 @@ func (s *Store) UpdateProjectMemberRole(ctx context.Context, requesterID, projec
 
 	// 5. No self-demotion (to contributor or viewer)
 	if requesterID == targetUserID && (role == "contributor" || role == "viewer") {
-		return fmt.Errorf("%w: cannot demote yourself", ErrConflict)
+		return reasoned(ErrConflict, ReasonCannotDemoteSelf, ErrConflict.Error()+": cannot demote yourself")
 	}
 
 	// 6. Last-maintainer protection (cannot demote last maintainer to contributor or viewer)
@@ -431,7 +431,7 @@ func (s *Store) UpdateProjectMemberRole(ctx context.Context, requesterID, projec
 			return err
 		}
 		if count <= 1 {
-			return fmt.Errorf("%w: cannot demote the last maintainer", ErrConflict)
+			return reasoned(ErrConflict, ReasonCannotDemoteLastMt, ErrConflict.Error()+": cannot demote the last maintainer")
 		}
 	}
 

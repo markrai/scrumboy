@@ -514,7 +514,10 @@ func TestMCPAdminDeleteOwnedProjectFailureProjectionAndRollback(t *testing.T) {
 			}
 			resp, out := callTodoUpdateMCP(t, fx.ownerClient, fx.ts.URL, transport, "admin_deleteUser", map[string]any{"userId": owner2.ID})
 			publicErr := assertTodoLinkMCPError(t, transport, resp, out, 409, "CONFLICT", "conflict: account owns 1 project(s); transfer ownership or delete the project first")
-			assertEmptyTodoLinkMCPDetails(t, publicErr)
+			// The stable reason lets clients show a specific message; it carries no project data.
+			if details, _ := publicErr["details"].(map[string]any); len(details) != 1 || details["reason"] != "owns_projects" {
+				t.Fatalf("public error details=%+v want only reason=owns_projects", publicErr["details"])
+			}
 			if msg, _ := publicErr["message"].(string); strings.Contains(msg, project.Name) || strings.Contains(msg, project.Slug) || strings.Contains(msg, "FOREIGN KEY") {
 				t.Fatalf("owned-project conflict discloses internals: %+v", publicErr)
 			}

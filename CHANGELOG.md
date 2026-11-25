@@ -2,6 +2,13 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## [3.44.1] - 2026-11-25
+
+### Fixed
+
+- **Validation errors explain the rule that was broken (#377)** - Rejected input now says what to fix instead of "Please check the request and try again." Covered: todo title, body and tag count, due-date range, estimation points, project, sprint and workflow-column names and the 12-column limit, slugs and colours, custom-field definitions and values (with the 25-field limit), calendar and agenda settings, tag-filter limit, reserved publication slugs, Wall note, note-length and connection limits, due-reminder lead time, and project-name-without-a-slug. Conflicts that used to read only "Conflict" now say why (email already in use, already a member, sole maintainer, owns projects, custom-field key exists). The API gains `error.details.reason` for these cases and `error.details.max` for `too_many_tag_filters`.
+- **Character limits count characters, not bytes** - Todo titles and bodies, project and sprint names, and Wall note text are now limited by character count, matching the input `maxlength`. Previously about 70 CJK or emoji characters in a title were rejected although the field showed room. The Wall note textarea limit is now 4,000 characters, matching the server.
+
 ## [3.44.0] - 2026-11-25
 
 ### Added

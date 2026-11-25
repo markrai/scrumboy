@@ -150,7 +150,7 @@ export function enterEditMode(noteEl: HTMLElement, initialText: string): HTMLTex
   const ta = document.createElement("textarea");
   ta.className = "wall-note__editor";
   ta.value = initialText;
-  ta.maxLength = 5000;
+  ta.maxLength = 4000;
   ta.spellcheck = true;
   ta.setAttribute("aria-label", t("wall.note.edit"));
   // Insert before the resize handle so the handle stays on top.
