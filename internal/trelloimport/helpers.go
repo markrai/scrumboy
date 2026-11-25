@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 
 	"scrumboy/internal/store"
 )
@@ -156,7 +157,11 @@ func workflowColumnColor(position int, isDone bool) string {
 	return trelloWorkflowColors[position%len(trelloWorkflowColors)]
 }
 
-func buildTagExports(labelByID map[string]Label) (map[string]string, []store.TagExport) {
+func buildTagExports(labelByID map[string]Label) (map[string]string, []store.TagExport, int, error) {
+	return buildTagExportsWithAllocationState(labelByID, newLabelNameAllocationState(len(labelByID)))
+}
+
+func buildTagExportsWithAllocationState(labelByID map[string]Label, allocationState *labelNameAllocationState) (map[string]string, []store.TagExport, int, error) {
 	type labelEntry struct {
 		ID    string
 		Label Label
@@ -177,28 +182,236 @@ func buildTagExports(labelByID map[string]Label) (map[string]string, []store.Tag
 		return entries[i].ID < entries[j].ID
 	})
 
-	usedNames := map[string]int{}
+	type preparedLabel struct {
+		entry         labelEntry
+		baseName      string
+		baseCanonical string
+		originalValid bool
+	}
+	prepared := make([]preparedLabel, 0, len(entries))
+	reservedOriginalNames := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		baseName, originalValid := preferredLabelTagName(entry.Label)
+		baseCanonical := store.CanonicalizeTag(baseName)
+		if baseCanonical == "" {
+			baseName = "Untitled Trello label"
+			baseCanonical = store.CanonicalizeTag(baseName)
+			originalValid = false
+		}
+		prepared = append(prepared, preparedLabel{
+			entry:         entry,
+			baseName:      baseName,
+			baseCanonical: baseCanonical,
+			originalValid: originalValid,
+		})
+		if originalValid {
+			reservedOriginalNames[baseCanonical] = struct{}{}
+		}
+	}
+
+	allocatedNames := make(map[string]struct{}, len(entries))
 	labelNameByID := make(map[string]string, len(entries))
 	tagExports := make([]store.TagExport, 0, len(entries))
-	for _, entry := range entries {
-		baseName := strings.TrimSpace(entry.Label.Name)
-		if baseName == "" {
-			if strings.TrimSpace(entry.Label.Color) != "" && strings.TrimSpace(entry.Label.Color) != "none" {
-				baseName = "Trello " + strings.ToLower(strings.TrimSpace(entry.Label.Color)) + " label"
-			} else {
-				baseName = "Untitled Trello label"
-			}
+	adjustedCount := 0
+	for _, label := range prepared {
+		finalName, finalCanonical, err := allocateLabelTagName(
+			label.baseName,
+			label.baseCanonical,
+			label.originalValid,
+			allocatedNames,
+			reservedOriginalNames,
+			allocationState,
+			len(entries)+len(reservedOriginalNames)+1,
+		)
+		if err != nil {
+			return nil, nil, 0, err
 		}
-		finalName := baseName
-		usedNames[strings.ToLower(baseName)]++
-		if usedNames[strings.ToLower(baseName)] > 1 {
-			finalName = fmt.Sprintf("%s (%d)", baseName, usedNames[strings.ToLower(baseName)])
+		if !label.originalValid || finalCanonical != label.baseCanonical {
+			adjustedCount++
 		}
-		labelNameByID[entry.ID] = finalName
-		color := trelloLabelColorHex(entry.Label.Color)
+		labelNameByID[label.entry.ID] = finalName
+		allocatedNames[finalCanonical] = struct{}{}
+		color := trelloLabelColorHex(label.entry.Label.Color)
 		tagExports = append(tagExports, store.TagExport{Name: finalName, Color: color})
 	}
-	return labelNameByID, tagExports
+	return labelNameByID, tagExports, adjustedCount, nil
+}
+
+func preferredLabelTagName(label Label) (string, bool) {
+	if store.CanonicalizeTag(label.Name) != "" {
+		return label.Name, true
+	}
+	if name := labelTagName(label.Name); name != "" {
+		return name, false
+	}
+
+	color := strings.TrimSpace(label.Color)
+	if color != "" && !strings.EqualFold(color, "none") {
+		if name := labelTagName("Trello " + strings.ToLower(color) + " label"); name != "" {
+			return name, false
+		}
+	}
+	return "Untitled Trello label", false
+}
+
+func labelTagName(name string) string {
+	if store.CanonicalizeTag(name) != "" {
+		return name
+	}
+
+	var b strings.Builder
+	hasBaseInSegment := false
+	for _, r := range name {
+		switch {
+		case r == '\'' || r == '’':
+		case unicode.IsLetter(r) || unicode.IsNumber(r):
+			b.WriteRune(r)
+			hasBaseInSegment = true
+		case unicode.IsMark(r) && hasBaseInSegment:
+			b.WriteRune(r)
+		case unicode.IsMark(r):
+		case r == '-':
+			b.WriteRune(r)
+			hasBaseInSegment = false
+		default:
+			b.WriteRune(' ')
+			hasBaseInSegment = false
+		}
+	}
+	candidate := strings.Join(strings.Fields(b.String()), " ")
+	if store.CanonicalizeTag(candidate) != "" {
+		return candidate
+	}
+	return truncateTagName(candidate, store.MaxTagRunes)
+}
+
+type labelSuffixPrefixKey struct {
+	canonicalPrefix string
+	digitWidth      int
+}
+
+type labelNameAllocationState struct {
+	nextSuffixByBase   map[string]int
+	nextSuffixByPrefix map[labelSuffixPrefixKey]int
+	candidateAttempts  int
+}
+
+func newLabelNameAllocationState(capacity int) *labelNameAllocationState {
+	return &labelNameAllocationState{
+		nextSuffixByBase:   make(map[string]int, capacity),
+		nextSuffixByPrefix: make(map[labelSuffixPrefixKey]int, capacity),
+	}
+}
+
+func allocateLabelTagName(
+	baseName string,
+	baseCanonical string,
+	originalValid bool,
+	allocated map[string]struct{},
+	reservedOriginals map[string]struct{},
+	allocationState *labelNameAllocationState,
+	maxAttempts int,
+) (string, string, error) {
+	_, alreadyAllocated := allocated[baseCanonical]
+	_, reservedForOriginal := reservedOriginals[baseCanonical]
+	if !alreadyAllocated && (originalValid || !reservedForOriginal) {
+		return baseName, baseCanonical, nil
+	}
+
+	n := allocationState.nextSuffixByBase[baseCanonical]
+	if n < 2 {
+		n = 2
+	}
+	for attempts := 0; attempts < maxAttempts; {
+		suffixNumber := fmt.Sprintf("%d", n)
+		digitWidth := len(suffixNumber)
+		suffix := " " + suffixNumber
+		baseLimit := store.MaxTagRunes - 1 - digitWidth
+		prefix := truncateTagName(baseName, baseLimit)
+		if prefix == "" {
+			prefix = truncateTagName(baseCanonical, baseLimit)
+		}
+		canonicalPrefix := store.CanonicalizeTag(prefix)
+		if canonicalPrefix == "" {
+			return "", "", fmt.Errorf("could not truncate Trello label %q for suffix %d", baseName, n)
+		}
+		prefixKey := labelSuffixPrefixKey{canonicalPrefix: canonicalPrefix, digitWidth: digitWidth}
+		if next := allocationState.nextSuffixByPrefix[prefixKey]; next > n {
+			n = next
+			continue
+		}
+
+		candidate := prefix + suffix
+		canonical := store.CanonicalizeTag(candidate)
+		allocationState.candidateAttempts++
+		attempts++
+		_, used := allocated[canonical]
+		_, reserved := reservedOriginals[canonical]
+		if canonical != "" && !used && !reserved {
+			if n == int(^uint(0)>>1) {
+				return "", "", fmt.Errorf("could not advance the suffix for Trello label %q", baseName)
+			}
+			allocationState.nextSuffixByBase[baseCanonical] = n + 1
+			allocationState.nextSuffixByPrefix[prefixKey] = n + 1
+			return candidate, canonical, nil
+		}
+		if n == int(^uint(0)>>1) {
+			break
+		}
+		allocationState.nextSuffixByPrefix[prefixKey] = n + 1
+		n++
+	}
+
+	return "", "", fmt.Errorf("could not allocate a unique tag name for Trello label %q", baseName)
+}
+
+func truncateTagName(name string, maxCanonicalRunes int) string {
+	if maxCanonicalRunes < 1 {
+		return ""
+	}
+	if canonical := store.CanonicalizeTag(name); canonical != "" && len([]rune(canonical)) <= maxCanonicalRunes {
+		return name
+	}
+
+	compacted := compactTagDisplayForTruncation(name)
+	var prefix strings.Builder
+	var best string
+	for _, r := range compacted {
+		prefix.WriteRune(r)
+		if unicode.IsSpace(r) || r == '-' {
+			continue
+		}
+		candidate := prefix.String()
+		canonical := store.CanonicalizeTag(candidate)
+		if canonical == "" || len([]rune(canonical)) > maxCanonicalRunes {
+			break
+		}
+		best = candidate
+	}
+	return best
+}
+
+func compactTagDisplayForTruncation(name string) string {
+	var b strings.Builder
+	var pendingSeparator rune
+	for _, r := range name {
+		if unicode.IsSpace(r) || r == '-' {
+			if b.Len() > 0 && pendingSeparator == 0 {
+				if r == '-' {
+					pendingSeparator = '-'
+				} else {
+					pendingSeparator = ' '
+				}
+			}
+			continue
+		}
+		if pendingSeparator != 0 {
+			b.WriteRune(pendingSeparator)
+			pendingSeparator = 0
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func trelloLabelColorHex(color string) *string {
