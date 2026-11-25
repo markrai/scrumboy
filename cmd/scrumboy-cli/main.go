@@ -82,6 +82,7 @@ func init() {
 	commands["dashboard"] = cmdDashboard
 	commands["metrics"] = cmdMetrics
 	commands["admin"] = cmdAdmin
+	commands["asset"] = cmdAsset
 	commands["tool"] = cmdTool
 	commands["version"] = func(a *app, _ []string) error {
 		fmt.Fprintf(a.out, "%s %s\n", progName, version)
@@ -140,6 +141,7 @@ Commands:
   dashboard  summary, todos (your work across projects)
   metrics    burndown, backlog
   admin      users, service-account, service-token (owner/admin)
+  asset      get, put, copy (inline images, which belong to one project)
   tool       call any server tool directly (escape hatch for scripting)
   version    print the version
 

@@ -1196,6 +1196,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.mcpHandler != nil && strings.HasPrefix(r.URL.Path, mcpAssetsPrefix) {
+		r = r.WithContext(ratelimit.WithClientIP(r.Context(), s.clientIP(r)))
+		s.handleMCPAssets(w, r)
+		return
+	}
+
 	if s.mcpHandler != nil && (r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/")) {
 		r = r.WithContext(ratelimit.WithClientIP(r.Context(), s.clientIP(r)))
 		s.mcpHandler.ServeHTTP(w, r)

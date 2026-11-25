@@ -54,9 +54,12 @@ redirect on `127.0.0.1`. Refresh tokens rotate on every use, so the CLI saves
 the new one before using it; `auth logout` revokes the session on the server
 (and warns if the server does not confirm, in which case the session stays
 valid until it expires).
-OAuth tokens are only accepted by the server's `/mcp/rpc` endpoint, so the CLI
-switches to that transport automatically (a bearer token that does not start
-with `sb_`, passed by flag or environment, is treated as an OAuth token too).
+For tool calls, OAuth tokens are accepted only by the server's `/mcp/rpc`
+endpoint (never by legacy `/mcp`), so the CLI switches to that transport
+automatically (a bearer token that does not start with `sb_`, passed by flag or
+environment, is treated as an OAuth token too). The `asset` commands send the
+same token to the bearer-only `/mcp/assets/*` routes, which accept it because
+it is bound to `/mcp/rpc`.
 
 ```sh
 scrumboy-cli auth status      # who you are, and which kind of credential
@@ -119,6 +122,7 @@ Commands (run `scrumboy-cli <command> -h` for flags):
 | `dashboard` | `summary`, `todos` |
 | `metrics` | `burndown`, `backlog` |
 | `admin` | `users`, `service-account`, `service-token` (owner/admin role) |
+| `asset` | `get`, `put`, `copy` (inline images, over `/mcp/assets/*`) |
 | `tool` | any server tool by name |
 
 - A todo is `slug/12`, `slug#12`, or `12` together with `-p`.
@@ -147,10 +151,25 @@ Commands (run `scrumboy-cli <command> -h` for flags):
   scrumboy-cli tool metrics_getBurndown --input '{"projectSlug":"demo"}'
   ```
 
+Inline images belong to one project and are not tools. `asset get <id|url>`
+downloads one, `asset put <file> -p slug [--todo N]` uploads one and prints its
+`/api/assets/<id>` URL, and `asset copy <id|url> -p slug [--todo N]` does both
+in one step. To move a todo to another board, copy each image it embeds and
+rewrite the body with the printed URLs. These use the server's bearer-only
+`/mcp/assets/*` routes (see [`docs/mcp.md`](mcp.md)); they need a server that
+has inline images enabled and a build that includes those routes.
+
+`--todo N` names the todo in the target project that the upload is authorized
+against; it does not insert the image into that todo. Maintainers can upload
+without it. Contributors need it, and can only name a todo assigned to them that
+is not archived. Viewers cannot upload. No upload changes a todo body: embed the
+printed `/api/assets/<id>` URL yourself. An image that no todo body embeds
+becomes eligible for garbage collection seven days after it was uploaded (or
+last removed from a body).
+
 Not covered, because the server exposes them only over its browser (REST)
-API: inline image upload, `.sbz` backup/restore,
-public-board publication, and API token management (`/api/me/tokens` needs a
-session cookie).
+API: `.sbz` backup/restore, public-board publication, and API token management
+(`/api/me/tokens` needs a session cookie).
 
 ## Releasing
 

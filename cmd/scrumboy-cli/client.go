@@ -298,3 +298,77 @@ func snippet(b []byte) string {
 	}
 	return s
 }
+
+// Raw sends one request to a bearer-authenticated /mcp/assets/* route (inline
+// image download and upload, which the JSON-RPC tool transport cannot carry).
+// It uses the same credential, redirect policy and refresh-on-401 as Call. A
+// non-2xx answer is returned as an *APIError.
+func (c *Client) Raw(ctx context.Context, method, path, contentType string, body []byte) (http.Header, []byte, error) {
+	if c.Refresh != nil && !c.Expiry.IsZero() && time.Until(c.Expiry) < time.Minute {
+		if err := c.refresh(ctx); err != nil {
+			return nil, nil, err
+		}
+	}
+	hdr, data, err := c.rawOnce(ctx, method, path, contentType, body)
+	var ua *errUnauthorized
+	if errors.As(err, &ua) && c.Refresh != nil {
+		if rerr := c.refresh(ctx); rerr != nil {
+			return nil, nil, fmt.Errorf("%v (and refreshing the session failed: %w)", ua.msg, rerr)
+		}
+		return c.rawOnce(ctx, method, path, contentType, body)
+	}
+	return hdr, data, err
+}
+
+func (c *Client) rawOnce(ctx context.Context, method, path, contentType string, body []byte) (http.Header, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, nil, fmt.Errorf("build request: %w", err)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if c.UserAgent != "" {
+		req.Header.Set("User-Agent", c.UserAgent)
+	}
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	// Image transfers can outlast the 30s tool-call timeout on a slow link.
+	hc := *c.HTTP
+	hc.Timeout = 5 * time.Minute
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("request %s: %w", c.BaseURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, nil, fmt.Errorf("%s answered with a redirect (HTTP %d to %s); credentials are never sent to a redirect target, so pass the server's final URL with --server",
+			c.BaseURL, resp.StatusCode, safeText(resp.Header.Get("Location")))
+	}
+	tooLarge := fmt.Errorf("response from %s (HTTP %d) is larger than %d MiB", c.BaseURL, resp.StatusCode, maxResponseBytes>>20)
+	if resp.ContentLength > maxResponseBytes {
+		return nil, nil, tooLarge
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return nil, nil, fmt.Errorf("read response: %w", err)
+	}
+	if len(b) > maxResponseBytes {
+		return nil, nil, tooLarge
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return resp.Header, b, nil
+	}
+	var env struct {
+		Error *APIError `json:"error"`
+	}
+	if json.Unmarshal(b, &env) != nil || env.Error == nil {
+		return nil, nil, fmt.Errorf("unexpected response from %s (HTTP %d): %s", c.BaseURL, resp.StatusCode, snippet(b))
+	}
+	env.Error.Status = resp.StatusCode
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, nil, &errUnauthorized{msg: env.Error.Error()}
+	}
+	return nil, nil, env.Error
+}
