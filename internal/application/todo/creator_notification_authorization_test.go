@@ -5,40 +5,48 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"time"
 
 	"scrumboy/internal/store"
 )
 
 type creatorNotificationAuthorizationStoreFake struct {
-	project          store.Project
-	projectErr       error
-	role             store.ProjectRole
-	roleErr          error
-	honorContext     bool
-	projectCalls     []int64
-	roleCalls        [][2]int64
-	trace            []string
-	afterProjectRead func()
+	facts        store.TodoCreatorNotificationFacts
+	found        bool
+	err          error
+	honorContext bool
+	calls        [][3]int64
 }
 
-func (f *creatorNotificationAuthorizationStoreFake) GetProject(ctx context.Context, projectID int64) (store.Project, error) {
-	f.projectCalls = append(f.projectCalls, projectID)
-	f.trace = append(f.trace, "project")
+func (f *creatorNotificationAuthorizationStoreFake) GetTodoCreatorNotificationFacts(
+	ctx context.Context,
+	projectID, todoID, recipientUserID int64,
+) (store.TodoCreatorNotificationFacts, bool, error) {
+	f.calls = append(f.calls, [3]int64{projectID, todoID, recipientUserID})
 	if f.honorContext && ctx.Err() != nil {
-		return store.Project{}, ctx.Err()
+		return store.TodoCreatorNotificationFacts{}, false, ctx.Err()
 	}
-	project, err := f.project, f.projectErr
-	if f.afterProjectRead != nil {
-		f.afterProjectRead()
-	}
-	return project, err
+	return f.facts, f.found, f.err
 }
 
-func (f *creatorNotificationAuthorizationStoreFake) GetProjectRole(_ context.Context, projectID int64, userID int64) (store.ProjectRole, error) {
-	f.roleCalls = append(f.roleCalls, [2]int64{projectID, userID})
-	f.trace = append(f.trace, "role")
-	return f.role, f.roleErr
+func creatorAuthorizationFacts(role store.ProjectRole, creatorID int64) store.TodoCreatorNotificationFacts {
+	return store.TodoCreatorNotificationFacts{
+		ProjectID:       7,
+		ProjectName:     "Roadmap",
+		ProjectSlug:     "current-slug",
+		DurableProject:  true,
+		RecipientRole:   role,
+		TodoID:          81,
+		TodoProjectID:   7,
+		TodoLocalID:     5,
+		CreatedByUserID: &creatorID,
+	}
+}
+
+func creatorAuthorizationAccess(role store.ProjectRole) *creatorNotificationAuthorizationStoreFake {
+	return &creatorNotificationAuthorizationStoreFake{
+		facts: creatorAuthorizationFacts(role, 11),
+		found: true,
+	}
 }
 
 func creatorAuthorizationRequest() CreatorNotificationRequest {
@@ -67,39 +75,31 @@ func authorizedCreatorNotification() AuthorizedCreatorNotification {
 	}
 }
 
-func TestCreatorNotificationAuthorizationUsesFreshCurrentProjectAccess(t *testing.T) {
+func TestCreatorNotificationAuthorizationUsesCurrentTodoCreatorAndAccess(t *testing.T) {
 	for _, role := range []store.ProjectRole{store.RoleViewer, store.RoleContributor, store.RoleMaintainer} {
 		t.Run(role.String(), func(t *testing.T) {
-			access := &creatorNotificationAuthorizationStoreFake{
-				project: store.Project{ID: 7, Slug: "current-slug"},
-				role:    role,
-			}
+			access := creatorAuthorizationAccess(role)
 			got, ok, err := NewCreatorNotificationAuthorizationService(access).Authorize(context.Background(), creatorAuthorizationRequest())
 			if err != nil || !ok {
 				t.Fatalf("Authorize = (%+v, %v, %v), want authorized", got, ok, err)
 			}
 			want := AuthorizedCreatorNotification{
-				ProjectID: 7, ProjectSlug: "current-slug", TodoID: 81, LocalID: 5,
+				ProjectID: 7, ProjectSlug: "current-slug", ProjectName: "Roadmap", TodoID: 81, LocalID: 5,
 				Title: "Committed title", ActivityReason: RefreshReasonTodoUpdated,
 				RecipientUserID: 11, ActorUserID: 22,
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("authorized = %+v, want %+v", got, want)
 			}
-			if !reflect.DeepEqual(access.trace, []string{"project", "role"}) ||
-				!reflect.DeepEqual(access.projectCalls, []int64{7}) ||
-				!reflect.DeepEqual(access.roleCalls, [][2]int64{{7, 11}}) {
-				t.Fatalf("access trace=%v projectCalls=%v roleCalls=%v", access.trace, access.projectCalls, access.roleCalls)
+			if !reflect.DeepEqual(access.calls, [][3]int64{{7, 81, 11}}) {
+				t.Fatalf("fact calls = %v", access.calls)
 			}
 		})
 	}
 }
 
 func TestCreatorNotificationAuthorizationPreservesMoveTransitionSnapshot(t *testing.T) {
-	access := &creatorNotificationAuthorizationStoreFake{
-		project: store.Project{ID: 7, Name: "Roadmap", Slug: "current-slug"},
-		role:    store.RoleViewer,
-	}
+	access := creatorAuthorizationAccess(store.RoleViewer)
 	request := creatorAuthorizationRequest()
 	request.ActivityReason = RefreshReasonTodoMoved
 	request.FromName = "Testing"
@@ -111,7 +111,7 @@ func TestCreatorNotificationAuthorizationPreservesMoveTransitionSnapshot(t *test
 		t.Fatalf("Authorize = (%+v, %v, %v), want authorized", authorized, ok, err)
 	}
 	if authorized.FromName != "Testing" || authorized.ToName != "Done" {
-		t.Fatalf("authorized move transition = %q → %q", authorized.FromName, authorized.ToName)
+		t.Fatalf("authorized move transition = %q -> %q", authorized.FromName, authorized.ToName)
 	}
 
 	reauthorized, ok, err := service.ReauthorizeRecipient(context.Background(), authorized)
@@ -119,20 +119,19 @@ func TestCreatorNotificationAuthorizationPreservesMoveTransitionSnapshot(t *test
 		t.Fatalf("ReauthorizeRecipient = (%+v, %v, %v), want authorized", reauthorized, ok, err)
 	}
 	if reauthorized.FromName != "Testing" || reauthorized.ToName != "Done" {
-		t.Fatalf("reauthorized move transition = %q → %q", reauthorized.FromName, reauthorized.ToName)
+		t.Fatalf("reauthorized move transition = %q -> %q", reauthorized.FromName, reauthorized.ToName)
 	}
 }
 
 func TestCreatorNotificationAuthorizationFailsClosed(t *testing.T) {
-	expires := time.Now().UTC().Add(time.Hour)
 	lookupErr := errors.New("lookup failed")
 	tests := []struct {
-		name            string
-		mutateRequest   func(*CreatorNotificationRequest)
-		access          *creatorNotificationAuthorizationStoreFake
-		wantErr         error
-		wantProjectRead bool
-		wantRoleRead    bool
+		name          string
+		mutateRequest func(*CreatorNotificationRequest)
+		mutateFacts   func(*store.TodoCreatorNotificationFacts)
+		access        *creatorNotificationAuthorizationStoreFake
+		wantErr       error
+		wantRead      bool
 	}{
 		{name: "nil store"},
 		{name: "nonpositive project id", mutateRequest: func(r *CreatorNotificationRequest) { r.ProjectID = 0 }},
@@ -142,41 +141,18 @@ func TestCreatorNotificationAuthorizationFailsClosed(t *testing.T) {
 		{name: "nonpositive actor", mutateRequest: func(r *CreatorNotificationRequest) { r.ActorUserID = 0 }},
 		{name: "self request", mutateRequest: func(r *CreatorNotificationRequest) { r.ActorUserID = r.CreatedByUserID }},
 		{name: "unknown activity", mutateRequest: func(r *CreatorNotificationRequest) { r.ActivityReason = "unknown" }},
-		{
-			name:    "project deleted or unavailable",
-			access:  &creatorNotificationAuthorizationStoreFake{projectErr: lookupErr},
-			wantErr: lookupErr, wantProjectRead: true,
-		},
-		{
-			name:            "project identity mismatch",
-			access:          &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 8, Slug: "other"}, role: store.RoleViewer},
-			wantProjectRead: true,
-		},
-		{
-			name:            "temporary board",
-			access:          &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7, Slug: "temporary", ExpiresAt: &expires}, role: store.RoleViewer},
-			wantProjectRead: true,
-		},
-		{
-			name:            "missing current slug",
-			access:          &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7}, role: store.RoleViewer},
-			wantProjectRead: true,
-		},
-		{
-			name:            "removed nonexistent or deleted creator",
-			access:          &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7, Slug: "durable"}},
-			wantProjectRead: true, wantRoleRead: true,
-		},
-		{
-			name:            "malformed membership role",
-			access:          &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7, Slug: "durable"}, role: store.ProjectRole("unexpected")},
-			wantProjectRead: true, wantRoleRead: true,
-		},
-		{
-			name:    "membership lookup error",
-			access:  &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7, Slug: "durable"}, roleErr: lookupErr},
-			wantErr: lookupErr, wantProjectRead: true, wantRoleRead: true,
-		},
+		{name: "lookup failure", access: &creatorNotificationAuthorizationStoreFake{err: lookupErr}, wantErr: lookupErr, wantRead: true},
+		{name: "project or todo missing", access: &creatorNotificationAuthorizationStoreFake{}, wantRead: true},
+		{name: "project identity mismatch", mutateFacts: func(f *store.TodoCreatorNotificationFacts) { f.ProjectID = 8 }, wantRead: true},
+		{name: "temporary board", mutateFacts: func(f *store.TodoCreatorNotificationFacts) { f.DurableProject = false }, wantRead: true},
+		{name: "missing current slug", mutateFacts: func(f *store.TodoCreatorNotificationFacts) { f.ProjectSlug = "" }, wantRead: true},
+		{name: "todo identity mismatch", mutateFacts: func(f *store.TodoCreatorNotificationFacts) { f.TodoID = 82 }, wantRead: true},
+		{name: "todo project mismatch", mutateFacts: func(f *store.TodoCreatorNotificationFacts) { f.TodoProjectID = 8 }, wantRead: true},
+		{name: "todo local id mismatch", mutateFacts: func(f *store.TodoCreatorNotificationFacts) { f.TodoLocalID = 6 }, wantRead: true},
+		{name: "creator is null", mutateFacts: func(f *store.TodoCreatorNotificationFacts) { f.CreatedByUserID = nil }, wantRead: true},
+		{name: "creator changed", mutateFacts: func(f *store.TodoCreatorNotificationFacts) { id := int64(33); f.CreatedByUserID = &id }, wantRead: true},
+		{name: "removed membership", mutateFacts: func(f *store.TodoCreatorNotificationFacts) { f.RecipientRole = "" }, wantRead: true},
+		{name: "malformed membership", mutateFacts: func(f *store.TodoCreatorNotificationFacts) { f.RecipientRole = store.ProjectRole("unexpected") }, wantRead: true},
 	}
 
 	for _, tt := range tests {
@@ -185,81 +161,78 @@ func TestCreatorNotificationAuthorizationFailsClosed(t *testing.T) {
 			if tt.mutateRequest != nil {
 				tt.mutateRequest(&request)
 			}
+			access := tt.access
+			if access == nil && (tt.mutateFacts != nil || tt.wantRead) {
+				access = creatorAuthorizationAccess(store.RoleViewer)
+			}
+			if tt.mutateFacts != nil {
+				tt.mutateFacts(&access.facts)
+			}
 			var service *CreatorNotificationAuthorizationService
-			if tt.access == nil {
+			if access == nil {
 				service = NewCreatorNotificationAuthorizationService(nil)
 			} else {
-				service = NewCreatorNotificationAuthorizationService(tt.access)
+				service = NewCreatorNotificationAuthorizationService(access)
 			}
 			got, ok, err := service.Authorize(context.Background(), request)
 			if ok || got != (AuthorizedCreatorNotification{}) || !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Authorize = (%+v, %v, %v), want zero/false/%v", got, ok, err, tt.wantErr)
 			}
-			if tt.access == nil {
-				return
-			}
-			if (len(tt.access.projectCalls) > 0) != tt.wantProjectRead || (len(tt.access.roleCalls) > 0) != tt.wantRoleRead {
-				t.Fatalf("projectReads=%d roleReads=%d, want project=%v role=%v", len(tt.access.projectCalls), len(tt.access.roleCalls), tt.wantProjectRead, tt.wantRoleRead)
+			if access != nil && (len(access.calls) > 0) != tt.wantRead {
+				t.Fatalf("fact reads=%d, want read=%v", len(access.calls), tt.wantRead)
 			}
 		})
 	}
 }
 
-func TestCreatorNotificationAuthorizationUsesMembershipAtConsumptionTime(t *testing.T) {
-	t.Run("membership added after mutation but before authorization allows current member", func(t *testing.T) {
-		access := &creatorNotificationAuthorizationStoreFake{
-			project: store.Project{ID: 7, Slug: "durable"},
-			role:    store.RoleViewer,
-		}
-		_, ok, err := NewCreatorNotificationAuthorizationService(access).Authorize(context.Background(), creatorAuthorizationRequest())
-		if err != nil || !ok {
-			t.Fatalf("Authorize current member = (%v, %v), want true", ok, err)
-		}
-	})
+func TestCreatorNotificationAuthorizationRejectsStaleCreatorWithoutRedirect(t *testing.T) {
+	access := creatorAuthorizationAccess(store.RoleViewer)
+	service := NewCreatorNotificationAuthorizationService(access)
+	authorized, ok, err := service.Authorize(context.Background(), creatorAuthorizationRequest())
+	if err != nil || !ok {
+		t.Fatalf("initial Authorize = (%+v, %v, %v)", authorized, ok, err)
+	}
 
-	t.Run("membership removed before authorization denies", func(t *testing.T) {
-		access := &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7, Slug: "durable"}}
-		got, ok, err := NewCreatorNotificationAuthorizationService(access).Authorize(context.Background(), creatorAuthorizationRequest())
-		if err != nil || ok || got != (AuthorizedCreatorNotification{}) {
-			t.Fatalf("Authorize removed member = (%+v, %v, %v), want denied", got, ok, err)
-		}
-	})
+	newCreatorID := int64(33)
+	access.facts.CreatedByUserID = &newCreatorID
+	recipientAccess, accessOK, err := service.ReauthorizeRecipientAccess(context.Background(), authorized)
+	if err != nil || !accessOK || recipientAccess.CurrentCreator || recipientAccess.Notification.RecipientUserID != 11 {
+		t.Fatalf("stale recipient access = (%+v, %v, %v), want current member but not creator", recipientAccess, accessOK, err)
+	}
+	got, ok, err := service.ReauthorizeRecipient(context.Background(), authorized)
+	if err != nil || ok || got != (AuthorizedCreatorNotification{}) {
+		t.Fatalf("stale ReauthorizeRecipient = (%+v, %v, %v), want discarded", got, ok, err)
+	}
 
-	t.Run("membership removed between project and role reads denies", func(t *testing.T) {
-		access := &creatorNotificationAuthorizationStoreFake{
-			project: store.Project{ID: 7, Slug: "durable"},
-			role:    store.RoleViewer,
-		}
-		access.afterProjectRead = func() { access.role = "" }
-		got, ok, err := NewCreatorNotificationAuthorizationService(access).Authorize(context.Background(), creatorAuthorizationRequest())
-		if err != nil || ok || got != (AuthorizedCreatorNotification{}) {
-			t.Fatalf("Authorize concurrently removed member = (%+v, %v, %v), want denied", got, ok, err)
-		}
-	})
+	staleRequest := creatorAuthorizationRequest()
+	got, ok, err = service.Authorize(context.Background(), staleRequest)
+	if err != nil || ok || got != (AuthorizedCreatorNotification{}) {
+		t.Fatalf("stale Authorize = (%+v, %v, %v), want discarded", got, ok, err)
+	}
+
+	access.facts.RecipientRole = store.RoleContributor
+	newRequest := creatorAuthorizationRequest()
+	newRequest.CreatedByUserID = newCreatorID
+	got, ok, err = service.Authorize(context.Background(), newRequest)
+	if err != nil || !ok || got.RecipientUserID != newCreatorID {
+		t.Fatalf("current creator Authorize = (%+v, %v, %v), want creator %d", got, ok, err, newCreatorID)
+	}
 }
 
 func TestCreatorNotificationAuthorizationCancelledLookupFailsClosed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	access := &creatorNotificationAuthorizationStoreFake{
-		project:      store.Project{ID: 7, Slug: "durable"},
-		role:         store.RoleViewer,
-		honorContext: true,
-	}
+	access := creatorAuthorizationAccess(store.RoleViewer)
+	access.honorContext = true
 	got, ok, err := NewCreatorNotificationAuthorizationService(access).Authorize(ctx, creatorAuthorizationRequest())
 	if ok || got != (AuthorizedCreatorNotification{}) || !errors.Is(err, context.Canceled) {
 		t.Fatalf("Authorize cancelled context = (%+v, %v, %v), want fail-closed cancellation", got, ok, err)
 	}
-	if len(access.projectCalls) != 1 || len(access.roleCalls) != 0 {
-		t.Fatalf("cancelled access projectReads=%d roleReads=%d, want 1/0", len(access.projectCalls), len(access.roleCalls))
-	}
 }
 
-func TestCreatorNotificationDeliveryReauthorizationUsesFreshCurrentAccess(t *testing.T) {
-	access := &creatorNotificationAuthorizationStoreFake{
-		project: store.Project{ID: 7, Slug: "delivery-time-slug"},
-		role:    store.RoleViewer,
-	}
+func TestCreatorNotificationDeliveryReauthorizationUsesFreshCurrentFacts(t *testing.T) {
+	access := creatorAuthorizationAccess(store.RoleViewer)
+	access.facts.ProjectSlug = "delivery-time-slug"
 	got, ok, err := NewCreatorNotificationAuthorizationService(access).ReauthorizeRecipient(
 		context.Background(),
 		authorizedCreatorNotification(),
@@ -269,85 +242,26 @@ func TestCreatorNotificationDeliveryReauthorizationUsesFreshCurrentAccess(t *tes
 	}
 	want := authorizedCreatorNotification()
 	want.ProjectSlug = "delivery-time-slug"
+	want.ProjectName = "Roadmap"
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("reauthorized = %+v, want %+v", got, want)
 	}
 }
 
-func TestCreatorNotificationDeliveryReauthorizationFailsClosed(t *testing.T) {
-	expires := time.Now().UTC().Add(time.Hour)
-	lookupErr := errors.New("lookup failed")
-	tests := []struct {
-		name          string
-		mutate        func(*AuthorizedCreatorNotification)
-		access        *creatorNotificationAuthorizationStoreFake
-		wantErr       error
-		wantRoleRead  bool
-		cancelContext bool
-	}{
-		{name: "nil store"},
-		{name: "invalid project", mutate: func(a *AuthorizedCreatorNotification) { a.ProjectID = 0 }},
-		{name: "invalid todo", mutate: func(a *AuthorizedCreatorNotification) { a.TodoID = 0 }},
-		{name: "invalid local id", mutate: func(a *AuthorizedCreatorNotification) { a.LocalID = 0 }},
-		{name: "invalid recipient", mutate: func(a *AuthorizedCreatorNotification) { a.RecipientUserID = 0 }},
-		{name: "invalid actor", mutate: func(a *AuthorizedCreatorNotification) { a.ActorUserID = 0 }},
-		{name: "self recipient", mutate: func(a *AuthorizedCreatorNotification) { a.ActorUserID = a.RecipientUserID }},
-		{name: "unknown activity", mutate: func(a *AuthorizedCreatorNotification) { a.ActivityReason = "unknown" }},
-		{name: "project unavailable", access: &creatorNotificationAuthorizationStoreFake{projectErr: lookupErr}, wantErr: lookupErr},
-		{name: "project identity mismatch", access: &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 8, Slug: "other"}, role: store.RoleViewer}},
-		{name: "temporary project", access: &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7, Slug: "temporary", ExpiresAt: &expires}, role: store.RoleViewer}},
-		{name: "missing project slug", access: &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7}, role: store.RoleViewer}},
-		{name: "removed deleted or nonexistent recipient", access: &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7, Slug: "durable"}}, wantRoleRead: true},
-		{name: "membership lookup failure", access: &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7, Slug: "durable"}, roleErr: lookupErr}, wantErr: lookupErr, wantRoleRead: true},
-		{name: "cancelled lookup", access: &creatorNotificationAuthorizationStoreFake{project: store.Project{ID: 7, Slug: "durable"}, role: store.RoleViewer, honorContext: true}, wantErr: context.Canceled, cancelContext: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			authorized := authorizedCreatorNotification()
-			if tt.mutate != nil {
-				tt.mutate(&authorized)
-			}
-			var service *CreatorNotificationAuthorizationService
-			if tt.access == nil {
-				service = NewCreatorNotificationAuthorizationService(nil)
-			} else {
-				service = NewCreatorNotificationAuthorizationService(tt.access)
-			}
-			ctx := context.Background()
-			if tt.cancelContext {
-				cancelled, cancel := context.WithCancel(ctx)
-				cancel()
-				ctx = cancelled
-			}
-			got, ok, err := service.ReauthorizeRecipient(ctx, authorized)
-			if ok || got != (AuthorizedCreatorNotification{}) || !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ReauthorizeRecipient = (%+v, %v, %v), want zero/false/%v", got, ok, err, tt.wantErr)
-			}
-			if tt.access != nil && (len(tt.access.roleCalls) > 0) != tt.wantRoleRead {
-				t.Fatalf("roleReads=%d, want roleRead=%v", len(tt.access.roleCalls), tt.wantRoleRead)
-			}
-		})
-	}
-}
-
-func TestCreatorNotificationDeliveryReauthorizationDeniesRemovalAfterPhaseThree(t *testing.T) {
-	access := &creatorNotificationAuthorizationStoreFake{
-		project: store.Project{ID: 7, Slug: "durable"},
-		role:    store.RoleViewer,
-	}
+func TestCreatorNotificationDeliveryReauthorizationUsesIndependentRead(t *testing.T) {
+	access := creatorAuthorizationAccess(store.RoleViewer)
 	service := NewCreatorNotificationAuthorizationService(access)
 	authorized, ok, err := service.Authorize(context.Background(), creatorAuthorizationRequest())
 	if err != nil || !ok {
-		t.Fatalf("Phase 3 Authorize = (%+v, %v, %v), want authorized", authorized, ok, err)
+		t.Fatalf("Authorize = (%+v, %v, %v), want authorized", authorized, ok, err)
 	}
 
-	access.role = ""
+	access.facts.RecipientRole = ""
 	got, ok, err := service.ReauthorizeRecipient(context.Background(), authorized)
 	if err != nil || ok || got != (AuthorizedCreatorNotification{}) {
-		t.Fatalf("delivery ReauthorizeRecipient = (%+v, %v, %v), want denied", got, ok, err)
+		t.Fatalf("ReauthorizeRecipient = (%+v, %v, %v), want denied", got, ok, err)
 	}
-	if !reflect.DeepEqual(access.trace, []string{"project", "role", "project", "role"}) {
-		t.Fatalf("access trace=%v, want independent Phase 3 and delivery-time reads", access.trace)
+	if len(access.calls) != 2 {
+		t.Fatalf("fact reads=%d, want independent authorization and delivery reads", len(access.calls))
 	}
 }

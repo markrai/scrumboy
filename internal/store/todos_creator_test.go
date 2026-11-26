@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 )
 
 func creatorPatch(id *int64) UpdateTodoInput {
@@ -59,6 +61,9 @@ func TestUpdateTodo_ReassignCreator(t *testing.T) {
 			t.Fatalf("UpdateTodo: %v", err)
 		}
 		assertTodoCreator(t, got, &maintainer.ID)
+		if got.MaterialChanged || got.CreatorChanged || got.OtherMaterialChanged || got.PublicProjectionChanged {
+			t.Fatalf("same-value mutation facts = material:%v creator:%v other:%v public:%v", got.MaterialChanged, got.CreatorChanged, got.OtherMaterialChanged, got.PublicProjectionChanged)
+		}
 		if count := creatorAuditCount(t, st, ctx, todo.ID); count != 0 {
 			t.Fatalf("todo_creator_changed audits = %d, want 0", count)
 		}
@@ -90,6 +95,9 @@ func TestUpdateTodo_ReassignCreator(t *testing.T) {
 			t.Fatalf("UpdateTodo: %v", err)
 		}
 		assertTodoCreator(t, got, &nonMember.ID)
+		if !got.MaterialChanged || !got.CreatorChanged || got.OtherMaterialChanged || got.PublicProjectionChanged {
+			t.Fatalf("creator-only mutation facts = material:%v creator:%v other:%v public:%v", got.MaterialChanged, got.CreatorChanged, got.OtherMaterialChanged, got.PublicProjectionChanged)
+		}
 
 		persisted, err := st.GetTodoByLocalID(ctxM, project.ID, todo.LocalID, ModeFull)
 		if err != nil {
@@ -111,6 +119,29 @@ func TestUpdateTodo_ReassignCreator(t *testing.T) {
 		if len(events) != 1 || events[0].Type != TodoEventUpdated || !containsString(events[0].ChangedFields, "creator") {
 			t.Fatalf("creator reassignment lifecycle events = %+v", events)
 		}
+		if events[0].ProjectSlug != project.Slug || events[0].Todo.ID != todo.ID || events[0].Todo.CreatedByUserID == nil || *events[0].Todo.CreatedByUserID != nonMember.ID || events[0].ActorUserID == nil || *events[0].ActorUserID != maintainer.ID {
+			t.Fatalf("creator reassignment lifecycle identity = %+v", events[0])
+		}
+		var actorID int64
+		var projectID int64
+		var metadataJSON string
+		if err := st.db.QueryRowContext(ctx, `
+			SELECT actor_user_id, project_id, metadata
+			FROM audit_events
+			WHERE action = 'todo_creator_changed' AND target_id = ?
+		`, todo.ID).Scan(&actorID, &projectID, &metadataJSON); err != nil {
+			t.Fatalf("read creator audit: %v", err)
+		}
+		var metadata struct {
+			Before *int64 `json:"before"`
+			After  int64  `json:"after"`
+		}
+		if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
+			t.Fatalf("decode creator audit: %v", err)
+		}
+		if actorID != maintainer.ID || projectID != project.ID || metadata.Before == nil || *metadata.Before != maintainer.ID || metadata.After != nonMember.ID {
+			t.Fatalf("creator audit actor=%d project=%d metadata=%+v", actorID, projectID, metadata)
+		}
 	})
 
 	t.Run("omitted creator preserves attribution", func(t *testing.T) {
@@ -122,10 +153,161 @@ func TestUpdateTodo_ReassignCreator(t *testing.T) {
 			t.Fatalf("UpdateTodo: %v", err)
 		}
 		assertTodoCreator(t, got, &nonMember.ID)
+		if !got.MaterialChanged || got.CreatorChanged || !got.OtherMaterialChanged || !got.PublicProjectionChanged {
+			t.Fatalf("ordinary mutation facts = material:%v creator:%v other:%v public:%v", got.MaterialChanged, got.CreatorChanged, got.OtherMaterialChanged, got.PublicProjectionChanged)
+		}
 		if count := creatorAuditCount(t, st, ctx, todo.ID); count != 1 {
 			t.Fatalf("creator audit count changed after omitted field: %d", count)
 		}
 	})
+}
+
+func TestUpdateTodo_CreatorMaterialClassification(t *testing.T) {
+	st, cleanup, ctx, project, maintainer, contributor, _ := setupAssigneeTestProject(t)
+	defer cleanup()
+	ctxM := WithUserID(ctx, maintainer.ID)
+
+	newTodo := func(title string) Todo {
+		t.Helper()
+		todo, err := st.CreateTodo(ctxM, project.ID, CreateTodoInput{Title: title, ColumnKey: DefaultColumnBacklog}, ModeFull)
+		if err != nil {
+			t.Fatalf("CreateTodo %q: %v", title, err)
+		}
+		return todo
+	}
+	assertFacts := func(t *testing.T, got Todo, material, creator, other, public bool) {
+		t.Helper()
+		if got.MaterialChanged != material || got.CreatorChanged != creator || got.OtherMaterialChanged != other || got.PublicProjectionChanged != public {
+			t.Fatalf("mutation facts = material:%v creator:%v other:%v public:%v; want %v/%v/%v/%v", got.MaterialChanged, got.CreatorChanged, got.OtherMaterialChanged, got.PublicProjectionChanged, material, creator, other, public)
+		}
+		encoded, err := json.Marshal(got)
+		if err != nil {
+			t.Fatalf("Marshal Todo: %v", err)
+		}
+		var projection map[string]any
+		if err := json.Unmarshal(encoded, &projection); err != nil {
+			t.Fatalf("Unmarshal Todo projection: %v", err)
+		}
+		for _, field := range []string{"AssignmentChanged", "MaterialChanged", "CreatorChanged", "OtherMaterialChanged", "PublicProjectionChanged"} {
+			if _, ok := projection[field]; ok {
+				t.Fatalf("transient field %q serialized in %s", field, encoded)
+			}
+		}
+	}
+
+	t.Run("creator only", func(t *testing.T) {
+		todo := newTodo("creator only")
+		got, err := st.UpdateTodo(ctxM, todo.ID, creatorPatch(ptrInt64(contributor.ID)), ModeFull)
+		if err != nil {
+			t.Fatalf("UpdateTodo: %v", err)
+		}
+		assertFacts(t, got, true, true, false, false)
+	})
+
+	t.Run("same value", func(t *testing.T) {
+		todo := newTodo("same value")
+		got, err := st.UpdateTodo(ctxM, todo.ID, creatorPatch(ptrInt64(maintainer.ID)), ModeFull)
+		if err != nil {
+			t.Fatalf("UpdateTodo: %v", err)
+		}
+		assertFacts(t, got, false, false, false, false)
+	})
+
+	t.Run("creator plus public field", func(t *testing.T) {
+		todo := newTodo("combined public")
+		patch := creatorPatch(ptrInt64(contributor.ID))
+		patch.KeepTitle = false
+		patch.Title = "combined public changed"
+		got, err := st.UpdateTodo(ctxM, todo.ID, patch, ModeFull)
+		if err != nil {
+			t.Fatalf("UpdateTodo: %v", err)
+		}
+		assertFacts(t, got, true, true, true, true)
+	})
+
+	t.Run("creator plus private field", func(t *testing.T) {
+		todo := newTodo("combined private")
+		patch := creatorPatch(ptrInt64(contributor.ID))
+		patch.DueAtPresent = true
+		dueAt := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Millisecond)
+		patch.DueAt = &dueAt
+		got, err := st.UpdateTodo(ctxM, todo.ID, patch, ModeFull)
+		if err != nil {
+			t.Fatalf("UpdateTodo: %v", err)
+		}
+		assertFacts(t, got, true, true, true, false)
+	})
+
+	t.Run("creator plus assignment publishes committed creator", func(t *testing.T) {
+		todo := newTodo("combined assignment")
+		var published bool
+		var publishedTo *int64
+		var publishedFacts TodoAssignedMutationFacts
+		st.SetTodoAssignedPublisher(func(_ context.Context, _, _, _ int64, _, _, _ string, _, to *int64, _ int64, facts TodoAssignedMutationFacts) {
+			published = true
+			publishedTo = cloneInt64Ptr(to)
+			publishedFacts = facts
+		})
+		patch := creatorPatch(ptrInt64(contributor.ID))
+		patch.KeepAssigneeUserID = false
+		patch.AssigneeUserID = ptrInt64(contributor.ID)
+		got, err := st.UpdateTodo(ctxM, todo.ID, patch, ModeFull)
+		if err != nil {
+			t.Fatalf("UpdateTodo: %v", err)
+		}
+		assertFacts(t, got, true, true, true, false)
+		if !got.AssignmentChanged || !published || publishedTo == nil || *publishedTo != contributor.ID ||
+			publishedFacts.CreatedByUserID == nil || *publishedFacts.CreatedByUserID != contributor.ID ||
+			!publishedFacts.DurableProject || publishedFacts.PublicProjectionChanged {
+			t.Fatalf("assignment publication to=%v facts=%+v todo=%+v", publishedTo, publishedFacts, got)
+		}
+	})
+}
+
+func TestGetTodoCreatorNotificationFacts(t *testing.T) {
+	st, cleanup, ctx, project, maintainer, contributor, _ := setupAssigneeTestProject(t)
+	defer cleanup()
+	ctxM := WithUserID(ctx, maintainer.ID)
+	todo, err := st.CreateTodo(ctxM, project.ID, CreateTodoInput{Title: "authorization facts", ColumnKey: DefaultColumnBacklog}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo: %v", err)
+	}
+
+	facts, found, err := st.GetTodoCreatorNotificationFacts(ctx, project.ID, todo.ID, maintainer.ID)
+	if err != nil || !found {
+		t.Fatalf("GetTodoCreatorNotificationFacts = (%+v, %v, %v)", facts, found, err)
+	}
+	if facts.ProjectID != project.ID || facts.ProjectName != project.Name || facts.ProjectSlug != project.Slug || !facts.DurableProject || facts.RecipientRole != RoleMaintainer || facts.TodoID != todo.ID || facts.TodoProjectID != project.ID || facts.TodoLocalID != todo.LocalID || facts.CreatedByUserID == nil || *facts.CreatedByUserID != maintainer.ID {
+		t.Fatalf("facts = %+v", facts)
+	}
+
+	if _, err := st.UpdateTodo(ctxM, todo.ID, creatorPatch(ptrInt64(contributor.ID)), ModeFull); err != nil {
+		t.Fatalf("UpdateTodo creator: %v", err)
+	}
+	staleFacts, found, err := st.GetTodoCreatorNotificationFacts(ctx, project.ID, todo.ID, maintainer.ID)
+	if err != nil || !found || staleFacts.CreatedByUserID == nil || *staleFacts.CreatedByUserID != contributor.ID {
+		t.Fatalf("stale recipient facts = (%+v, %v, %v)", staleFacts, found, err)
+	}
+	currentFacts, found, err := st.GetTodoCreatorNotificationFacts(ctx, project.ID, todo.ID, contributor.ID)
+	if err != nil || !found || currentFacts.RecipientRole != RoleContributor || currentFacts.CreatedByUserID == nil || *currentFacts.CreatedByUserID != contributor.ID {
+		t.Fatalf("current recipient facts = (%+v, %v, %v)", currentFacts, found, err)
+	}
+
+	if _, found, err := st.GetTodoCreatorNotificationFacts(ctx, project.ID, todo.ID+999999, contributor.ID); err != nil || found {
+		t.Fatalf("missing todo = (%v, %v), want false/nil", found, err)
+	}
+
+	otherProject, err := st.CreateProject(ctxM, "Other creator facts project")
+	if err != nil {
+		t.Fatalf("CreateProject other: %v", err)
+	}
+	otherTodo, err := st.CreateTodo(ctxM, otherProject.ID, CreateTodoInput{Title: "other project todo", ColumnKey: DefaultColumnBacklog}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo other: %v", err)
+	}
+	if _, found, err := st.GetTodoCreatorNotificationFacts(ctx, project.ID, otherTodo.ID, maintainer.ID); err != nil || found {
+		t.Fatalf("cross-project todo = (%v, %v), want false/nil", found, err)
+	}
 }
 
 func TestUpdateTodo_CreatorAuthorizationBoundaries(t *testing.T) {

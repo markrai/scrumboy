@@ -658,6 +658,7 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 				return Todo{}, fmt.Errorf("commit update todo: %w", err)
 			}
 			existing.MaterialChanged = bodyChanged
+			existing.OtherMaterialChanged = bodyChanged
 			existing.PublicProjectionChanged = bodyChanged
 			existing.Body = in.Body
 			existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
@@ -820,7 +821,8 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		!sameInt64Ptr(existing.SprintID, effectiveSprint) ||
 		!sameStringPtr(existing.PriorityKey, effectivePriorityKey) ||
 		!sameStringSet(existing.Tags, tags)
-	materialChanged := publicFieldsChanged || assignmentChanged || dueAtChanged
+	otherMaterialChanged := publicFieldsChanged || assignmentChanged || dueAtChanged
+	materialChanged := otherMaterialChanged || creatorChanged
 
 	var userIDPtr *int64
 	if !ok && len(tags) > 0 {
@@ -1109,6 +1111,8 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
 	existing.AssignmentChanged = assignmentChanged
 	existing.MaterialChanged = materialChanged
+	existing.CreatorChanged = creatorChanged
+	existing.OtherMaterialChanged = otherMaterialChanged
 	existing.PublicProjectionChanged = publicFieldsChanged
 
 	if s.todoAssignedPublisher != nil && assignmentChanged && !isAnonymousBoard {
@@ -1354,6 +1358,7 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 	existing.Rank = newRank
 	existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
 	existing.MaterialChanged = materialChanged
+	existing.OtherMaterialChanged = materialChanged
 	existing.MoveFromColumnName = currentCol.Name
 	existing.MoveToColumnName = targetCol.Name
 	if doneAtMs != nil {
@@ -1482,6 +1487,48 @@ func (s *Store) GetProjectIDForTodo(ctx context.Context, todoID int64) (int64, e
 		return 0, fmt.Errorf("get project id for todo: %w", err)
 	}
 	return projectID, nil
+}
+
+func (s *Store) GetTodoCreatorNotificationFacts(
+	ctx context.Context,
+	projectID, todoID, recipientUserID int64,
+) (TodoCreatorNotificationFacts, bool, error) {
+	var facts TodoCreatorNotificationFacts
+	var role sql.NullString
+	var creatorID sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT p.id, p.name, p.slug, p.expires_at IS NULL,
+		       pm.role,
+		       t.id, t.project_id, t.local_id, t.created_by_user_id
+		FROM projects p
+		JOIN todos t ON t.id = ? AND t.project_id = p.id
+		LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
+		WHERE p.id = ? AND p.import_batch_id IS NULL
+	`, todoID, recipientUserID, projectID).Scan(
+		&facts.ProjectID,
+		&facts.ProjectName,
+		&facts.ProjectSlug,
+		&facts.DurableProject,
+		&role,
+		&facts.TodoID,
+		&facts.TodoProjectID,
+		&facts.TodoLocalID,
+		&creatorID,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return TodoCreatorNotificationFacts{}, false, nil
+	}
+	if err != nil {
+		return TodoCreatorNotificationFacts{}, false, fmt.Errorf("get todo creator notification facts: %w", err)
+	}
+	if role.Valid {
+		facts.RecipientRole = ProjectRole(role.String)
+	}
+	if creatorID.Valid {
+		value := creatorID.Int64
+		facts.CreatedByUserID = &value
+	}
+	return facts, true, nil
 }
 
 func (s *Store) GetTodoByLocalID(ctx context.Context, projectID, localID int64, mode Mode) (Todo, error) {
