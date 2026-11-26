@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DIALOG_CLOSE_REQUEST_EVENT } from "../core/modal-outside-click.js";
+import enCatalog from "../i18n/locales/en.json";
+import pseudoCatalog from "../i18n/locales/pseudo.json";
 
 const showConfirmDialogMock = vi.fn();
+const apiFetchMock = vi.fn();
 let fullProject = false;
+let activeUserRole = "maintainer";
 
 function installTodoDom(): void {
   document.body.innerHTML = `
@@ -31,7 +35,8 @@ function installTodoDom(): void {
         <div id="todoAssigneeField"></div>
         <div id="todoSprintField"></div>
         <div id="todoLinksField"></div>
-        <div id="todoDialogCreated"><span class="todo-dialog-datetime-value"></span></div>
+        <div id="todoDialogCreated"><span class="todo-dialog-datetime-value"></span><span id="todoDialogCreatedBy"></span><button id="todoCreatorEditBtn" type="button" hidden></button><button id="todoCreatorResetBtn" type="button" hidden></button></div>
+        <div id="todoCreatorSelector" hidden><input id="todoCreatorSearch" /><button id="todoCreatorSelectorClose" type="button"></button><div id="todoCreatorStatus"></div><div id="todoCreatorOptions"></div></div>
         <div id="todoDialogUpdated"><span class="todo-dialog-datetime-value"></span></div>
         <button id="closeTodoBtn" type="button"></button>
         <button id="deleteTodoBtn" type="button"></button>
@@ -77,22 +82,25 @@ function renderTags(tags: string[]): void {
 }
 
 function mockTodoModule(): void {
-  vi.doMock("../api.js", () => ({ apiFetch: vi.fn().mockResolvedValue([]) }));
+  vi.doMock("../api.js", () => ({ apiFetch: apiFetchMock }));
   vi.doMock("../state/selectors.js", () => ({
     getBoard: () => ({
       columnOrder: [
         { key: "backlog", name: "Backlog" },
         { key: "doing", name: "Doing" },
       ],
-      project: { creatorUserId: 1 },
+      project: { id: 1, creatorUserId: 1 },
     }),
-    getBoardMembers: () => [],
+    getBoardMembers: () => fullProject ? [
+      { userId: 10, name: "Ada", role: activeUserRole },
+      { userId: 11, name: "Grace", role: "viewer" },
+    ] : [],
     getMarkdownNotesEnabled: () => false,
     getMermaidNotesEnabled: () => false,
     getInlineImagesEnabled: () => false,
     getSlug: () => fullProject ? "alpha" : "",
     getTagColors: () => ({}),
-    getUser: () => fullProject ? { id: 1 } : null,
+    getUser: () => fullProject ? { id: 10 } : null,
   }));
   vi.doMock("../state/mutations.js", () => ({
     setAvailableTags: vi.fn(),
@@ -120,7 +128,7 @@ function mockTodoModule(): void {
     resetTodoDialogLinks: vi.fn(),
   }));
   vi.doMock("./todo-permissions.js", () => ({
-    computeTodoDialogPermissions: () => ({
+    computeTodoDialogPermissions: (options: { todo?: { archivedAt?: string | null } }) => ({
       canSubmitTodo: true,
       canDeleteTodo: true,
       canEditAssignment: true,
@@ -128,6 +136,7 @@ function mockTodoModule(): void {
       canEditTags: true,
       canEditNotes: true,
       canEditTitle: true,
+      canEditCreator: fullProject && activeUserRole === "maintainer" && !options.todo?.archivedAt,
       canEditStatus: true,
       canEditLinks: true,
     }),
@@ -139,6 +148,7 @@ function mockTodoModule(): void {
       canEditTags: true,
       canEditNotes: true,
       canEditTitle: true,
+      canEditCreator: fullProject && activeUserRole === "maintainer",
       canEditStatus: true,
       canEditLinks: true,
     }),
@@ -179,7 +189,7 @@ function simulateOutsideClose(dialog: HTMLDialogElement): boolean {
 }
 
 describe("todo close guard", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     installTodoDom();
     installDialogPolyfill();
@@ -198,8 +208,12 @@ describe("todo close guard", () => {
       onchange: null,
     }));
     showConfirmDialogMock.mockReset();
+    apiFetchMock.mockReset().mockResolvedValue([]);
     fullProject = false;
+    activeUserRole = "maintainer";
     mockTodoModule();
+    const i18n = await import("../i18n/index.js");
+    await i18n.initI18n({ locale: "en", loadLocale: async (locale) => locale === "pseudo" ? pseudoCatalog : enCatalog, storage: null });
   });
 
   afterEach(() => {
@@ -301,6 +315,152 @@ describe("todo close guard", () => {
 
     await expect(requestTodoDialogClose({ reason: "button" })).resolves.toBe(true);
     expect(showConfirmDialogMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { role: "viewer", assigneeUserId: 10, archivedAt: null },
+    { role: "contributor", assigneeUserId: 10, archivedAt: null },
+    { role: "contributor", assigneeUserId: 99, archivedAt: null },
+    { role: "maintainer", assigneeUserId: 10, archivedAt: "2026-11-02T12:00:00Z" },
+  ])("retains read-only creator attribution for $role dialog context", async ({ role, assigneeUserId, archivedAt }) => {
+    fullProject = true;
+    activeUserRole = role;
+    const { __isTodoDialogDirtyForTest, openTodoDialog } = await import("./todo.js");
+    await openTodoDialog({
+      mode: "edit",
+      role,
+      todo: {
+        localId: 4,
+        title: "Attributed",
+        body: "Body",
+        columnKey: "backlog",
+        createdByUserId: 11,
+        assigneeUserId,
+        archivedAt,
+        createdAt: "2026-11-01T12:00:00Z",
+        tags: [],
+      },
+    });
+
+    expect(document.getElementById("todoDialogCreatedBy")?.textContent).toBe("by Grace");
+    expect((document.getElementById("todoCreatorEditBtn") as HTMLButtonElement).hidden).toBe(true);
+    expect(__isTodoDialogDirtyForTest()).toBe(false);
+    expect(apiFetchMock.mock.calls.some((call) => String(call[0]).includes("/available-users"))).toBe(false);
+
+    const i18n = await import("../i18n/index.js");
+    await i18n.setLocale("pseudo");
+    expect(document.getElementById("todoDialogCreatedBy")?.textContent).toContain("Grace");
+    expect(__isTodoDialogDirtyForTest()).toBe(false);
+  });
+
+  it("keeps a clean dialog clean when creator authorization is revoked", async () => {
+    fullProject = true;
+    const { __isTodoDialogDirtyForTest, openTodoDialog } = await import("./todo.js");
+    await openTodoDialog({
+      mode: "edit",
+      role: "maintainer",
+      todo: {
+        localId: 4,
+        title: "Alpha",
+        body: "Body",
+        columnKey: "backlog",
+        createdByUserId: 10,
+        createdAt: "2026-11-01T12:00:00Z",
+        tags: [],
+      },
+    });
+
+    activeUserRole = "viewer";
+    const events = await import("../events.js");
+    events.emit("members-updated", { projectId: 1 });
+
+    expect(__isTodoDialogDirtyForTest()).toBe(false);
+    expect(document.getElementById("todoDialogCreatedBy")?.textContent).toBe("by Ada");
+    expect((document.getElementById("todoCreatorEditBtn") as HTMLButtonElement).hidden).toBe(true);
+  });
+
+  it("discards only the pending creator mutation when authorization is revoked", async () => {
+    fullProject = true;
+    const { __isTodoDialogDirtyForTest, getPendingTodoCreatorId, openTodoDialog } = await import("./todo.js");
+    await openTodoDialog({
+      mode: "edit",
+      role: "maintainer",
+      todo: {
+        localId: 4,
+        title: "Alpha",
+        body: "Body",
+        columnKey: "backlog",
+        createdByUserId: 10,
+        createdAt: "2026-11-01T12:00:00Z",
+        tags: [],
+      },
+    });
+    (document.getElementById("todoCreatorEditBtn") as HTMLButtonElement).click();
+    await flushPromises();
+    (document.querySelector('[data-user-id="11"]') as HTMLElement).click();
+    (document.getElementById("todoTitle") as HTMLInputElement).value = "Pending title";
+    (document.getElementById("todoBody") as HTMLTextAreaElement).value = "Pending body";
+
+    activeUserRole = "viewer";
+    const events = await import("../events.js");
+    events.emit("members-updated", { projectId: 1 });
+
+    expect(getPendingTodoCreatorId()).toBeNull();
+    expect((document.getElementById("todoTitle") as HTMLInputElement).value).toBe("Pending title");
+    expect((document.getElementById("todoBody") as HTMLTextAreaElement).value).toBe("Pending body");
+    expect(__isTodoDialogDirtyForTest()).toBe(true);
+    expect(document.getElementById("todoCreatorOptions")?.children).toHaveLength(0);
+    expect((document.getElementById("todoCreatorSelector") as HTMLElement).hidden).toBe(true);
+  });
+
+  it("tracks pending creator selection without treating selector activity as a change", async () => {
+    fullProject = true;
+    const { __isTodoDialogDirtyForTest, getPendingTodoCreatorId, openTodoDialog, requestTodoDialogClose } = await import("./todo.js");
+    await openTodoDialog({
+      mode: "edit",
+      role: "maintainer",
+      todo: {
+        localId: 4,
+        title: "Alpha",
+        body: "Body",
+        columnKey: "backlog",
+        createdByUserId: 10,
+        createdAt: "2026-11-01T12:00:00Z",
+        tags: [],
+      },
+    });
+
+    expect(__isTodoDialogDirtyForTest()).toBe(false);
+    (document.getElementById("todoCreatorEditBtn") as HTMLButtonElement).click();
+    await flushPromises();
+    expect(__isTodoDialogDirtyForTest()).toBe(false);
+
+    const search = document.getElementById("todoCreatorSearch") as HTMLInputElement;
+    search.value = "Grace";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(__isTodoDialogDirtyForTest()).toBe(false);
+
+    (document.querySelector('[data-user-id="11"]') as HTMLElement).click();
+    expect(getPendingTodoCreatorId()).toBe(11);
+    expect(__isTodoDialogDirtyForTest()).toBe(true);
+
+    (document.getElementById("todoCreatorResetBtn") as HTMLButtonElement).click();
+    expect(getPendingTodoCreatorId()).toBeNull();
+    expect(__isTodoDialogDirtyForTest()).toBe(false);
+
+    (document.getElementById("todoTitle") as HTMLInputElement).value = "Still dirty";
+    (document.getElementById("todoCreatorEditBtn") as HTMLButtonElement).click();
+    (document.querySelector('[data-user-id="11"]') as HTMLElement).click();
+    (document.getElementById("todoCreatorResetBtn") as HTMLButtonElement).click();
+    expect(getPendingTodoCreatorId()).toBeNull();
+    expect(__isTodoDialogDirtyForTest()).toBe(true);
+    (document.getElementById("todoTitle") as HTMLInputElement).value = "Alpha";
+
+    (document.getElementById("todoCreatorEditBtn") as HTMLButtonElement).click();
+    (document.querySelector('[data-user-id="11"]') as HTMLElement).click();
+    showConfirmDialogMock.mockResolvedValue(false);
+    await expect(requestTodoDialogClose({ reason: "button" })).resolves.toBe(false);
+    expect(showConfirmDialogMock).toHaveBeenCalledTimes(1);
   });
 
   it("runs the create-success callback once for the matching dialog generation", async () => {

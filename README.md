@@ -149,6 +149,8 @@ Owner, Admin, and User control instance-wide capabilities such as user managemen
 
 Project access requires project membership. Per-project roles are **Maintainer** (full project management), **Contributor** (limited edits, including body editing on cards assigned to them), and **Viewer** (read-only). Temporary/anonymous boards use a separate link-based permission model instead of these roles. Details: [docs/roles-and-permissions.md](docs/roles-and-permissions.md).
 
+Project Maintainers can correct an existing story's creator from the pencil beside its created timestamp in the Edit Todo dialog. The selector includes project members and other existing users. A choice remains pending until **Save**; **Reset** restores the original attribution, and discarding the dialog leaves the saved attribution unchanged. Creator attribution cannot be cleared. It is historical information only: it grants no membership, ownership, or edit permission, and a creator-only correction sends no creator-specific notification.
+
 ---
 
 

@@ -155,6 +155,7 @@ export interface User {
   twoFactorEnabled?: boolean;
   hasLocalPassword?: boolean;
   oidcLinked?: boolean;
+  isService?: boolean;
 }
 
 export interface ApiToken {

@@ -344,15 +344,18 @@ describe("openTodoDialog initialTitle seeding", () => {
     expect(showModal).toHaveBeenCalled();
   });
 
-  it("shows historical creator attribution only while the creator resolves as a current member", async () => {
+  it("distinguishes resolved and unresolved historical creator attribution", async () => {
     installTodoDom();
     const dialog = document.getElementById("todoDialog") as HTMLDialogElement;
     dialog.showModal = vi.fn();
-    let members = [{ userId: 7, name: "Ada", email: "ada@example.com", role: "maintainer" }];
+    let members = [
+      { userId: 7, name: "Ada", email: "ada@example.com", role: "maintainer" },
+      { userId: 9, name: "Grace", email: "grace@example.com", role: "maintainer" },
+    ];
 
     vi.doMock("../api.js", () => ({ apiFetch: vi.fn().mockResolvedValue([]) }));
     vi.doMock("../state/selectors.js", () => ({
-      getBoard: () => ({ columnOrder: [{ key: "backlog", name: "Backlog" }] }),
+      getBoard: () => ({ project: { id: 4 }, columnOrder: [{ key: "backlog", name: "Backlog" }] }),
       getBoardMembers: () => members,
       getMarkdownNotesEnabled: () => false,
       getMermaidNotesEnabled: () => false,
@@ -390,6 +393,7 @@ describe("openTodoDialog initialTitle seeding", () => {
         canEditNotes: true,
         canEditTitle: true,
         canEditStatus: true,
+        canEditCreator: true,
       }),
       setTodoFormPermissions: vi.fn(),
     }));
@@ -407,7 +411,7 @@ describe("openTodoDialog initialTitle seeding", () => {
       storage: null,
     });
     const { openTodoDialog } = await import("./todo.js");
-    const todo = { title: "Attributed", columnKey: "backlog", createdByUserId: 7, tags: [] };
+    const todo = { localId: 12, title: "Attributed", columnKey: "backlog", createdByUserId: 7, tags: [] };
     await openTodoDialog({ mode: "edit", todo, role: "maintainer" });
     const createdBy = document.getElementById("todoDialogCreatedBy") as HTMLElement;
     expect(createdBy.textContent).toBe("by Ada");
@@ -420,8 +424,8 @@ describe("openTodoDialog initialTitle seeding", () => {
     await i18n.setLocale("en");
     expect(createdBy.textContent).toBe("closed");
 
-    members = [];
+    members = [{ userId: 9, name: "Grace", email: "grace@example.com", role: "maintainer" }];
     await openTodoDialog({ mode: "edit", todo, role: "maintainer" });
-    expect(createdBy.textContent).toBe("");
+    expect(createdBy.textContent).toBe("Creator details unavailable");
   });
 });
