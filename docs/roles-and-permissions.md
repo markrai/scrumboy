@@ -53,6 +53,7 @@ Guest permissions apply to the signed-in account. Direct creation, Trello and ba
 | Edit an archived todo          | Nobody        | Read-only until restored (**409** `todo_archived`); role is checked first |
 | Self-assign todo               | Maintainer    | Contributor cannot self-assign          |
 | Assign todo to others          | Maintainer    |                                        |
+| Correct todo creator attribution | Maintainer  | Existing positive user ID; target need not be a member; cannot clear |
 | Create tags                    | Contributor+  |                                        |
 | Delete project-scoped tag      | Maintainer+   | Shared board tag; not a personal/user-owned tag |
 | Update project-scoped tag color | Maintainer+  | Shared `tags.color` for everyone on the board |
@@ -77,6 +78,7 @@ Permissions flow: `permissions.go` → store enforcement → API error mapping �
 
 - **Backend is authoritative:** Store methods enforce role checks; API returns 401/404 on failure.
 - **UI hides controls:** Contributors do not see create, delete, move, assign, or title/tag/sprint controls. Body-only edit is shown when assigned.
+- **Creator attribution is historical data:** correcting it grants no project membership, edit permission, ownership, or other authority. Omission preserves it; clearing is unsupported. Actual changes are audited, and creator-only corrections do not generate creator-specific notifications.
 
 ---
 

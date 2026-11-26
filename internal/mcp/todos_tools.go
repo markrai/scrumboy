@@ -594,7 +594,7 @@ func buildUpdatePatch(patchRaw json.RawMessage) (todoapp.UpdatePatch, *adapterEr
 			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "createdByUserId cannot be null", map[string]any{"field": "createdByUserId"})
 		}
 		var creator int64
-		if err := json.Unmarshal(v, &creator); err != nil {
+		if err := json.Unmarshal(v, &creator); err != nil || creator <= 0 {
 			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid createdByUserId", map[string]any{"field": "createdByUserId"})
 		}
 		patch.CreatedByUserID = todoapp.Field[*int64]{Present: true, Value: &creator}

@@ -531,10 +531,7 @@ func (f *fieldFlags) collect(c *cmdCtx) (map[string]any, error) {
 		out["assigneeUserId"] = v
 	}
 	if f.isSet("creator") {
-		if isNone(f.creator) {
-			return nil, usagef("--creator cannot be cleared; pass a user id or 'me'")
-		}
-		v, err := resolveAssignee(c, f.creator)
+		v, err := resolveCreator(c, f.creator)
 		if err != nil {
 			return nil, err
 		}
@@ -613,6 +610,29 @@ func resolveAssignee(c *cmdCtx, v string) (any, error) {
 	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil || n <= 0 {
 		return nil, usagef("--assignee must be a user id, 'me', or 'none'")
+	}
+	return n, nil
+}
+
+func resolveCreator(c *cmdCtx, v string) (int64, error) {
+	v = strings.TrimSpace(v)
+	if v == "me" {
+		res, err := c.call("me_get", nil)
+		if err != nil {
+			return 0, err
+		}
+		var me meResp
+		if err := res.Decode(&me); err != nil {
+			return 0, err
+		}
+		if me.UserID <= 0 {
+			return 0, usagef("--creator resolved 'me' to an invalid user id")
+		}
+		return me.UserID, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, usagef("--creator must be a positive user id or 'me'")
 	}
 	return n, nil
 }

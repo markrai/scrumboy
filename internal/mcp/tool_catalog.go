@@ -141,7 +141,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 					"tags":             jsonArrayProp("string", "Replace tags with this list"),
 					"estimationPoints": jsonPropWithNull("integer", "Story points estimate"),
 					"assigneeUserId":   jsonPropWithNull("integer", "Assignee user ID"),
-					"createdByUserId":  jsonProp("integer", "Reassign the creator (who receives creator notifications) to this user ID; maintainers only, cannot be cleared"),
+					"createdByUserId":  map[string]any{"type": "integer", "minimum": 1, "description": "Correct the historical creator attribution to an existing user ID; requires project Maintainer access, cannot be cleared, and grants no membership or permissions"},
 					"sprintId":         jsonPropWithNull("integer", "Sprint ID"),
 					"priorityKey":      jsonPropWithNull("string", "Priority tier key"),
 					"dueAt":            jsonPropWithNull("string", "Due date as an RFC 3339 timestamp; null clears it"),

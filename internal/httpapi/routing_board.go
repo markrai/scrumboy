@@ -1097,7 +1097,6 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 				Tags             []string   `json:"tags"`
 				EstimationPoints *int64     `json:"estimationPoints"`
 				AssigneeUserID   *int64     `json:"assigneeUserId"`
-				CreatedByUserID  *int64     `json:"createdByUserId"`
 				SprintID         *int64     `json:"sprintId"`
 				PriorityKey      *string    `json:"priorityKey"`
 				DueAt            *time.Time `json:"dueAt"`
@@ -1118,12 +1117,13 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 				EstimationPoints: todoapp.Field[*int64]{Present: true, Value: in.EstimationPoints},
 				AssigneeUserID:   todoapp.Field[*int64]{Present: true, Value: in.AssigneeUserID},
 			}
-			if _, hasCreator := raw["createdByUserId"]; hasCreator {
-				if in.CreatedByUserID == nil {
-					writeValidationError(w, "createdByUserId cannot be null", "invalid_created_by_user_id", map[string]any{"field": "createdByUserId"})
+			if rawCreator, hasCreator := raw["createdByUserId"]; hasCreator {
+				var creatorID *int64
+				if err := json.Unmarshal(rawCreator, &creatorID); err != nil || creatorID == nil || *creatorID <= 0 {
+					writeValidationError(w, "createdByUserId must be a positive integer", "invalid_created_by_user_id", map[string]any{"field": "createdByUserId"})
 					return true
 				}
-				patch.CreatedByUserID = todoapp.Field[*int64]{Present: true, Value: in.CreatedByUserID}
+				patch.CreatedByUserID = todoapp.Field[*int64]{Present: true, Value: creatorID}
 			}
 			if _, hasSprintID := raw["sprintId"]; hasSprintID {
 				patch.SprintID = todoapp.Field[*int64]{Present: true, Value: in.SprintID}
