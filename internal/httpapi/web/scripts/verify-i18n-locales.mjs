@@ -61,6 +61,10 @@ function sortedDifference(left, right) {
   return [...left].filter((key) => !right.has(key)).sort();
 }
 
+function placeholders(message) {
+  return [...new Set(message.match(/\{[a-zA-Z0-9_.-]+\}/g) ?? [])].sort();
+}
+
 async function main() {
   let entries;
   try {
@@ -104,6 +108,29 @@ async function main() {
     throw new Error(lines.join("\n"));
   }
 
+  const placeholderFailures = [];
+  for (const fileName of localeFiles) {
+    if (fileName === "en.json") continue;
+    const catalog = await readCatalog(fileName);
+    for (const [key, englishMessage] of en) {
+      const expected = placeholders(englishMessage);
+      const actual = placeholders(catalog.get(key));
+      if (expected.join("\0") !== actual.join("\0")) {
+        placeholderFailures.push({ fileName, key, expected, actual });
+      }
+    }
+  }
+
+  if (placeholderFailures.length > 0) {
+    const lines = ["i18n placeholder consistency failed:"];
+    for (const failure of placeholderFailures) {
+      lines.push(
+        `- ${failure.fileName} ${failure.key}: expected ${failure.expected.join(", ") || "none"}; found ${failure.actual.join(", ") || "none"}`,
+      );
+    }
+    throw new Error(lines.join("\n"));
+  }
+
   const bootstrapKeys = await readBootstrapCatalogKeys();
   const missingBootstrapKeys = [...en.keys()]
     .filter((key) => REQUIRED_BOOTSTRAP_PREFIXES.some((prefix) => key.startsWith(prefix)))
@@ -123,7 +150,7 @@ async function main() {
     throw new Error(lines.join("\n"));
   }
 
-  console.log(`i18n locale key parity passed (${localeFiles.length} catalogs, bootstrap coverage ok).`);
+  console.log(`i18n locale key and placeholder parity passed (${localeFiles.length} catalogs, bootstrap coverage ok).`);
 }
 
 main().catch((err) => {

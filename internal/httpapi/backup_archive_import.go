@@ -64,12 +64,14 @@ func (s *Server) handleArchiveBackup(w http.ResponseWriter, r *http.Request, act
 
 	dir := filepath.Join(s.dataDir, assetapp.ImportStagingDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		writeInternal(w, err)
+		s.logger.Printf("BACKUP ARCHIVE: staging mkdir: %v", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "Import failed due to an internal error.", validationDetails(store.ReasonImportInternalRedacted, nil))
 		return
 	}
 	tmp, err := os.CreateTemp(dir, "import-*.sbz")
 	if err != nil {
-		writeInternal(w, err)
+		s.logger.Printf("BACKUP ARCHIVE: staging tempfile: %v", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "Import failed due to an internal error.", validationDetails(store.ReasonImportInternalRedacted, nil))
 		return
 	}
 	defer func() {
@@ -95,6 +97,7 @@ func (s *Server) handleArchiveBackup(w http.ResponseWriter, r *http.Request, act
 	case "preview":
 		result, err := s.backupImports.PreviewArchive(ctx, tmp, size, mode, importMode)
 		if err != nil {
+			s.logger.Printf("BACKUP ARCHIVE PREVIEW: %s", formatErrorWithCause(err))
 			s.writeArchiveImportError(w, err)
 			return
 		}
@@ -106,7 +109,7 @@ func (s *Server) handleArchiveBackup(w http.ResponseWriter, r *http.Request, act
 		}
 		result, err := s.backupImports.ImportArchive(ctx, tmp, size, mode, importMode)
 		if err != nil {
-			s.logger.Printf("BACKUP ARCHIVE IMPORT: %v", err)
+			s.logger.Printf("BACKUP ARCHIVE IMPORT: %s", formatErrorWithCause(err))
 			s.writeArchiveImportError(w, err)
 			return
 		}
@@ -182,6 +185,6 @@ func (s *Server) writeArchiveImportError(w http.ResponseWriter, err error) {
 	case errors.Is(err, imagecheck.ErrUnsupportedFormat), errors.Is(err, imagecheck.ErrCorrupt), errors.Is(err, imagecheck.ErrTrailingData):
 		writeValidationError(w, err.Error(), "invalid_backup_archive", nil)
 	default:
-		writeStoreErr(w, err, false)
+		writeImportStoreErr(w, err)
 	}
 }

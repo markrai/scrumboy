@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -164,7 +165,7 @@ func TestCustomFieldsRESTDefinitionContracts(t *testing.T) {
 			t.Fatalf("invalid key status=%d %s", resp.StatusCode, body)
 		}
 		errObj = customFieldRESTError(t, body)
-		if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "validation: invalid custom field key" || errObj["details"] != nil {
+		if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "validation: invalid custom field key" || !reflect.DeepEqual(errObj["details"], map[string]any{"reason": "invalid_custom_field_key"}) {
 			t.Fatalf("invalid key error=%s", body)
 		}
 		resp, body = doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": strings.Repeat("n", 101), "type": "text"}, nil)
@@ -172,7 +173,7 @@ func TestCustomFieldsRESTDefinitionContracts(t *testing.T) {
 			t.Fatalf("long name status=%d %s", resp.StatusCode, body)
 		}
 		errObj = customFieldRESTError(t, body)
-		if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "validation: invalid custom field name" || errObj["details"] != nil {
+		if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "validation: invalid custom field name" || !reflect.DeepEqual(errObj["details"], map[string]any{"reason": "invalid_custom_field_name"}) {
 			t.Fatalf("long name error=%s", body)
 		}
 	})
@@ -215,6 +216,48 @@ func TestCustomFieldsRESTDefinitionContracts(t *testing.T) {
 	for _, event := range events {
 		if event.Type == "board.refresh_needed" {
 			t.Fatalf("definition mutations emitted refresh: %+v", events)
+		}
+	}
+}
+
+func TestCustomFieldsRESTNumberBounds(t *testing.T) {
+	fx := newPriorityRESTFixture(t, "custom-fields-number-bounds")
+	base := fx.ts.URL + "/api/board/" + fx.project.Slug
+	resp, body := doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": "Points", "type": "number", "key": "points"}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status=%d %s", resp.StatusCode, body)
+	}
+	todo, err := fx.st.CreateTodo(fx.ctx, fx.project.ID, store.CreateTodoInput{Title: "t", ColumnKey: store.DefaultColumnBacklog}, store.ModeFull)
+	if err != nil {
+		t.Fatalf("create todo: %v", err)
+	}
+	patchURL := base + "/todos/" + strconv.FormatInt(todo.LocalID, 10)
+	patch := func(value any) (*http.Response, []byte) {
+		return doJSON(t, fx.client, http.MethodPatch, patchURL, map[string]any{
+			"title": "t", "body": "", "tags": []string{}, "assigneeUserId": nil,
+			"customFields": map[string]any{"points": value},
+		}, nil)
+	}
+
+	const maxExact = float64((1 << 53) - 1)
+	for _, n := range []float64{maxExact, -maxExact} {
+		resp, body = patch(n)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("accept %v status=%d %s", n, resp.StatusCode, body)
+		}
+	}
+	for _, n := range []float64{float64(1 << 53), -float64(1 << 53)} {
+		resp, body = patch(n)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("reject %v status=%d %s", n, resp.StatusCode, body)
+		}
+		errObj := customFieldRESTError(t, body)
+		details, _ := errObj["details"].(map[string]any)
+		if errObj["code"] != "VALIDATION_ERROR" || details["reason"] != "custom_field_number_out_of_range" {
+			t.Fatalf("range error=%s", body)
+		}
+		if details["max"] != float64(1<<53) {
+			t.Fatalf("details.max=%v want %d in %s", details["max"], 1<<53, body)
 		}
 	}
 }

@@ -15,26 +15,40 @@ import (
 )
 
 type creatorActivityAccessStoreFake struct {
-	project      store.Project
-	projectErr   error
-	role         store.ProjectRole
-	roleErr      error
-	honorContext bool
-	projectCalls []int64
-	roleCalls    [][2]int64
+	project          store.Project
+	projectErr       error
+	role             store.ProjectRole
+	roleErr          error
+	honorContext     bool
+	currentCreatorID int64
+	nullCreator      bool
+	factCalls        [][3]int64
 }
 
-func (f *creatorActivityAccessStoreFake) GetProject(ctx context.Context, projectID int64) (store.Project, error) {
-	f.projectCalls = append(f.projectCalls, projectID)
+func (f *creatorActivityAccessStoreFake) GetTodoCreatorNotificationFacts(ctx context.Context, projectID, todoID, recipientUserID int64) (store.TodoCreatorNotificationFacts, bool, error) {
+	f.factCalls = append(f.factCalls, [3]int64{projectID, todoID, recipientUserID})
 	if f.honorContext && ctx.Err() != nil {
-		return store.Project{}, ctx.Err()
+		return store.TodoCreatorNotificationFacts{}, false, ctx.Err()
 	}
-	return f.project, f.projectErr
-}
-
-func (f *creatorActivityAccessStoreFake) GetProjectRole(_ context.Context, projectID int64, userID int64) (store.ProjectRole, error) {
-	f.roleCalls = append(f.roleCalls, [2]int64{projectID, userID})
-	return f.role, f.roleErr
+	if f.projectErr != nil {
+		return store.TodoCreatorNotificationFacts{}, false, f.projectErr
+	}
+	if f.roleErr != nil {
+		return store.TodoCreatorNotificationFacts{}, false, f.roleErr
+	}
+	creatorID := f.currentCreatorID
+	if creatorID == 0 {
+		creatorID = 11
+	}
+	facts := store.TodoCreatorNotificationFacts{
+		ProjectID: f.project.ID, ProjectName: f.project.Name, ProjectSlug: f.project.Slug,
+		DurableProject: f.project.ExpiresAt == nil, RecipientRole: f.role,
+		TodoID: 81, TodoProjectID: 7, TodoLocalID: 5,
+	}
+	if !f.nullCreator {
+		facts.CreatedByUserID = &creatorID
+	}
+	return facts, true, nil
 }
 
 func creatorActivityAuthorizedPayload() eventbus.TodoCreatorNotificationRecipientAuthorizedPayload {
@@ -107,9 +121,8 @@ func TestCreatorActivitySSEReauthorizesAndEmitsOnlyToRecipient(t *testing.T) {
 	assertNoCreatorActivityHubMessage(t, recipientEvents, "duplicate recipient")
 	assertNoCreatorActivityHubMessage(t, otherUserEvents, "other user")
 	assertNoCreatorActivityHubMessage(t, projectEvents, "project")
-	if !reflect.DeepEqual(access.projectCalls, []int64{7}) ||
-		!reflect.DeepEqual(access.roleCalls, [][2]int64{{7, 11}}) {
-		t.Fatalf("delivery access calls project=%v role=%v", access.projectCalls, access.roleCalls)
+	if !reflect.DeepEqual(access.factCalls, [][3]int64{{7, 81, 11}}) {
+		t.Fatalf("delivery fact calls=%v", access.factCalls)
 	}
 }
 
@@ -143,10 +156,39 @@ func TestCreatorActivitySSERemovalAfterPhaseThreeFailsClosed(t *testing.T) {
 	bridge.OnEvent(context.Background(), creatorActivityAuthorizedEvent(t, payload))
 
 	assertNoCreatorActivityHubMessage(t, recipientEvents, "removed recipient")
-	if !reflect.DeepEqual(access.projectCalls, []int64{7, 7}) ||
-		!reflect.DeepEqual(access.roleCalls, [][2]int64{{7, 11}, {7, 11}}) {
-		t.Fatalf("access calls project=%v role=%v, want independent Phase 3 and delivery reads", access.projectCalls, access.roleCalls)
+	if !reflect.DeepEqual(access.factCalls, [][3]int64{{7, 81, 11}, {7, 81, 11}}) {
+		t.Fatalf("fact calls=%v, want independent initial and delivery reads", access.factCalls)
 	}
+}
+
+func TestCreatorActivitySSECreatorChangedAfterAuthorizationFailsClosed(t *testing.T) {
+	access := &creatorActivityAccessStoreFake{
+		project: store.Project{ID: 7, Slug: "durable"},
+		role:    store.RoleViewer,
+	}
+	service := todoapp.NewCreatorNotificationAuthorizationService(access)
+	request := todoapp.CreatorNotificationRequest{
+		ProjectID: 7, ProjectSlug: "mutation-slug", TodoID: 81, LocalID: 5,
+		Title: "Sensitive committed title", ActivityReason: todoapp.RefreshReasonTodoUpdated,
+		CreatedByUserID: 11, ActorUserID: 22,
+	}
+	authorized, ok, err := service.Authorize(context.Background(), request)
+	if err != nil || !ok {
+		t.Fatalf("initial authorization = (%+v, %v, %v)", authorized, ok, err)
+	}
+
+	access.currentCreatorID = 33
+	hub := NewHub(defaultSubscriberBuffer)
+	oldCreatorEvents, unsubscribeOld := hub.SubscribeUser(11)
+	defer unsubscribeOld()
+	newCreatorEvents, unsubscribeNew := hub.SubscribeUser(33)
+	defer unsubscribeNew()
+	bridge := newSSEBridge(hub, service)
+	payload := creatorActivityAuthorizedPayload()
+	bridge.OnEvent(context.Background(), creatorActivityAuthorizedEvent(t, payload))
+
+	assertNoCreatorActivityHubMessage(t, oldCreatorEvents, "stale creator")
+	assertNoCreatorActivityHubMessage(t, newCreatorEvents, "redirected creator")
 }
 
 func TestCreatorActivitySSEFailClosedMatrix(t *testing.T) {
@@ -262,8 +304,8 @@ func TestCreatorActivitySSEIgnoresInternalRequestEvenIfMembershipIsAddedLater(t 
 	})
 
 	assertNoCreatorActivityHubMessage(t, recipientEvents, "request-only recipient")
-	if len(access.projectCalls) != 0 || len(access.roleCalls) != 0 {
-		t.Fatalf("internal request unexpectedly invoked delivery authorization: project=%v role=%v", access.projectCalls, access.roleCalls)
+	if len(access.factCalls) != 0 {
+		t.Fatalf("internal request unexpectedly invoked delivery authorization: facts=%v", access.factCalls)
 	}
 }
 

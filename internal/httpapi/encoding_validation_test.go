@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"scrumboy/internal/store"
@@ -138,5 +140,49 @@ func TestWriteStoreErrLeavesDynamicValidationDetailsNull(t *testing.T) {
 				t.Fatalf("details = %#v, want nil", body.Error.Details)
 			}
 		})
+	}
+}
+
+func TestWriteImportStoreErrRedactsUnexpectedTooLargeText(t *testing.T) {
+	rr := httptest.NewRecorder()
+	err := fmt.Errorf("import tag: injected: value too large SELECT * FROM secret_credentials")
+	writeImportStoreErr(rr, err)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rr.Code)
+	}
+	body := decodeAPIErrorTestBody(t, rr)
+	if body.Error.Code != "INTERNAL" {
+		t.Fatalf("code = %q, want INTERNAL (string 'too large' must not become PAYLOAD_TOO_LARGE)", body.Error.Code)
+	}
+	raw := rr.Body.String()
+	for _, leak := range []string{"secret_credentials", "too large", "SELECT"} {
+		if strings.Contains(raw, leak) {
+			t.Fatalf("response leaks %q: %s", leak, raw)
+		}
+	}
+}
+
+func TestWriteImportStoreErrPreservesTypedUploadTooLarge(t *testing.T) {
+	rr := httptest.NewRecorder()
+	writeImportStoreErr(rr, errUploadTooLarge)
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusRequestEntityTooLarge)
+	}
+	body := decodeAPIErrorTestBody(t, rr)
+	if body.Error.Code != "PAYLOAD_TOO_LARGE" {
+		t.Fatalf("code = %q", body.Error.Code)
+	}
+}
+
+func TestFormatErrorWithCauseIncludesUnwrapChain(t *testing.T) {
+	cause := errors.New(`sql: injected: value too large SELECT * FROM secret_credentials`)
+	wrapped := fmt.Errorf("import tags: %w", cause)
+	got := formatErrorWithCause(wrapped)
+	if !strings.Contains(got, "import tags") || !strings.Contains(got, "secret_credentials") {
+		t.Fatalf("expected public wrapper and diagnostic cause, got %q", got)
+	}
+	if !errors.Is(wrapped, cause) {
+		t.Fatalf("unwrap broken")
 	}
 }

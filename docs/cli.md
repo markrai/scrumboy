@@ -96,6 +96,8 @@ scrumboy-cli todo list -p demo --tag bug --tag ux --all --json | jq '.[].title'
 scrumboy-cli todo get demo/12
 scrumboy-cli todo create "Fix login redirect" -p demo --tag bug --priority high --due 2026-12-01
 scrumboy-cli todo update demo/12 --assignee me --points 3 --field mr_url=https://example.com/mr/1
+scrumboy-cli todo update demo/12 --creator 42
+scrumboy-cli todo update demo/12 --creator me
 scrumboy-cli todo move demo/12 done
 scrumboy-cli todo link demo/12 15 --type blocks
 scrumboy-cli sprint create "Sprint 4" --start 2026-12-01 --end 2026-12-14 -p demo
@@ -130,6 +132,13 @@ Commands (run `scrumboy-cli <command> -h` for flags):
   (`--priority none`, `--due none`); an empty value is rejected rather than
   clearing. `--field key=` clears a custom field and `--field key:=3` sends a
   JSON number.
+- `todo update --creator <positive-user-id|me>` corrects historical creator
+  attribution and requires authenticated project Maintainer access. Omitting
+  the flag preserves attribution. Creator clearing (`none`, `null`, zero, or a
+  negative ID) is unsupported; the target must exist but need not be a project
+  member. Attribution grants no membership or edit authority. Actual changes
+  are audited, while creator-only corrections do not generate creator-specific
+  notifications.
 - `board`/`todo list` use `board_get`; `--all` follows per-column pagination.
   `todo archived` lists archived stories via `todos_listArchived` (`--limit`,
   `--cursor`, `--all`); `--all` fails if the server reports `hasMore` without a

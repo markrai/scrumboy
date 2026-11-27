@@ -93,17 +93,17 @@ func (s *Store) ListProjectCustomFields(ctx context.Context, projectID int64) ([
 func (s *Store) CreateCustomField(ctx context.Context, projectID int64, key, name string, typ CustomFieldType) (CustomField, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > maxCustomFieldNameLen {
-		return CustomField{}, fmt.Errorf("%w: invalid custom field name", ErrValidation)
+		return CustomField{}, reasoned(ErrValidation, ReasonInvalidCustomFieldName, ErrValidation.Error()+": invalid custom field name")
 	}
 	if !ValidCustomFieldType(typ) {
-		return CustomField{}, fmt.Errorf("%w: custom field type must be text, url or number", ErrValidation)
+		return CustomField{}, reasoned(ErrValidation, ReasonInvalidCustomFieldType, ErrValidation.Error()+": custom field type must be text, url or number")
 	}
 	key = strings.ToLower(strings.TrimSpace(key))
 	if key == "" {
 		key = workflowKeyFromName(name)
 	}
 	if !isValidColumnKey(key) {
-		return CustomField{}, fmt.Errorf("%w: invalid custom field key", ErrValidation)
+		return CustomField{}, reasoned(ErrValidation, ReasonInvalidCustomFieldKey, ErrValidation.Error()+": invalid custom field key")
 	}
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
@@ -119,12 +119,12 @@ func (s *Store) CreateCustomField(ctx context.Context, projectID int64, key, nam
 		return CustomField{}, err
 	}
 	if len(existing) >= maxCustomFieldsPerProject {
-		return CustomField{}, fmt.Errorf("%w: project may have at most %d custom fields", ErrValidation, maxCustomFieldsPerProject)
+		return CustomField{}, reasoned(ErrValidation, ReasonCustomFieldLimit, fmt.Sprintf("%s: project may have at most %d custom fields", ErrValidation, maxCustomFieldsPerProject))
 	}
 	position := 0
 	for _, f := range existing {
 		if f.Key == key {
-			return CustomField{}, fmt.Errorf("%w: custom field key already exists", ErrConflict)
+			return CustomField{}, reasoned(ErrConflict, ReasonCustomFieldKeyExists, ErrConflict.Error()+": custom field key already exists")
 		}
 		if f.Position >= position {
 			position = f.Position + 1
@@ -191,35 +191,35 @@ FROM project_custom_fields f WHERE f.project_id = ? AND f.key = ?`, projectID, k
 // normalizeCustomFieldValue validates v against the field type and returns the
 // canonical stored value (string or float64).
 func normalizeCustomFieldValue(f CustomField, v any) (any, error) {
-	bad := func(msg string) error {
-		return fmt.Errorf("%w: custom field %q: %s", ErrValidation, f.Key, msg)
+	bad := func(reason, msg string) error {
+		return reasoned(ErrValidation, reason, fmt.Sprintf("%s: custom field %q: %s", ErrValidation, f.Key, msg))
 	}
 	switch f.Type {
 	case CustomFieldText:
 		str, ok := v.(string)
 		if !ok {
-			return nil, bad("expected a string")
+			return nil, bad(ReasonCustomFieldNotText, "expected a string")
 		}
 		str = strings.TrimSpace(str)
 		if str == "" {
-			return nil, bad("value cannot be empty (use null to clear)")
+			return nil, bad(ReasonCustomFieldEmpty, "value cannot be empty (use null to clear)")
 		}
 		if utf8.RuneCountInString(str) > maxCustomFieldValueLen {
-			return nil, bad("value too long")
+			return nil, bad(ReasonCustomFieldTooLong, "value too long")
 		}
 		return str, nil
 	case CustomFieldURL:
 		str, ok := v.(string)
 		if !ok {
-			return nil, bad("expected a string")
+			return nil, bad(ReasonCustomFieldNotText, "expected a string")
 		}
 		str = strings.TrimSpace(str)
 		if utf8.RuneCountInString(str) > maxCustomFieldValueLen {
-			return nil, bad("value too long")
+			return nil, bad(ReasonCustomFieldTooLong, "value too long")
 		}
 		u, err := url.Parse(str)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return nil, bad("expected an http(s) URL")
+			return nil, bad(ReasonCustomFieldNotURL, "expected an http(s) URL")
 		}
 		return str, nil
 	case CustomFieldNumber:
@@ -232,17 +232,19 @@ func normalizeCustomFieldValue(f CustomField, v any) (any, error) {
 		case int64:
 			n = float64(x)
 		default:
-			return nil, bad("expected a number")
+			return nil, bad(ReasonCustomFieldNotNumber, "expected a number")
 		}
 		if math.IsNaN(n) || math.IsInf(n, 0) {
-			return nil, bad("expected a finite number")
+			return nil, bad(ReasonCustomFieldNotNumber, "expected a finite number")
 		}
 		if math.Abs(n) >= maxCustomFieldNumber {
-			return nil, bad("number out of range (must be below 2^53)")
+			return nil, reasoned(ErrValidation, ReasonCustomFieldNumberRange,
+				fmt.Sprintf("%s: custom field %q: number out of range", ErrValidation, f.Key),
+				map[string]any{"max": maxCustomFieldNumber})
 		}
 		return n, nil
 	}
-	return nil, bad("unknown field type")
+	return nil, bad(ReasonInvalidCustomFieldType, "unknown field type")
 }
 
 type resolvedCustomField struct {
@@ -265,7 +267,7 @@ func resolveCustomFieldPatchTx(ctx context.Context, tx *sql.Tx, projectID int64,
 	for key, raw := range patch {
 		def, ok := byKey[key]
 		if !ok {
-			return nil, fmt.Errorf("%w: unknown custom field %q", ErrValidation, key)
+			return nil, reasoned(ErrValidation, ReasonCustomFieldUnknown, fmt.Sprintf("%s: unknown custom field %q", ErrValidation, key))
 		}
 		if raw == nil {
 			out[key] = resolvedCustomField{fieldID: def.ID}
@@ -515,7 +517,7 @@ func importCustomFieldsTx(ctx context.Context, tx *sql.Tx, projectID int64, p Pr
 	}
 	existing, err := listCustomFieldsQ(ctx, tx, projectID)
 	if err != nil {
-		return err
+		return redactImportInternal(err)
 	}
 	byKey, toCreate, err := planImportCustomFields(p, existing)
 	if err != nil {
@@ -526,11 +528,11 @@ func importCustomFieldsTx(ctx context.Context, tx *sql.Tx, projectID int64, p Pr
 INSERT INTO project_custom_fields(project_id, key, name, type, position)
 VALUES (?, ?, ?, ?, ?)`, projectID, f.Key, f.Name, string(f.Type), f.Position)
 		if err != nil {
-			return fmt.Errorf("insert custom field: %w", err)
+			return redactImportInternal(err)
 		}
 		id, err := res.LastInsertId()
 		if err != nil {
-			return fmt.Errorf("custom field id: %w", err)
+			return redactImportInternal(err)
 		}
 		f.ID, f.ProjectID = id, projectID
 		byKey[f.Key] = f

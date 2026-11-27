@@ -42,6 +42,7 @@ const urlsToCache = [
   '/dist/views/notfound.js',
   '/dist/views/projects.js',
   '/dist/dialogs/settings.js',
+  '/dist/dialogs/todo-creator-selector.js',
   '/dist/dialogs/todo-submit.js',
   '/dist/dialogs/todo.js',
   '/dist/dialogs/bulk-edit.js',
@@ -50,7 +51,8 @@ const urlsToCache = [
   '/dist/features/context-menu-button.js',
   '/dist/orchestration/board-refresh.js',
   '/dist/pwaUpdate.js',
-  '/dist/types.js'
+  '/dist/types.js',
+  '/dist/unicode-limits.js'
 ];
 
 self.addEventListener('install', (event) => {

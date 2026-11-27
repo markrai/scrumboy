@@ -97,6 +97,25 @@ func TestAPIErrorExitCode(t *testing.T) {
 	}
 }
 
+func TestAPIErrorIncludesSafeDetailsMax(t *testing.T) {
+	err := &APIError{
+		Code:    "VALIDATION_ERROR",
+		Message: "validation: custom field number out of range",
+		Details: map[string]any{
+			"reason": "custom_field_number_out_of_range",
+			"max":    float64(1 << 53),
+		},
+		Status: 400,
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, `"max":9.007199254740992e+15`) && !strings.Contains(msg, `"max":9007199254740992`) {
+		t.Fatalf("Error() missing safe max detail: %q", msg)
+	}
+	if !strings.Contains(msg, "custom_field_number_out_of_range") {
+		t.Fatalf("Error() missing reason: %q", msg)
+	}
+}
+
 func TestNonJSONResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, "<html>login</html>")
@@ -135,7 +154,7 @@ func TestTodoUpdateSendsOnlyPassedFields(t *testing.T) {
 	if cf["mr_url"] != "https://x/1" || cf["n"] != float64(3) || cf["gone"] != nil {
 		t.Errorf("customFields = %#v", cf)
 	}
-	for _, absent := range []string{"title", "body", "tags", "assigneeUserId", "sprintId"} {
+	for _, absent := range []string{"title", "body", "tags", "assigneeUserId", "createdByUserId", "sprintId"} {
 		if _, ok := patch[absent]; ok {
 			t.Errorf("%s must not be sent when its flag is absent", absent)
 		}
@@ -143,6 +162,118 @@ func TestTodoUpdateSendsOnlyPassedFields(t *testing.T) {
 	if (*calls)[0].Input["localId"] != float64(7) || (*calls)[0].Input["projectSlug"] != "demo" {
 		t.Errorf("input = %#v", (*calls)[0].Input)
 	}
+}
+
+func TestTodoUpdateCreatorNumericAndMe(t *testing.T) {
+	t.Run("numeric combines with ordinary fields", func(t *testing.T) {
+		srv, calls := fakeServer(t, map[string]string{
+			"todos_update": `{"ok":true,"data":{"todo":` + todoJSON + `},"meta":{}}`,
+		})
+		h := newHarness(t, srv.URL, nil)
+		if code := h.run("todo", "update", "demo/7", "--creator", "42", "--title", "Corrected"); code != 0 {
+			t.Fatalf("exit %d: %s", code, h.err)
+		}
+		if len(*calls) != 1 {
+			t.Fatalf("calls=%d want=1", len(*calls))
+		}
+		patch := (*calls)[0].Input["patch"].(map[string]any)
+		if patch["createdByUserId"] != float64(42) || patch["title"] != "Corrected" {
+			t.Fatalf("patch=%#v", patch)
+		}
+	})
+
+	t.Run("me resolves through authenticated identity", func(t *testing.T) {
+		srv, calls := fakeServer(t, map[string]string{
+			"me_get":       `{"ok":true,"data":{"userId":23},"meta":{}}`,
+			"todos_update": `{"ok":true,"data":{"todo":` + todoJSON + `},"meta":{}}`,
+		})
+		h := newHarness(t, srv.URL, nil)
+		if code := h.run("todo", "update", "demo/7", "--creator", "me"); code != 0 {
+			t.Fatalf("exit %d: %s", code, h.err)
+		}
+		if len(*calls) != 2 || (*calls)[0].Tool != "me_get" || (*calls)[1].Tool != "todos_update" {
+			t.Fatalf("calls=%#v", *calls)
+		}
+		patch := (*calls)[1].Input["patch"].(map[string]any)
+		if patch["createdByUserId"] != float64(23) {
+			t.Fatalf("patch=%#v", patch)
+		}
+	})
+}
+
+func TestTodoUpdateCreatorRejectsInvalidValues(t *testing.T) {
+	for _, value := range []string{"", "none", "null", "0", "-1", "1.5", "abc", "9223372036854775808"} {
+		t.Run(value, func(t *testing.T) {
+			srv, calls := fakeServer(t, nil)
+			h := newHarness(t, srv.URL, nil)
+			if code := h.run("todo", "update", "demo/7", "--creator", value); code != 2 {
+				t.Fatalf("exit=%d want=2 stderr=%q", code, h.err.String())
+			}
+			if !strings.Contains(h.err.String(), "--creator") || strings.Contains(h.err.String(), "--assignee") {
+				t.Fatalf("creator error used wrong flag name: %q", h.err.String())
+			}
+			if len(*calls) != 0 {
+				t.Fatalf("invalid creator reached server: %#v", *calls)
+			}
+		})
+	}
+}
+
+func TestTodoUpdateCreatorRejectsInvalidResolvedIdentity(t *testing.T) {
+	srv, calls := fakeServer(t, map[string]string{
+		"me_get": `{"ok":true,"data":{"userId":0},"meta":{}}`,
+	})
+	h := newHarness(t, srv.URL, nil)
+	if code := h.run("todo", "update", "demo/7", "--creator", "me"); code != 2 {
+		t.Fatalf("exit=%d want=2 stderr=%q", code, h.err.String())
+	}
+	if !strings.Contains(h.err.String(), "--creator") || strings.Contains(h.err.String(), "--assignee") {
+		t.Fatalf("resolved identity error=%q", h.err.String())
+	}
+	if len(*calls) != 1 || (*calls)[0].Tool != "me_get" {
+		t.Fatalf("calls=%#v", *calls)
+	}
+}
+
+func TestTodoCreateDoesNotAcceptCreator(t *testing.T) {
+	srv, calls := fakeServer(t, nil)
+	h := newHarness(t, srv.URL, map[string]string{envProject: "demo"})
+	if code := h.run("todo", "create", "No creator flag", "--creator", "42"); code != 2 {
+		t.Fatalf("exit=%d want=2 stderr=%q", code, h.err.String())
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("unsupported create flag reached server: %#v", *calls)
+	}
+}
+
+func TestTodoUpdateAssigneeResolutionRemainsUnchanged(t *testing.T) {
+	t.Run("none clears", func(t *testing.T) {
+		srv, calls := fakeServer(t, map[string]string{
+			"todos_update": `{"ok":true,"data":{"todo":` + todoJSON + `},"meta":{}}`,
+		})
+		h := newHarness(t, srv.URL, nil)
+		if code := h.run("todo", "update", "demo/7", "--assignee", "none"); code != 0 {
+			t.Fatalf("exit %d: %s", code, h.err)
+		}
+		patch := (*calls)[0].Input["patch"].(map[string]any)
+		if value, present := patch["assigneeUserId"]; !present || value != nil {
+			t.Fatalf("assignee clear patch=%#v", patch)
+		}
+	})
+
+	t.Run("me resolves", func(t *testing.T) {
+		srv, calls := fakeServer(t, map[string]string{
+			"me_get":       `{"ok":true,"data":{"userId":31},"meta":{}}`,
+			"todos_update": `{"ok":true,"data":{"todo":` + todoJSON + `},"meta":{}}`,
+		})
+		h := newHarness(t, srv.URL, nil)
+		if code := h.run("todo", "update", "demo/7", "--assignee", "me"); code != 0 {
+			t.Fatalf("exit %d: %s", code, h.err)
+		}
+		if len(*calls) != 2 || (*calls)[0].Tool != "me_get" || (*calls)[1].Input["patch"].(map[string]any)["assigneeUserId"] != float64(31) {
+			t.Fatalf("calls=%#v", *calls)
+		}
+	})
 }
 
 func TestTodoUpdateNeedsAField(t *testing.T) {

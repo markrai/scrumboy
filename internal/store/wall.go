@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // WallNote is one sticky note inside the wall document. Each note has an
@@ -67,7 +68,7 @@ const (
 	maxWallNotes      = 500
 	maxWallStories    = 500
 	maxWallEdges      = 2000
-	maxWallTextBytes  = 4000
+	maxWallTextChars  = 4000
 	defaultNoteWidth  = 180
 	defaultNoteHeight = 140
 	minNoteDimension  = 60
@@ -491,7 +492,7 @@ func (s *Store) CreateNote(ctx context.Context, projectID int64, in CreateNoteIn
 	if err := validateWallColor(in.Color); err != nil {
 		return WallNote{}, Wall{}, err
 	}
-	if len(in.Text) > maxWallTextBytes {
+	if utf8.RuneCountInString(in.Text) > maxWallTextChars {
 		return WallNote{}, Wall{}, fmt.Errorf("%w: note text too long", ErrValidation)
 	}
 
@@ -548,7 +549,7 @@ func (s *Store) PatchNote(ctx context.Context, projectID int64, noteID string, i
 			return WallNote{}, Wall{}, err
 		}
 	}
-	if in.Text != nil && len(*in.Text) > maxWallTextBytes {
+	if in.Text != nil && utf8.RuneCountInString(*in.Text) > maxWallTextChars {
 		return WallNote{}, Wall{}, fmt.Errorf("%w: note text too long", ErrValidation)
 	}
 
@@ -756,8 +757,8 @@ func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, pay
 			color = "#FFFFFF"
 		}
 		text := n.Text
-		if len(text) > maxWallTextBytes {
-			text = text[:maxWallTextBytes]
+		if utf8.RuneCountInString(text) > maxWallTextChars {
+			text = string([]rune(text)[:maxWallTextChars])
 		}
 		version := n.Version
 		if version <= 0 {
@@ -991,7 +992,7 @@ func (s *Store) ReplaceWall(ctx context.Context, projectID int64, notes []WallNo
 		if err := validateWallColor(notes[i].Color); err != nil {
 			return Wall{}, err
 		}
-		if len(notes[i].Text) > maxWallTextBytes {
+		if utf8.RuneCountInString(notes[i].Text) > maxWallTextChars {
 			return Wall{}, fmt.Errorf("%w: note text too long", ErrValidation)
 		}
 		notes[i].X = clampNoteCoord(notes[i].X)

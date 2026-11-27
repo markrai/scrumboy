@@ -21,6 +21,7 @@ type emailNotifyStore interface {
 	GetEmailNotifyPref(ctx context.Context, userID int64) (store.EmailNotifyPref, error)
 	GetProject(ctx context.Context, projectID int64) (store.Project, error)
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
+	GetTodoCreatorNotificationFacts(ctx context.Context, projectID, todoID, recipientUserID int64) (store.TodoCreatorNotificationFacts, bool, error)
 	GetTodoDueReminderState(ctx context.Context, todoID int64) (store.Todo, bool, error)
 	GetUser(ctx context.Context, userID int64) (store.User, error)
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)
@@ -169,10 +170,7 @@ func (n *emailNotifier) OnEvent(ctx context.Context, e eventbus.Event) {
 		go n.handle(context.WithoutCancel(ctx), e)
 	case eventbus.TodoDueSoonEventType:
 		go n.handleDueSoon(context.WithoutCancel(ctx), e)
-	case eventbus.TodoCreatorNotificationRecipientAuthorizedEventType:
-		// Reauthorize before queueing without blocking fanout. The worker repeats
-		// authorization and performs preference, destination, and rendering checks
-		// at every actual send attempt.
+	case eventbus.TodoCreatorNotificationRequestedEventType:
 		go n.handleCreatorCandidate(context.WithoutCancel(ctx), e)
 	}
 }
@@ -368,12 +366,12 @@ func (n *emailNotifier) handleCreatorCandidate(ctx context.Context, e eventbus.E
 	if n == nil || n.mailQueue == nil || n.creatorAuthorizer == nil {
 		return
 	}
-	var payload eventbus.TodoCreatorNotificationRecipientAuthorizedPayload
+	var payload eventbus.TodoCreatorNotificationRequestedPayload
 	if err := json.Unmarshal(e.Payload, &payload); err != nil ||
 		e.ProjectID <= 0 || e.ProjectID != payload.ProjectID || !payload.MaterialChanged {
 		return
 	}
-	candidate, ok, err := n.creatorAuthorizer.ReauthorizeRecipient(ctx, todoapp.AuthorizedCreatorNotification{
+	access, ok, err := n.creatorAuthorizer.ReauthorizeRecipientAccess(ctx, todoapp.AuthorizedCreatorNotification{
 		ProjectID:             payload.ProjectID,
 		ProjectSlug:           payload.ProjectSlug,
 		TodoID:                payload.TodoID,
@@ -382,7 +380,7 @@ func (n *emailNotifier) handleCreatorCandidate(ctx context.Context, e eventbus.E
 		ActivityReason:        payload.ActivityReason,
 		FromName:              payload.FromName,
 		ToName:                payload.ToName,
-		RecipientUserID:       payload.RecipientUserID,
+		RecipientUserID:       payload.CreatedByUserID,
 		ActorUserID:           payload.ActorUserID,
 		MaterialChanged:       payload.MaterialChanged,
 		AssignmentChanged:     payload.AssignmentChanged,
@@ -392,9 +390,13 @@ func (n *emailNotifier) handleCreatorCandidate(ctx context.Context, e eventbus.E
 	if err != nil || !ok {
 		return
 	}
+	candidate := access.Notification
+	if !access.CurrentCreator && !assignmentEmailCandidate(candidate) && !candidate.CardActivityCandidate {
+		return
+	}
 	work := &creatorEmailWork{notifier: n, candidate: candidate}
 	n.mailQueue.Enqueue(mailDelivery{
-		LogRef:  fmt.Sprintf("email-notify creator-candidate user=%d", payload.RecipientUserID),
+		LogRef:  fmt.Sprintf("email-notify creator-candidate user=%d", payload.CreatedByUserID),
 		Prepare: work.prepare,
 	})
 }
@@ -403,10 +405,11 @@ func (w *creatorEmailWork) prepare(ctx context.Context) (mailDelivery, bool, err
 	if w == nil || w.notifier == nil || ctx.Err() != nil {
 		return mailDelivery{}, false, nil
 	}
-	authorized, ok, err := w.notifier.creatorAuthorizer.ReauthorizeRecipient(ctx, w.candidate)
-	if err != nil || !ok || !authorized.MaterialChanged {
+	access, ok, err := w.notifier.creatorAuthorizer.ReauthorizeRecipientAccess(ctx, w.candidate)
+	if err != nil || !ok || !access.Notification.MaterialChanged {
 		return mailDelivery{}, false, nil
 	}
+	authorized := access.Notification
 	pref, err := w.notifier.getPref(ctx, authorized.RecipientUserID)
 	if err != nil || !pref.Enabled {
 		return mailDelivery{}, false, nil
@@ -415,13 +418,20 @@ func (w *creatorEmailWork) prepare(ctx context.Context) (mailDelivery, bool, err
 	w.mu.Lock()
 	category := w.category
 	if !w.selected {
-		category, ok = selectCreatorEmailCategory(pref, authorized)
+		category, ok = selectCreatorEmailCategory(pref, authorized, access.CurrentCreator)
 		if ok {
 			w.category = category
 			w.selected = true
 		}
 	} else {
-		ok = categoryEnabled(pref, category)
+		eligible := creatorEmailCategoryEligible(category, authorized, access.CurrentCreator)
+		ok = categoryEnabled(pref, category) && eligible
+		if !eligible {
+			category, ok = selectCreatorEmailCategory(pref, authorized, access.CurrentCreator)
+			if ok {
+				w.category = category
+			}
+		}
 	}
 	w.mu.Unlock()
 	if !ok {
@@ -466,18 +476,35 @@ func (w *creatorEmailWork) claimActivityDebounce(projectID, userID int64) bool {
 	return true
 }
 
-func selectCreatorEmailCategory(pref store.EmailNotifyPref, candidate todoapp.AuthorizedCreatorNotification) (emailCategory, bool) {
-	if candidate.AssignmentChanged && candidate.ToAssigneeUserID != nil &&
-		*candidate.ToAssigneeUserID == candidate.RecipientUserID && pref.Assigned {
+func selectCreatorEmailCategory(pref store.EmailNotifyPref, candidate todoapp.AuthorizedCreatorNotification, currentCreator bool) (emailCategory, bool) {
+	if assignmentEmailCandidate(candidate) && pref.Assigned {
 		return emailCategoryAssigned, true
 	}
-	if pref.CreatedByMe {
+	if currentCreator && pref.CreatedByMe {
 		return emailCategoryCreatedByMe, true
 	}
 	if candidate.CardActivityCandidate && pref.CardActivity {
 		return emailCategoryCardActivity, true
 	}
 	return "", false
+}
+
+func assignmentEmailCandidate(candidate todoapp.AuthorizedCreatorNotification) bool {
+	return candidate.AssignmentChanged && candidate.ToAssigneeUserID != nil &&
+		*candidate.ToAssigneeUserID == candidate.RecipientUserID
+}
+
+func creatorEmailCategoryEligible(category emailCategory, candidate todoapp.AuthorizedCreatorNotification, currentCreator bool) bool {
+	switch category {
+	case emailCategoryAssigned:
+		return assignmentEmailCandidate(candidate)
+	case emailCategoryCreatedByMe:
+		return currentCreator
+	case emailCategoryCardActivity:
+		return candidate.CardActivityCandidate
+	default:
+		return false
+	}
 }
 
 func (n *emailNotifier) renderCreatorEmail(candidate todoapp.AuthorizedCreatorNotification, category emailCategory, recipientName, actorName string) (string, string, bool) {

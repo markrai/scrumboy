@@ -5,6 +5,7 @@ import { getAssigneeFromUrl, getPriorityFromUrl, getSortFromUrl, getBoard, getSe
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
+import { bindCodePointLimitsIn, reportCodePointLimitsIn } from '../unicode-limits.js';
 const DEFAULT_WORKFLOW_LANE_COLOR = '#64748b';
 let workflowLaneCountsCache = null;
 let workflowLaneCountsFetchGeneration = 0;
@@ -155,7 +156,7 @@ function renderWorkflowTabContent(countsState) {
               class="input"
               data-workflow-name="${escapeHTML(lane.key)}"
               value="${escapeHTML(lane.name)}"
-              maxlength="200"
+              data-code-point-max="200"
               aria-label="${escapeHTML(workflowLaneLabelAria(lane.key))}"
               style="flex:1; min-width:120px;"
             />
@@ -179,7 +180,7 @@ function renderWorkflowTabContent(countsState) {
           class="input"
           type="text"
           data-workflow-ghost-input
-          maxlength="200"
+          data-code-point-max="200"
           placeholder="Add lane..."
           data-i18n-placeholder="settings.workflow.addPlaceholder"
           aria-label="${escapeHTML(t('settings.workflow.addLaneAria'))}"
@@ -331,6 +332,10 @@ export function loadWorkflowTabContent(options) {
 }
 export function bindWorkflowTabInteractions(options) {
     const { closeSettingsBtn, rerender, settingsDialog, signal } = options;
+    const tabRoot = document.getElementById('settingsWorkflowTab') ||
+        document.getElementById('settingsContent') ||
+        document;
+    bindCodePointLimitsIn(tabRoot);
     const addInput = document.querySelector('[data-workflow-ghost-input]');
     const addLane = () => {
         if (!addInput)
@@ -382,6 +387,9 @@ export function bindWorkflowTabInteractions(options) {
     const saveChangesBtn = document.querySelector('[data-workflow-save-changes]');
     if (saveChangesBtn) {
         saveChangesBtn.addEventListener('click', () => {
+            const root = document.getElementById('settingsWorkflowTab') || document.getElementById('settingsContent');
+            if (root && !reportCodePointLimitsIn(root))
+                return;
             void saveWorkflowDraftChanges(rerender);
         }, { signal });
     }

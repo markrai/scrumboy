@@ -17,6 +17,8 @@ export default defineConfig({
     "scripts/public-board-phase5.playwright.ts",
     "scripts/inline-images.playwright.ts",
     "scripts/drawing.playwright.ts",
+    "scripts/todo-creator-selector.playwright.ts",
+    "scripts/todo-codepoint-dialog.playwright.ts",
   ],
   outputDir: path.join(os.tmpdir(), "scrumboy-web-playwright-results"),
   reporter: "line",

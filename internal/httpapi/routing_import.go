@@ -45,7 +45,8 @@ func (s *Server) handleTrelloPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	bundle, err := trelloimport.BuildImportBundle(body, time.Now().UTC())
 	if err != nil {
-		writeValidationError(w, "invalid Trello JSON", "invalid_trello_json", map[string]any{"detail": err.Error()})
+		s.logger.Printf("invalid Trello JSON (preview): %v", err)
+		writeValidationError(w, "invalid Trello JSON", "invalid_trello_json", nil)
 		return
 	}
 	writeJSON(w, http.StatusOK, bundle.Preview)
@@ -58,7 +59,8 @@ func (s *Server) handleTrelloImport(w http.ResponseWriter, r *http.Request) {
 	}
 	bundle, err := trelloimport.BuildImportBundle(body, time.Now().UTC())
 	if err != nil {
-		writeValidationError(w, "invalid Trello JSON", "invalid_trello_json", map[string]any{"detail": err.Error()})
+		s.logger.Printf("invalid Trello JSON (import): %v", err)
+		writeValidationError(w, "invalid Trello JSON", "invalid_trello_json", nil)
 		return
 	}
 	if len(bundle.Preview.HardErrors) > 0 || bundle.ExportData == nil {
@@ -76,7 +78,8 @@ func (s *Server) handleTrelloImport(w http.ResponseWriter, r *http.Request) {
 	ctx := s.requestContext(r)
 	project, err := s.store.ImportTrelloProject(ctx, bundle.ExportData, bundle.ProjectImportMetadata, bundle.TodoImportMetadataByLocalID, s.storeMode())
 	if err != nil {
-		writeStoreErr(w, err, false)
+		s.logger.Printf("TRELLO IMPORT ERROR: %s", formatErrorWithCause(err))
+		writeImportStoreErr(w, err)
 		return
 	}
 

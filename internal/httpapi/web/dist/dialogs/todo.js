@@ -17,13 +17,16 @@ import { escapeHTML, isAnonymousBoard, showConfirmDialog, showToast } from '../u
 import { applyFieldTooltips, TODO_DIALOG_TOOLTIPS } from '../field-tooltips.js';
 import { apiErrorMessage, formatDate as formatLocalizedDate, hasI18nKey, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
+import { codePointLength, getCodePointLimitHandle, truncateCodePoints } from '../unicode-limits.js';
 import { tagIdentityKey } from '../tag-names.js';
 import { bindShareTodoButton, bindTodoDialogLinkLifecycle, initializeTodoDialogLinks, resetTodoDialogLinks, } from './todo-links.js';
 import { initializeTodoExternalLinks, initializeTodoExternalLinksForCreate, resetTodoExternalLinks, bindTodoExternalLinksLifecycle, pendingTodoExternalLinksSignature, commitPendingTodoExternalLinks } from './todo-external-links.js';
 import { computeTodoDialogPermissions, setTodoFormPermissions, } from './todo-permissions.js';
+import { configureTodoCreatorSelector, getPendingTodoCreatorId, refreshTodoCreatorSelectorLocale, resetTodoCreatorSelector, } from './todo-creator-selector.js';
 import { getTagsFromChips, renderTagsChips, resetTodoTagAutocompleteBindings, setupTagAutocomplete, } from './todo-tags.js';
 import { defaultTodoTagSuggestions, loadAllProjectTagSuggestions, mergeTodoTagSuggestions, } from './todo-tag-suggestions.js';
 export { getTodoFormPermissions, } from './todo-permissions.js';
+export { getPendingTodoCreatorId } from './todo-creator-selector.js';
 export { getTagsFromChips, normalizeTagName, removeTag, renderTagAutocomplete, renderTagsChips, setupTagAutocomplete, } from './todo-tags.js';
 let todoNotesMode = "markdown";
 let todoNotesPreviewBound = false;
@@ -218,15 +221,21 @@ function isModifiedFibonacciMode() {
 // Collapse arbitrary text (e.g. a multi-line sticky-note body) into a value
 // suitable for the single-line Title input: trim ends, collapse runs of
 // whitespace (including newlines) to a single space, and honor the input's
-// maxLength if one is set.
+// Unicode code-point ceiling when one is set (data-code-point-max or maxLength).
 function normalizeSeedTitle(raw) {
     if (!raw)
         return "";
     const collapsed = raw.replace(/\s+/g, " ").trim();
     const input = todoTitle;
-    const max = input?.maxLength;
-    if (typeof max === "number" && max > 0 && collapsed.length > max) {
-        return collapsed.slice(0, max);
+    const fromData = Number(input?.dataset.codePointMax);
+    const fromAttr = input?.maxLength;
+    const max = Number.isFinite(fromData) && fromData > 0
+        ? Math.trunc(fromData)
+        : typeof fromAttr === "number" && fromAttr > 0
+            ? fromAttr
+            : 0;
+    if (max > 0 && codePointLength(collapsed) > max) {
+        return truncateCodePoints(collapsed, max);
     }
     return collapsed;
 }
@@ -251,9 +260,11 @@ function ensureTodoNotesEditor() {
         return todoNotesEditor;
     }
     const status = document.getElementById("todoBodyEditorStatus");
+    const bodyMaxFromData = Number(todoBody?.dataset.codePointMax);
+    const bodyMaxFallback = todoBody?.maxLength || 20000;
     todoNotesEditor = createNotesEditor({
         parent: host,
-        maxLength: todoBody?.maxLength || 20000,
+        maxLength: Number.isFinite(bodyMaxFromData) && bodyMaxFromData > 0 ? Math.trunc(bodyMaxFromData) : bodyMaxFallback,
         labelledBy: "todoBodyLabel",
         announce: (message) => {
             if (status)
@@ -291,6 +302,12 @@ function loadTodoNotes(body, readOnly) {
         todoNotesEditor?.clear();
     }
     textarea.readOnly = readOnly;
+    getCodePointLimitHandle(textarea)?.sync();
+}
+/** Re-sync code-point validity after programmatic title/body assignment or dialog reuse. */
+function syncTodoCodePointLimits() {
+    getCodePointLimitHandle(todoTitle)?.sync();
+    getCodePointLimitHandle(todoBody)?.sync();
 }
 async function renderTodoNotesPreview() {
     if (!todoBodyPreview || !todoBody) {
@@ -494,6 +511,7 @@ function readTodoDialogSnapshot() {
         status: todoStatus?.value ?? "",
         estimation: todoEstimationPoints?.value ?? "",
         assignee: assignee?.value ?? "",
+        creator: getPendingTodoCreatorId()?.toString() ?? "",
         sprint: sprint?.value ?? "",
         priority: todoPriority?.value ?? "",
         dueAt: todoDueAt?.value ?? "",
@@ -515,6 +533,7 @@ function isTodoDialogDirty() {
         current.status !== todoDialogBaseline.status ||
         current.estimation !== todoDialogBaseline.estimation ||
         current.assignee !== todoDialogBaseline.assignee ||
+        current.creator !== todoDialogBaseline.creator ||
         current.sprint !== todoDialogBaseline.sprint ||
         current.priority !== todoDialogBaseline.priority ||
         current.dueAt !== todoDialogBaseline.dueAt ||
@@ -529,6 +548,7 @@ function resetTodoDialogCloseState() {
     todoDialogClosePromptOpen = false;
     todoCreatorLocaleAbort?.abort();
     todoCreatorLocaleAbort = null;
+    resetTodoCreatorSelector();
     todoCreatedCallback = null;
 }
 async function closeTodoDialogInternal(options = {}) {
@@ -601,6 +621,11 @@ function bindTodoDialogCloseGuards() {
         releaseTodoNotesPreview();
         // Releases the editor's image files (native handles on Android) right away.
         todoNotesEditor?.clear();
+        if (todoTitle)
+            todoTitle.value = "";
+        if (todoBody)
+            todoBody.value = "";
+        syncTodoCodePointLimits();
         resetTodoDialogCloseState();
     });
 }
@@ -823,7 +848,6 @@ export async function openTodoDialog(opts) {
         }
     }
     const createdEl = document.getElementById("todoDialogCreated");
-    const createdByEl = document.getElementById("todoDialogCreatedBy");
     const updatedEl = document.getElementById("todoDialogUpdated");
     const archiveBanner = document.getElementById("todoArchiveBanner");
     const archiveTimestamp = document.getElementById("todoArchiveTimestamp");
@@ -862,20 +886,11 @@ export async function openTodoDialog(opts) {
             }
         }
     };
-    const setCreatedBy = (createdByUserId) => {
-        if (!createdByEl)
-            return;
-        const member = createdByUserId != null ? getBoardMembers().find((m) => m.userId === createdByUserId) : null;
-        const name = member?.name || member?.email || "";
-        createdByEl.textContent = name ? t("todo.dialog.openedBy", { name }) : "";
-    };
-    todoCreatorLocaleAbort?.abort();
-    todoCreatorLocaleAbort = new AbortController();
-    document.addEventListener(I18N_LOCALE_CHANGED, () => setCreatedBy(mode === "edit" ? todo?.createdByUserId : undefined), { signal: todoCreatorLocaleAbort.signal });
     if (mode === "create") {
         setTodoDialogTitleKey("todo.dialog.title.new");
         todoTitle.value = normalizeSeedTitle(opts.initialTitle);
         loadTodoNotes("", !permissions.canEditNotes);
+        syncTodoCodePointLimits();
         todoTags.value = "";
         const initialKey = resolveColumnKey(status);
         const selected = populateTodoStatusOptions(initialKey);
@@ -893,12 +908,12 @@ export async function openTodoDialog(opts) {
         if (shareTodoBtn)
             shareTodoBtn.style.display = "none";
         setDates(undefined, undefined);
-        setCreatedBy(undefined);
     }
     else {
         setTodoDialogTitleKey(isArchived ? "todo.dialog.title.archived" : permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
         todoTitle.value = todo.title || "";
         loadTodoNotes(todo.body || "", !permissions.canEditNotes);
+        syncTodoCodePointLimits();
         todoTags.value = "";
         const initialKey = resolveColumnKey(todo.columnKey || todo.status);
         const selected = populateTodoStatusOptions(initialKey);
@@ -921,8 +936,37 @@ export async function openTodoDialog(opts) {
         if (shareTodoBtn)
             shareTodoBtn.style.display = "";
         setDates(todo.createdAt, todo.updatedAt);
-        setCreatedBy(todo.createdByUserId);
     }
+    const normalizedIdentity = (value) => {
+        const id = Number(value);
+        return Number.isSafeInteger(id) && id > 0 ? id : null;
+    };
+    const creatorProjectId = normalizedIdentity(board?.project?.id);
+    const creatorTodoLocalId = mode === "edit" ? normalizedIdentity(todo?.localId) : null;
+    const creatorAuthUserId = normalizedIdentity(getUser()?.id);
+    const creatorMembershipIsCurrent = () => {
+        const activeUserId = normalizedIdentity(getUser()?.id);
+        return activeUserId === creatorAuthUserId && getBoardMembers().some((member) => Number(member.userId) === creatorAuthUserId && String(member.role).toLowerCase() === "maintainer");
+    };
+    configureTodoCreatorSelector({
+        generation: openGeneration,
+        projectId: creatorProjectId,
+        todoLocalId: creatorTodoLocalId,
+        authUserId: creatorAuthUserId,
+        canEdit: permissions.canEditCreator && creatorMembershipIsCurrent(),
+        originalCreatorUserId: mode === "edit" ? todo?.createdByUserId : null,
+        members: getBoardMembers(),
+        isContextCurrent: () => openGeneration === todoDialogOpenGeneration &&
+            normalizedIdentity(getBoard()?.project?.id) === creatorProjectId,
+        isEditAuthorized: creatorMembershipIsCurrent,
+    });
+    todoCreatorLocaleAbort?.abort();
+    todoCreatorLocaleAbort = new AbortController();
+    document.addEventListener(I18N_LOCALE_CHANGED, () => {
+        if (openGeneration !== todoDialogOpenGeneration || !todoDialogBaseline || !todoDialog?.isConnected)
+            return;
+        refreshTodoCreatorSelectorLocale();
+    }, { signal: todoCreatorLocaleAbort.signal });
     const overdueIndicator = document.getElementById("todoDialogOverdue");
     const syncOverdueIndicator = () => {
         const selectedKey = todoStatus?.value ?? "";

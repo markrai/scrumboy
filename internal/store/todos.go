@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type CreateTodoInput struct {
@@ -38,7 +39,7 @@ func validateDueAt(v *time.Time) error {
 	}
 	ms := v.UTC().UnixMilli()
 	if ms <= 0 || ms >= maxDueAtMs {
-		return fmt.Errorf("%w: dueAt out of range", ErrValidation)
+		return reasoned(ErrValidation, ReasonInvalidDueAt, ErrValidation.Error()+": dueAt out of range")
 	}
 	return nil
 }
@@ -68,10 +69,10 @@ func cloneTimePtr(v *time.Time) *time.Time {
 
 func (s *Store) CreateTodo(ctx context.Context, projectID int64, in CreateTodoInput, mode Mode) (Todo, error) {
 	in.Title = strings.TrimSpace(in.Title)
-	if in.Title == "" || len(in.Title) > 200 {
+	if in.Title == "" || utf8.RuneCountInString(in.Title) > 200 {
 		return Todo{}, fmt.Errorf("%w: invalid title", ErrValidation)
 	}
-	if len(in.Body) > 20000 {
+	if utf8.RuneCountInString(in.Body) > 20000 {
 		return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
 	}
 	if err := validateEstimationPoints(in.EstimationPoints); err != nil {
@@ -438,8 +439,13 @@ type UpdateTodoInput struct {
 	KeepTags             bool
 	KeepEstimationPoints bool
 	KeepAssigneeUserID   bool
-	DueAt                *time.Time // nil means clear when DueAtPresent is true
-	DueAtPresent         bool       // false preserves the existing due date
+	// CreatedByUserID reassigns the creator attribution when
+	// CreatedByUserIDPresent is set. Maintainer-only; the creator cannot be
+	// cleared and the target user must exist.
+	CreatedByUserID        *int64
+	CreatedByUserIDPresent bool
+	DueAt                  *time.Time // nil means clear when DueAtPresent is true
+	DueAtPresent           bool       // false preserves the existing due date
 	// CustomFields is a sparse patch keyed by field key; a nil value clears
 	// that field. Keys not present are untouched.
 	CustomFields CustomFieldValues
@@ -589,6 +595,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		}
 		actorRole = role
 	}
+	if in.CreatedByUserIDPresent && (!ok || userID == 0 || actorRole != RoleMaintainer) {
+		return Todo{}, ErrUnauthorized
+	}
 
 	// Durable projects only: contributor/view edit scope. Temporary boards (any expires_at) use link collaboration
 	// for updates, same model as create — skip role-based edit scope.
@@ -618,10 +627,10 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	if scopeEnforced {
 		switch editScope {
 		case TodoEditBodyOnly:
-			if len(in.CustomFields) > 0 {
+			if len(in.CustomFields) > 0 || in.CreatedByUserIDPresent {
 				return Todo{}, ErrUnauthorized
 			}
-			if len(in.Body) > 20000 {
+			if utf8.RuneCountInString(in.Body) > 20000 {
 				return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
 			}
 			bodyChanged := existing.Body != in.Body
@@ -650,6 +659,7 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 				return Todo{}, fmt.Errorf("commit update todo: %w", err)
 			}
 			existing.MaterialChanged = bodyChanged
+			existing.OtherMaterialChanged = bodyChanged
 			existing.PublicProjectionChanged = bodyChanged
 			existing.Body = in.Body
 			existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
@@ -668,10 +678,10 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	}
 
 	in.Title = strings.TrimSpace(in.Title)
-	if in.Title == "" || len(in.Title) > 200 {
+	if in.Title == "" || utf8.RuneCountInString(in.Title) > 200 {
 		return Todo{}, fmt.Errorf("%w: invalid title", ErrValidation)
 	}
-	if len(in.Body) > 20000 {
+	if utf8.RuneCountInString(in.Body) > 20000 {
 		return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
 	}
 	if err := validateEstimationPoints(in.EstimationPoints); err != nil {
@@ -724,6 +734,26 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		} else {
 			if actorRole != RoleMaintainer {
 				return Todo{}, ErrUnauthorized
+			}
+		}
+	}
+
+	creatorChanged := false
+	if in.CreatedByUserIDPresent {
+		if in.CreatedByUserID == nil || *in.CreatedByUserID <= 0 {
+			return Todo{}, fmt.Errorf("%w: createdByUserId cannot be cleared", ErrValidation)
+		}
+		if isAnonymousBoard {
+			return Todo{}, fmt.Errorf("%w: creator cannot be changed in anonymous mode", ErrValidation)
+		}
+		creatorChanged = !sameInt64Ptr(existing.CreatedByUserID, in.CreatedByUserID)
+		if creatorChanged {
+			var creatorExists bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)`, *in.CreatedByUserID).Scan(&creatorExists); err != nil {
+				return Todo{}, fmt.Errorf("check creator exists: %w", err)
+			}
+			if !creatorExists {
+				return Todo{}, fmt.Errorf("%w: creator does not exist", ErrValidation)
 			}
 		}
 	}
@@ -792,7 +822,8 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		!sameInt64Ptr(existing.SprintID, effectiveSprint) ||
 		!sameStringPtr(existing.PriorityKey, effectivePriorityKey) ||
 		!sameStringSet(existing.Tags, tags)
-	materialChanged := publicFieldsChanged || assignmentChanged || dueAtChanged
+	otherMaterialChanged := publicFieldsChanged || assignmentChanged || dueAtChanged
+	materialChanged := otherMaterialChanged || creatorChanged
 
 	var userIDPtr *int64
 	if !ok && len(tags) > 0 {
@@ -854,6 +885,22 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 			WHERE id = ?
 		`, in.Title, in.Body, assigneeValue, estimationPoints, priorityKeyValue, nowMs, todoID); err != nil {
 			return Todo{}, fmt.Errorf("update todo: %w", err)
+		}
+	}
+	if creatorChanged {
+		if _, err := tx.ExecContext(ctx, `UPDATE todos SET created_by_user_id = ? WHERE id = ?`, *in.CreatedByUserID, todoID); err != nil {
+			return Todo{}, fmt.Errorf("update todo creator: %w", err)
+		}
+		actorID, hasActor := UserIDFromContext(ctx)
+		var actorUserID *int64
+		if hasActor {
+			actorUserID = &actorID
+		}
+		if err := insertAuditEventTx(ctx, tx, existing.ProjectID, actorUserID, "todo_creator_changed", "todo", &todoID, map[string]any{
+			"before": existing.CreatedByUserID,
+			"after":  *in.CreatedByUserID,
+		}); err != nil {
+			return Todo{}, fmt.Errorf("audit todo_creator_changed: %w", err)
 		}
 	}
 	if err := syncTodoAssetsTx(ctx, tx, existing.ProjectID, todoID, in.Body, nowMs); err != nil {
@@ -977,6 +1024,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	if len(tagsAdded) > 0 || len(tagsRemoved) > 0 {
 		changedFields = append(changedFields, "tags")
 	}
+	if creatorChanged {
+		changedFields = append(changedFields, "creator")
+	}
 	if len(changedFields) > 0 {
 		meta := map[string]any{"changed_fields": changedFields}
 		for _, f := range changedFields {
@@ -1043,6 +1093,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	existing.Title = in.Title
 	existing.Body = in.Body
 	existing.AssigneeUserID = cloneInt64Ptr(in.AssigneeUserID)
+	if creatorChanged {
+		existing.CreatedByUserID = cloneInt64Ptr(in.CreatedByUserID)
+	}
 	existing.EstimationPoints = cloneInt64Ptr(in.EstimationPoints)
 	existing.PriorityKey = cloneStringPtr(effectivePriorityKey)
 	if dueAtChanged {
@@ -1059,6 +1112,8 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
 	existing.AssignmentChanged = assignmentChanged
 	existing.MaterialChanged = materialChanged
+	existing.CreatorChanged = creatorChanged
+	existing.OtherMaterialChanged = otherMaterialChanged
 	existing.PublicProjectionChanged = publicFieldsChanged
 
 	if s.todoAssignedPublisher != nil && assignmentChanged && !isAnonymousBoard {
@@ -1304,6 +1359,7 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 	existing.Rank = newRank
 	existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
 	existing.MaterialChanged = materialChanged
+	existing.OtherMaterialChanged = materialChanged
 	existing.MoveFromColumnName = currentCol.Name
 	existing.MoveToColumnName = targetCol.Name
 	if doneAtMs != nil {
@@ -1432,6 +1488,48 @@ func (s *Store) GetProjectIDForTodo(ctx context.Context, todoID int64) (int64, e
 		return 0, fmt.Errorf("get project id for todo: %w", err)
 	}
 	return projectID, nil
+}
+
+func (s *Store) GetTodoCreatorNotificationFacts(
+	ctx context.Context,
+	projectID, todoID, recipientUserID int64,
+) (TodoCreatorNotificationFacts, bool, error) {
+	var facts TodoCreatorNotificationFacts
+	var role sql.NullString
+	var creatorID sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT p.id, p.name, p.slug, p.expires_at IS NULL,
+		       pm.role,
+		       t.id, t.project_id, t.local_id, t.created_by_user_id
+		FROM projects p
+		JOIN todos t ON t.id = ? AND t.project_id = p.id
+		LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
+		WHERE p.id = ? AND p.import_batch_id IS NULL
+	`, todoID, recipientUserID, projectID).Scan(
+		&facts.ProjectID,
+		&facts.ProjectName,
+		&facts.ProjectSlug,
+		&facts.DurableProject,
+		&role,
+		&facts.TodoID,
+		&facts.TodoProjectID,
+		&facts.TodoLocalID,
+		&creatorID,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return TodoCreatorNotificationFacts{}, false, nil
+	}
+	if err != nil {
+		return TodoCreatorNotificationFacts{}, false, fmt.Errorf("get todo creator notification facts: %w", err)
+	}
+	if role.Valid {
+		facts.RecipientRole = ProjectRole(role.String)
+	}
+	if creatorID.Valid {
+		value := creatorID.Int64
+		facts.CreatedByUserID = &value
+	}
+	return facts, true, nil
 }
 
 func (s *Store) GetTodoByLocalID(ctx context.Context, projectID, localID int64, mode Mode) (Todo, error) {

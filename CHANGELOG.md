@@ -2,6 +2,23 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## [3.44.3] - 2026-11-26
+
+### Fixed
+
+- **Validation errors explain the rule that was broken (PR #387)** - Rejected input now says what to fix instead of "Please check the request and try again." Covered: todo title, body and tag count, due-date range, estimation points, project, sprint and workflow-column names and the 12-column limit, slugs and colours, custom-field definitions and values (with the 25-field limit), calendar and agenda settings, tag-filter limit, reserved publication slugs, Wall note, note-length and connection limits, due-reminder lead time, and project-name-without-a-slug. Conflicts that used to read only "Conflict" now say why (email already in use, already a member, sole maintainer, owns projects, custom-field key exists). The API gains `error.details.reason` for these cases and structured parameters such as `error.details.max` (for example `too_many_tag_filters` and custom-field number range). MCP also forwards safe `max` details for number-range failures.
+- **Character limits count Unicode code points** - Backend limits use `utf8.RuneCountInString`. The SPA uses a shared code-point limiter (with localized feedback) instead of HTML `maxlength` on affected inputs, validates at mutation boundaries, and keeps over-limit text until corrected. Notes image/drawing reservations account in code points. The PWA install cache includes `unicode-limits.js`.
+- **Custom-field numbers state both bounds** - Values must be finite and have an absolute value strictly less than 2^53; the localized message interpolates `{max}` from API details.
+- **Backup/import validation names the rejected record** - Preview and import failures return stable `import_*` reason codes with structured parameters. Machine `rule` codes are localized through `errors.importRules.*`. Hostile names stay plain text; unexpected internals are redacted (`import_internal_redacted`) at store and transport boundaries.
+- **Validation-reason locale ratchet uses Go AST** - Emitted reasons are discovered with `go/ast` (including multiline `writeValidationError`, `PAYLOAD_TOO_LARGE` `writeError` patterns, and store `Reason*` constants). Dual-category emissions require both locale keys. The exemption list is not expanded.
+- **Validation message catalogs completed** - New and revised validation/conflict/import strings (including `invalid_created_by_user_id` and import rule registry keys) are present across all 24 locale catalogs with placeholder parity.
+
+## [3.44.2] - 2026-11-26
+
+### Added
+
+- **Editable story creator attribution (PR #381)** - Project Maintainers can correct an existing story's creator using the pencil beside its creation timestamp in the Edit Todo dialog, the REST API, MCP `todos_update`, or `scrumboy-cli todo update --creator <id|me>`. Existing users can be selected without adding them to the project. Corrections are audited, do not grant membership or edit permissions, and do not independently trigger creator-specific notifications. Pending creator notifications are checked against current attribution and project access before delivery.
+
 ## [3.44.1] - 2026-11-25
 
 ### Fixed

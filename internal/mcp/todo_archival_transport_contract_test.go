@@ -245,9 +245,9 @@ func TestTodoArchivalMCPTemporaryProjectAndModeContracts(t *testing.T) {
 // TestTodoArchivalMCPRemainsRealtimeSilent pins Scrumboy's established surface contract:
 // REST mutations publish a board refresh, MCP mutations do not. Archive/restore follow the
 // same rule as MCP create/update/move/delete, so a real transition driven over MCP must emit
-// no realtime event at all. docs/mcp.md states this directly ("MCP/Agora do not gain
-// card-activity fallback because they still emit no board refresh"). This asymmetry is
-// deliberate: do not "fix" it by giving the MCP archive service a refresh publisher.
+// no realtime event at all. Assignment-changing updates separately retain todo.assigned;
+// archive/restore cannot produce that event. This asymmetry is deliberate: do not "fix" it
+// by giving the MCP archive service a refresh publisher.
 func TestTodoArchivalMCPRemainsRealtimeSilent(t *testing.T) {
 	ts, _, client, st, ownerCtx, _, project, todos := newTodoArchiveMCPFixture(t)
 

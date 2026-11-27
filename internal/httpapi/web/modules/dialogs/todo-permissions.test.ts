@@ -45,12 +45,13 @@ describe('todo-permissions', () => {
   });
 
   it('grants the full durable-board edit matrix to maintainers', async () => {
+    selectorState.user = { id: 7 };
     const mod = await loadPermissionsModule();
 
     const permissions = mod.computeTodoDialogPermissions({
-      board: { project: { creatorUserId: 1 } },
+      board: { project: { id: 3, creatorUserId: 1 } },
       mode: 'edit',
-      todo: { assigneeUserId: 7 },
+      todo: { localId: 4, assigneeUserId: 7 },
       role: 'maintainer',
     });
 
@@ -62,6 +63,7 @@ describe('todo-permissions', () => {
       canEditAssignment: true,
       canDeleteTodo: true,
       canEditTitle: true,
+      canEditCreator: true,
       canEditStatus: true,
       canSubmitTodo: true,
       canEditLinks: true,
@@ -89,6 +91,7 @@ describe('todo-permissions', () => {
       canEditAssignment: false,
       canDeleteTodo: false,
       canEditTitle: false,
+      canEditCreator: false,
       canEditStatus: false,
       canSubmitTodo: true,
       canEditLinks: true,
@@ -116,6 +119,7 @@ describe('todo-permissions', () => {
       canEditAssignment: false,
       canDeleteTodo: false,
       canEditTitle: false,
+      canEditCreator: false,
       canEditStatus: false,
       canSubmitTodo: false,
       canEditLinks: true,
@@ -143,6 +147,7 @@ describe('todo-permissions', () => {
       canEditAssignment: false,
       canDeleteTodo: false,
       canEditTitle: false,
+      canEditCreator: false,
       canEditStatus: false,
       canSubmitTodo: false,
       canEditLinks: false,
@@ -171,6 +176,7 @@ describe('todo-permissions', () => {
       canEditAssignment: false,
       canDeleteTodo: true,
       canEditTitle: true,
+      canEditCreator: false,
       canEditStatus: true,
       canSubmitTodo: true,
       canEditLinks: true,
@@ -197,6 +203,7 @@ describe('todo-permissions', () => {
       canEditAssignment: false,
       canDeleteTodo: false,
       canEditTitle: true,
+      canEditCreator: false,
       canEditStatus: true,
       canSubmitTodo: true,
       canEditLinks: false,
@@ -224,6 +231,7 @@ describe('todo-permissions', () => {
       canEditAssignment: false,
       canDeleteTodo: true,
       canEditTitle: false,
+      canEditCreator: false,
       canEditStatus: false,
       canSubmitTodo: false,
       canEditLinks: false,
@@ -245,6 +253,37 @@ describe('todo-permissions', () => {
     expect(permissions.canArchiveTodo).toBe(false);
     expect(permissions.canRestoreTodo).toBe(false);
     expect(permissions.canDeleteTodo).toBe(false);
+    expect(permissions.canEditCreator).toBe(false);
+  });
+
+  it('allows an authenticated temporary-board maintainer but not temporary link access to edit attribution', async () => {
+    selectorState.user = { id: 42 };
+    boardModeState.temporary = true;
+    const mod = await loadPermissionsModule();
+    const board = { project: { id: 8, creatorUserId: 42, expiresAt: '2026-12-01T00:00:00Z' } };
+
+    expect(mod.computeTodoDialogPermissions({
+      board,
+      mode: 'edit',
+      todo: { localId: 3 },
+      role: 'maintainer',
+    }).canEditCreator).toBe(true);
+    expect(mod.computeTodoDialogPermissions({
+      board,
+      mode: 'edit',
+      todo: { localId: 3 },
+      role: 'viewer',
+    }).canEditCreator).toBe(false);
+  });
+
+  it('does not expose creator editing for new todos or system authority without project Maintainer membership', async () => {
+    selectorState.user = { id: 42 };
+    const mod = await loadPermissionsModule();
+    const board = { project: { id: 8, creatorUserId: 1 } };
+
+    expect(mod.computeTodoDialogPermissions({ board, mode: 'create', role: 'maintainer' }).canEditCreator).toBe(false);
+    expect(mod.computeTodoDialogPermissions({ board, mode: 'edit', role: 'maintainer' }).canEditCreator).toBe(false);
+    expect(mod.computeTodoDialogPermissions({ board, mode: 'edit', todo: { localId: 3 }, role: null }).canEditCreator).toBe(false);
   });
 
   it('exposes the mutable permission snapshot through set/get without leaking caller mutations back in', async () => {

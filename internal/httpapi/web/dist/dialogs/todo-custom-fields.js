@@ -2,6 +2,7 @@
 // GET /api/board/{slug}/custom-fields; values travel as `customFields` on the
 // todo payloads (key -> string | number, null clears on update).
 import { apiFetch } from '../api.js';
+import { bindCodePointLimit } from '../unicode-limits.js';
 const defsCache = new Map();
 export function invalidateCustomFieldDefs(slug) {
     if (slug)
@@ -44,12 +45,15 @@ export function renderCustomFieldInputs(container, defs, values, opts) {
         input.type = def.type === 'number' ? 'number' : def.type === 'url' ? 'url' : 'text';
         if (def.type === 'number')
             input.step = 'any';
-        input.maxLength = 2000;
         input.name = `customField:${def.key}`;
         input.dataset.cfKey = def.key;
         input.dataset.cfType = def.type;
         input.value = customFieldValueToInput(values?.[def.key]);
         input.disabled = opts.disabled;
+        if (def.type !== 'number') {
+            // Text/URL values are limited by Unicode code points on the server.
+            bindCodePointLimit(input, 2000);
+        }
         label.append(caption, input);
         container.append(label);
     }

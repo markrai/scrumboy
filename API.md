@@ -648,12 +648,17 @@ The org-wide reminder lead time is `GET`/`PUT`/`DELETE`
 `/api/admin/settings/due-reminder` (admin/owner; body `{"leadHours": 24}`, `0`
 disables, max 2160).
 
-Todo objects also include `createdByUserId`, the immutable historical ID of the
-authenticated user present when the todo was created. It is not proof of
-current project membership or notification eligibility. MCP todo shapes keep
+Todo objects also include `createdByUserId`, the historical attribution for the
+user who created the todo. It is not proof of current project membership,
+ownership, edit authority, or notification eligibility. MCP todo shapes keep
 the field present with JSON `null` for unauthenticated, pre-migration, imported,
-or deleted-user attribution. The field is read-only; todo mutation inputs cannot
-set or clear it.
+or deleted-user attribution. A project Maintainer may correct this history with
+the optional positive-integer `todos_update.patch.createdByUserId`; omission
+preserves the existing value, while JSON `null` and clearing are unsupported.
+The target must be an existing user but need not be a project member, and the
+attribution grants no membership or permissions. Actual attribution changes are
+recorded as `todo_creator_changed`; a creator-only correction does not itself
+produce a creator-specific notification.
 
 **Story archival** is orthogonal to workflow state. `todos_archive` and `todos_restore` take
 **1-500** unique, positive project-local IDs and apply them **atomically**: one unknown ID
@@ -962,6 +967,15 @@ Modern slug and legacy numeric REST todo projections both expose the read-only
 stored value is `NULL`; this is intentionally different from MCP's explicit
 `null`. Route access is resolved before todo projection, and the identifier does
 not grant membership or additional access.
+
+The canonical `PATCH /api/board/{slug}/todos/{localId}` accepts an optional
+positive-integer `createdByUserId` correction from an authenticated project
+Maintainer. Omission preserves attribution; JSON `null`, clearing, invalid IDs,
+and nonexistent users are rejected atomically with the rest of the patch.
+Existing non-member users remain valid historical targets. The legacy numeric
+todo mutation route does not expose creator reassignment. Authenticated todo
+responses include the committed attribution, while public-board projections
+never include it.
 
 ---
 

@@ -16,6 +16,7 @@
 
 import { escapeHTML, HEX_COLOR_RE, sanitizeHexColor } from "../utils.js";
 import { t } from "../i18n/index.js";
+import { bindCodePointLimit } from "../unicode-limits.js";
 import { colorIndexFromHex } from "./wall-postbaby-constants.js";
 import { screenToCanvas } from "./wall-viewport.js";
 import type { Todo } from "../types.js";
@@ -150,9 +151,9 @@ export function enterEditMode(noteEl: HTMLElement, initialText: string): HTMLTex
   const ta = document.createElement("textarea");
   ta.className = "wall-note__editor";
   ta.value = initialText;
-  ta.maxLength = 5000;
   ta.spellcheck = true;
   ta.setAttribute("aria-label", t("wall.note.edit"));
+  bindCodePointLimit(ta, 4000);
   // Insert before the resize handle so the handle stays on top.
   const handle = noteEl.querySelector<HTMLElement>(".wall-note__resize-handle");
   if (handle) {

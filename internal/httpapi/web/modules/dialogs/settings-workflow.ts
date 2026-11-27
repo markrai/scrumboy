@@ -15,6 +15,7 @@ import {
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
+import { bindCodePointLimitsIn, reportCodePointLimitsIn } from '../unicode-limits.js';
 
 type WorkflowLaneCountsState =
   | { status: 'loading' }
@@ -200,7 +201,7 @@ function renderWorkflowTabContent(countsState: WorkflowLaneCountsState): string 
               class="input"
               data-workflow-name="${escapeHTML(lane.key)}"
               value="${escapeHTML(lane.name)}"
-              maxlength="200"
+              data-code-point-max="200"
               aria-label="${escapeHTML(workflowLaneLabelAria(lane.key))}"
               style="flex:1; min-width:120px;"
             />
@@ -224,7 +225,7 @@ function renderWorkflowTabContent(countsState: WorkflowLaneCountsState): string 
           class="input"
           type="text"
           data-workflow-ghost-input
-          maxlength="200"
+          data-code-point-max="200"
           placeholder="Add lane..."
           data-i18n-placeholder="settings.workflow.addPlaceholder"
           aria-label="${escapeHTML(t('settings.workflow.addLaneAria'))}"
@@ -381,6 +382,11 @@ export function loadWorkflowTabContent(options: {
 
 export function bindWorkflowTabInteractions(options: BindWorkflowTabInteractionsOptions): void {
   const { closeSettingsBtn, rerender, settingsDialog, signal } = options;
+  const tabRoot =
+    document.getElementById('settingsWorkflowTab') ||
+    document.getElementById('settingsContent') ||
+    document;
+  bindCodePointLimitsIn(tabRoot);
   const addInput = document.querySelector('[data-workflow-ghost-input]') as HTMLInputElement | null;
   const addLane = () => {
     if (!addInput) return;
@@ -443,6 +449,8 @@ export function bindWorkflowTabInteractions(options: BindWorkflowTabInteractions
     saveChangesBtn.addEventListener(
       'click',
       () => {
+        const root = document.getElementById('settingsWorkflowTab') || document.getElementById('settingsContent');
+        if (root && !reportCodePointLimitsIn(root)) return;
         void saveWorkflowDraftChanges(rerender);
       },
       { signal }

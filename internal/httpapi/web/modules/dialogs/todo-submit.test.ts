@@ -85,4 +85,49 @@ describe("todo submit payload helpers", () => {
     expect(shouldSubmitSprintAssignment(true, null, 8)).toBe(true);
     expect(shouldSubmitSprintAssignment(true, 8, 9)).toBe(true);
   });
+
+  it("includes creator attribution only for an authorized positive changed selection", () => {
+    const base = { title: "Title", body: "", tags: [] as string[] };
+
+    expect(buildTodoPatchPayload({
+      ...base,
+      creatorEnabled: true,
+      creatorUserId: 27,
+      originalCreatorUserId: 12,
+    }).createdByUserId).toBe(27);
+    expect("createdByUserId" in buildTodoPatchPayload({
+      ...base,
+      creatorEnabled: true,
+      creatorUserId: 12,
+      originalCreatorUserId: 12,
+    })).toBe(false);
+    expect("createdByUserId" in buildTodoPatchPayload({
+      ...base,
+      creatorEnabled: false,
+      creatorUserId: 27,
+      originalCreatorUserId: 12,
+    })).toBe(false);
+    expect("createdByUserId" in buildTodoPatchPayload({
+      ...base,
+      creatorEnabled: true,
+      creatorUserId: null,
+      originalCreatorUserId: null,
+    })).toBe(false);
+  });
+
+  it("never includes creator attribution in create payloads", () => {
+    const payload = buildTodoCreatePayload({
+      title: "Title",
+      body: "",
+      tags: [],
+      columnKey: "backlog",
+      ...({
+        creatorEnabled: true,
+        creatorUserId: 27,
+        originalCreatorUserId: 12,
+      } as Record<string, unknown>),
+    });
+
+    expect("createdByUserId" in payload).toBe(false);
+  });
 });

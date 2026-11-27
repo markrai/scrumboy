@@ -113,4 +113,34 @@ describe("verify-i18n-locales script", () => {
     expect(result.stderr || result.stdout).toContain("i18n bootstrap catalog coverage failed");
     expect(result.stderr || result.stdout).toContain("auth.signIn.title");
   });
+
+  it("fails clearly when translated placeholders drift from English", async () => {
+    const webDir = await fs.mkdtemp(path.join(os.tmpdir(), "scrumboy-i18n-placeholder-check-"));
+    const localesDir = path.join(webDir, "modules", "i18n", "locales");
+    await fs.mkdir(localesDir, { recursive: true });
+    await writeBootstrapSource(webDir, []);
+    await fs.writeFile(path.join(localesDir, "en.json"), JSON.stringify({
+      "todo.creator.userFallback": "User {id}",
+    }));
+    await fs.writeFile(path.join(localesDir, "de.json"), JSON.stringify({
+      "todo.creator.userFallback": "Benutzer {name}",
+    }));
+    await fs.writeFile(path.join(localesDir, "pseudo.json"), JSON.stringify({
+      "todo.creator.userFallback": "[!! User {id} !!]",
+    }));
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      cwd: webDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        SCRUMBOY_WEB_DIR: webDir,
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr || result.stdout).toContain("i18n placeholder consistency failed");
+    expect(result.stderr || result.stdout).toContain("de.json todo.creator.userFallback");
+    expect(result.stderr || result.stdout).toContain("expected {id}; found {name}");
+  });
 });

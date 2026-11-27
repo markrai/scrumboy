@@ -66,16 +66,31 @@ func mapStoreError(err error) *adapterError {
 	case errors.Is(err, store.ErrConflict):
 		return newAdapterError(http.StatusConflict, CodeConflict, err.Error(), reasonDetails(err))
 	default:
+		// import_internal_redacted must not expose detail on the wire at all.
+		if store.ErrorReason(err) == store.ReasonImportInternalRedacted {
+			return newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", nil)
+		}
 		return newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": err.Error()})
 	}
 }
 
+// reasonDetails merges store.ErrorDetails with the reason code into a single
+// map suitable for adapter error details. The result is later filtered by
+// clientErrorDetails so only allowlisted keys reach the wire.
 func reasonDetails(err error) any {
 	reason := store.ErrorReason(err)
-	if reason == "" {
+	details := store.ErrorDetails(err)
+	if reason == "" && len(details) == 0 {
 		return nil
 	}
-	return map[string]any{"reason": reason}
+	out := make(map[string]any, len(details)+1)
+	for k, v := range details {
+		out[k] = v
+	}
+	if reason != "" {
+		out["reason"] = reason
+	}
+	return out
 }
 
 // mapPrivilegedStoreError maps store errors for authenticated callers of privileged tools.
@@ -93,8 +108,11 @@ var clientErrorDetailKeys = map[string]struct{}{
 	"field":     {},
 	"fields":    {},
 	"localId":   {},
-	"reason":    {},
-	"tool":      {},
+	// max: numeric ceiling for range/limit errors (e.g. custom_field_number_out_of_range,
+	// import_work_limit_exceeded). Safe: always a number, never a path, SQL, or user secret.
+	"max":    {},
+	"reason": {},
+	"tool":   {},
 }
 
 // clientErrorDetails is the only adapter-error detail projection used on the

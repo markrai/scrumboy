@@ -167,7 +167,7 @@ func (s *Store) BootstrapUser(ctx context.Context, email, password, name string)
 	res, err := tx.ExecContext(ctx, `INSERT INTO users(email, name, password_hash, is_bootstrap, system_role, created_at) VALUES (?, ?, ?, ?, ?, ?)`, email, name, string(hash), true, "owner", nowMs)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: users.email") {
-			return User{}, ErrConflict
+			return User{}, reasoned(ErrConflict, ReasonEmailInUse, ErrConflict.Error())
 		}
 		return User{}, fmt.Errorf("insert user: %w", err)
 	}
@@ -511,7 +511,7 @@ func (s *Store) CreateUser(ctx context.Context, email, password, name string) (U
 	res, err := tx.ExecContext(ctx, `INSERT INTO users(email, name, password_hash, is_bootstrap, system_role, created_at) VALUES (?, ?, ?, ?, ?, ?)`, email, name, string(hash), false, "user", nowMs)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: users.email") {
-			return User{}, ErrConflict
+			return User{}, reasoned(ErrConflict, ReasonEmailInUse, ErrConflict.Error())
 		}
 		return User{}, fmt.Errorf("insert user: %w", err)
 	}
@@ -648,7 +648,7 @@ func (s *Store) deleteUser(ctx context.Context, requesterID, targetUserID int64,
 	// conflict instead of a raw SQLite INTERNAL.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, targetUserID); err != nil {
 		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
-			return fmt.Errorf("%w: account still owns project(s); transfer ownership or delete the project first", ErrConflict)
+			return reasoned(ErrConflict, ReasonOwnsProjects, ErrConflict.Error()+": account still owns project(s); transfer ownership or delete the project first")
 		}
 		return fmt.Errorf("delete user: %w", err)
 	}
@@ -787,7 +787,7 @@ func (s *Store) UpdateUserProfile(ctx context.Context, requesterID, targetUserID
 	if email != nil {
 		if _, err := tx.ExecContext(ctx, `UPDATE users SET email = ? WHERE id = ? AND is_service = 0`, newEmail, targetUserID); err != nil {
 			if strings.Contains(err.Error(), "UNIQUE constraint failed: users.email") {
-				return fmt.Errorf("%w: email already in use", ErrConflict)
+				return reasoned(ErrConflict, ReasonEmailInUse, ErrConflict.Error()+": email already in use")
 			}
 			return wrapIdentityWriteErr("update user email", err)
 		}
@@ -903,7 +903,7 @@ func (s *Store) createUserOIDC(ctx context.Context, configuredIssuer, issuer, su
 		email, name, isBootstrap, role.String(), nowMs)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: users.email") {
-			return User{}, ErrConflict
+			return User{}, reasoned(ErrConflict, ReasonEmailInUse, ErrConflict.Error())
 		}
 		return User{}, fmt.Errorf("insert oidc user: %w", err)
 	}

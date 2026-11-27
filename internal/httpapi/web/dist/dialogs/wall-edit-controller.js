@@ -7,6 +7,7 @@
 // (`onCommitText`) so this controller never imports wall-api directly.
 import { enterEditMode, exitEditMode, isEditing } from "./wall-rendering.js";
 import { getMounted, getPendingRefetch, setActiveEditNoteId, setPendingRefetch, } from "./wall-state.js";
+import { getCodePointLimitHandle } from "../unicode-limits.js";
 /**
  * Swap a note display for a textarea and wire up commit (blur, Enter, Escape).
  *
@@ -33,6 +34,18 @@ export function beginEdit(noteEl, note, opts) {
     const finish = (commit) => {
         if (finished)
             return;
+        if (commit) {
+            const handle = getCodePointLimitHandle(ta);
+            if (handle && !handle.report()) {
+                // Keep editing: blur already fired, so restore focus and retain over-limit text.
+                finished = false;
+                queueMicrotask(() => {
+                    if (!finished && ta.isConnected)
+                        ta.focus();
+                });
+                return;
+            }
+        }
         finished = true;
         setActiveEditNoteId(null);
         const newText = ta.value;
@@ -52,6 +65,7 @@ export function beginEdit(noteEl, note, opts) {
     const onKey = (ev) => {
         if (ev.key === "Escape") {
             ev.preventDefault();
+            // Matches existing Wall/Postbaby behavior: Escape commits when valid.
             finish(true);
         }
         else if (ev.key === "Enter" && !ev.shiftKey) {

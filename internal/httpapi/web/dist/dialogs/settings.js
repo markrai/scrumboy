@@ -3,6 +3,7 @@ import { settingsDialog, closeSettingsBtn } from '../dom/elements.js';
 import { apiFetch, apiFetchForm } from '../api.js';
 import { fetchProjectMembers } from '../members-cache.js';
 import { attachDialogClose, bindDialogLocale, escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent } from '../utils.js';
+import { bindCodePointLimitsIn, reportCodePointLimitsIn } from '../unicode-limits.js';
 import { getStoredTheme, handleThemeChange, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from '../theme.js';
 import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWallpaperImage } from '../wallpaper.js';
 import { CARDS_PER_LANE_ALLOWED, CARDS_PER_LANE_PREFERENCE_KEY, getDefaultCardsPerLane, setDefaultCardsPerLane, invalidateBoard, usePreferenceLimitOnNextBoardRequest, } from '../orchestration/board-refresh.js';
@@ -2982,7 +2983,7 @@ function showCreateUserDialog() {
           class="input" 
           placeholder="User Name" 
           data-i18n-placeholder="settings.users.createUser.namePlaceholder"
-          maxlength="200" 
+          data-code-point-max="200" 
           autocomplete="name" 
           required 
         />
@@ -3016,6 +3017,7 @@ function showCreateUserDialog() {
   `;
     document.body.appendChild(dialog);
     dialog.showModal();
+    bindCodePointLimitsIn(dialog);
     const closeBtn = dialog.querySelector("#createUserDialogClose");
     const cancelBtn = dialog.querySelector("#createUserCancel");
     const form = dialog.querySelector("#createUserForm");
@@ -3063,6 +3065,8 @@ function showCreateUserDialog() {
     if (form && emailInput && nameInput && passwordInput) {
         form.addEventListener("submit", async (e) => {
             e.preventDefault();
+            if (!reportCodePointLimitsIn(dialog))
+                return;
             const email = emailInput.value.trim();
             const name = nameInput.value.trim();
             const password = passwordInput.value;

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	priorityapp "scrumboy/internal/application/priority"
 	projectapp "scrumboy/internal/application/project"
@@ -378,7 +379,7 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "name required", "name_required", map[string]any{"field": "name"})
 			return true
 		}
-		if len(in.Name) > 200 {
+		if utf8.RuneCountInString(in.Name) > 200 {
 			writeValidationError(w, "invalid workflow column name", "invalid_workflow_column_name", map[string]any{"field": "name"})
 			return true
 		}
@@ -430,7 +431,7 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "name required", "name_required", map[string]any{"field": "name"})
 			return true
 		}
-		if len(in.Name) > 200 {
+		if utf8.RuneCountInString(in.Name) > 200 {
 			writeValidationError(w, "invalid workflow column name", "invalid_workflow_column_name", map[string]any{"field": "name"})
 			return true
 		}
@@ -547,7 +548,7 @@ func (s *Server) handleBoardPriorityRoutes(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "name required", "invalid_priority_tier_name", map[string]any{"field": "name"})
 			return true
 		}
-		if len(in.Name) > 200 {
+		if utf8.RuneCountInString(in.Name) > 200 {
 			writeValidationError(w, "invalid priority tier name", "invalid_priority_tier_name", map[string]any{"field": "name"})
 			return true
 		}
@@ -583,7 +584,7 @@ func (s *Server) handleBoardPriorityRoutes(w http.ResponseWriter, r *http.Reques
 		}
 		in.Name = strings.TrimSpace(in.Name)
 		in.Color = strings.TrimSpace(in.Color)
-		if in.Name == "" || len(in.Name) > 200 {
+		if in.Name == "" || utf8.RuneCountInString(in.Name) > 200 {
 			writeValidationError(w, "invalid priority tier name", "invalid_priority_tier_name", map[string]any{"field": "name"})
 			return true
 		}
@@ -1116,6 +1117,14 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 				Tags:             todoapp.Field[[]string]{Present: true, Value: in.Tags},
 				EstimationPoints: todoapp.Field[*int64]{Present: true, Value: in.EstimationPoints},
 				AssigneeUserID:   todoapp.Field[*int64]{Present: true, Value: in.AssigneeUserID},
+			}
+			if rawCreator, hasCreator := raw["createdByUserId"]; hasCreator {
+				var creatorID *int64
+				if err := json.Unmarshal(rawCreator, &creatorID); err != nil || creatorID == nil || *creatorID <= 0 {
+					writeValidationError(w, "createdByUserId must be a positive integer", "invalid_created_by_user_id", map[string]any{"field": "createdByUserId"})
+					return true
+				}
+				patch.CreatedByUserID = todoapp.Field[*int64]{Present: true, Value: creatorID}
 			}
 			if _, hasSprintID := raw["sprintId"]; hasSprintID {
 				patch.SprintID = todoapp.Field[*int64]{Present: true, Value: in.SprintID}

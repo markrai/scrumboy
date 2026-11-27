@@ -504,6 +504,7 @@ func buildUpdatePatch(patchRaw json.RawMessage) (todoapp.UpdatePatch, *adapterEr
 		"tags":             {},
 		"estimationPoints": {},
 		"assigneeUserId":   {},
+		"createdByUserId":  {},
 		"sprintId":         {},
 		"priorityKey":      {},
 		"dueAt":            {},
@@ -586,6 +587,17 @@ func buildUpdatePatch(patchRaw json.RawMessage) (todoapp.UpdatePatch, *adapterEr
 			}
 			patch.AssigneeUserID = todoapp.Field[*int64]{Present: true, Value: &assignee}
 		}
+	}
+
+	if v, ok := raw["createdByUserId"]; ok {
+		if isNullJSON(v) {
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "createdByUserId cannot be null", map[string]any{"field": "createdByUserId"})
+		}
+		var creator int64
+		if err := json.Unmarshal(v, &creator); err != nil || creator <= 0 {
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid createdByUserId", map[string]any{"field": "createdByUserId"})
+		}
+		patch.CreatedByUserID = todoapp.Field[*int64]{Present: true, Value: &creator}
 	}
 
 	if v, ok := raw["sprintId"]; ok {

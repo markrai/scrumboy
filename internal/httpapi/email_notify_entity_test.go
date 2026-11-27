@@ -568,7 +568,7 @@ func TestEmailNotifier_CardMoveSubjectParityAcrossCategories(t *testing.T) {
 		}
 		cat, selected := selectCreatorEmailCategory(store.EmailNotifyPref{
 			Assigned: true, CreatedByMe: true, CardActivity: true,
-		}, candidate)
+		}, candidate, true)
 		if !selected || cat != emailCategoryAssigned {
 			t.Fatalf("category = %q selected=%v, want assigned", cat, selected)
 		}

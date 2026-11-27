@@ -7,6 +7,7 @@ import type * as CMCommands from "@codemirror/commands";
 import type * as CMState from "@codemirror/state";
 import type * as CMView from "@codemirror/view";
 import { hasI18nKey, t } from "../i18n/index.js";
+import { codePointLength } from "../unicode-limits.js";
 import { parseNoteMarkdownTokens } from "../markdown-preview.js";
 import {
   CANONICAL_ASSET_PATH_RE,
@@ -790,9 +791,15 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
     };
   });
 
-  const maxLengthFilter = EditorState.transactionFilter.of((tr) =>
-    tr.docChanged && tr.newDoc.length > opts.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr,
-  );
+  // maxLength is Unicode code points (Go rune count), not UTF-16 / CM positions.
+  const maxLengthFilter = EditorState.transactionFilter.of((tr) => {
+    if (!tr.docChanged) return tr;
+    const nextPoints = codePointLength(tr.newDoc.toString());
+    if (nextPoints <= opts.maxLength) return tr;
+    const prevPoints = codePointLength(tr.startState.doc.toString());
+    // Reject growth past the ceiling; never silently truncate. Allow shrinks.
+    return nextPoints > prevPoints ? [] : tr;
+  });
 
   const contentAttributes: Record<string, string> = { spellcheck: "true", autocapitalize: "sentences", "aria-multiline": "true" };
   if (opts.labelledBy) contentAttributes["aria-labelledby"] = opts.labelledBy;
@@ -864,8 +871,10 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
         sel.empty || uploads.selections.some((r) => r.batch === reservation.batch)
           ? undefined
           : { batch: reservation.batch, from: sel.from, to: sel.to, text: view.state.sliceDoc(sel.from, sel.to) };
-      const replaced = selection ? selection.to - selection.from : 0;
-      if (view.state.doc.length - replaced + reservation.length > opts.maxLength) return false;
+      // CM positions address the document; character accounting uses code points of the
+      // actual replaced slice and the reserved markdown length (also measured in code points).
+      const replacedPoints = selection ? codePointLength(selection.text) : 0;
+      if (codePointLength(view.state.doc.toString()) - replacedPoints + reservation.length > opts.maxLength) return false;
       view.dispatch({
         effects: addPending.of({
           pending: { id, batch: reservation.batch, index: reservation.index, pos: sel.from },
@@ -902,7 +911,9 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
       const before = pos > 0 ? doc.sliceString(pos - 1, pos) : "\n";
       const after = doc.sliceString(to, to + 1);
       const insert = `${before === "\n" ? "" : "\n"}${markdown}${after === "\n" ? "" : "\n"}`;
-      if (doc.length - (to - pos) + insert.length > opts.maxLength) {
+      const replacedPoints = codePointLength(doc.sliceString(pos, to));
+      const nextLen = codePointLength(doc.toString()) - replacedPoints + codePointLength(insert);
+      if (nextLen > opts.maxLength) {
         view.dispatch({ effects: removePending.of({ id }) });
         return false;
       }
@@ -1001,7 +1012,8 @@ export function createNotesEditor(opts: NotesEditorOptions): NotesEditor {
       const before = sel.from > 0 ? doc.sliceString(sel.from - 1, sel.from) : "\n";
       const after = doc.sliceString(sel.to, sel.to + 1);
       const insert = `${before === "\n" ? "" : "\n"}${markdown}${after === "\n" ? "" : "\n"}`;
-      if (doc.length - (sel.to - sel.from) + insert.length > opts.maxLength) return false;
+      const replacedPoints = codePointLength(doc.sliceString(sel.from, sel.to));
+      if (codePointLength(doc.toString()) - replacedPoints + codePointLength(insert) > opts.maxLength) return false;
       view.dispatch({
         changes: { from: sel.from, to: sel.to, insert },
         selection: EditorSelection.cursor(sel.from + insert.length),

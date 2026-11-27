@@ -54,6 +54,11 @@ func TestPublishCreatorNotificationRequestEligibilityAndPayload(t *testing.T) {
 	actorID := int64(22)
 	expires := time.Now().UTC().Add(time.Hour)
 	durable := store.Project{ID: 7, Slug: "durable"}
+	creatorOnly := creatorRequestTestTodo(creatorID)
+	creatorOnly.MaterialChanged = true
+	creatorOnly.CreatorChanged = true
+	combined := creatorOnly
+	combined.OtherMaterialChanged = true
 
 	tests := []struct {
 		name    string
@@ -63,6 +68,8 @@ func TestPublishCreatorNotificationRequestEligibilityAndPayload(t *testing.T) {
 		want    int
 	}{
 		{name: "eligible internal consideration", ctx: store.WithUserID(context.Background(), actorID), project: durable, todo: creatorRequestTestTodo(creatorID), want: 1},
+		{name: "creator-only correction", ctx: store.WithUserID(context.Background(), actorID), project: durable, todo: creatorOnly},
+		{name: "combined creator and ordinary mutation", ctx: store.WithUserID(context.Background(), actorID), project: durable, todo: combined, want: 1},
 		{name: "historical creator may be a removed member", ctx: store.WithUserID(context.Background(), actorID), project: durable, todo: creatorRequestTestTodo(creatorID), want: 1},
 		{name: "self edit", ctx: store.WithUserID(context.Background(), creatorID), project: durable, todo: creatorRequestTestTodo(creatorID)},
 		{name: "missing actor", ctx: context.Background(), project: durable, todo: creatorRequestTestTodo(creatorID)},
@@ -90,6 +97,8 @@ func TestPublishCreatorNotificationRequestEligibilityAndPayload(t *testing.T) {
 				ActivityReason:        RefreshReasonTodoUpdated,
 				CreatedByUserID:       creatorID,
 				ActorUserID:           actorID,
+				MaterialChanged:       tt.todo.MaterialChanged,
+				AssignmentChanged:     tt.todo.AssignmentChanged,
 				CardActivityCandidate: true,
 			}
 			if !reflect.DeepEqual(recorder.requests[0], want) {
@@ -191,6 +200,61 @@ func TestRESTUpdateAndMoveExplicitlyRequestAfterSuccess(t *testing.T) {
 		}
 	})
 
+	t.Run("creator-only update suppresses request but preserves private refresh", func(t *testing.T) {
+		updated := creatorRequestTestTodo(creatorID)
+		updated.MaterialChanged = true
+		updated.CreatorChanged = true
+		updates := &restUpdateStoreFake{todo: updated}
+		refresh := &restUpdateRefreshFake{}
+		requests := &creatorRequestRecorder{}
+		service := NewUpdateService(UpdateServiceDependencies{Update: updates, Refresh: refresh, CreatorRequests: requests})
+		if _, err := service.Prepare(ctx, ResolvedUpdateTarget{ProjectContext: projectContext, Mode: store.ModeFull}).Update(UpdateCommand{LocalID: 5}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if len(requests.requests) != 0 || len(refresh.calls) != 1 || refresh.calls[0].entity.PublicProjectionChanged {
+			t.Fatalf("requests=%d refreshes=%d, want 0/1", len(requests.requests), len(refresh.calls))
+		}
+	})
+
+	t.Run("combined creator and ordinary update requests new creator", func(t *testing.T) {
+		updated := creatorRequestTestTodo(creatorID)
+		updated.MaterialChanged = true
+		updated.CreatorChanged = true
+		updated.OtherMaterialChanged = true
+		updated.PublicProjectionChanged = true
+		updates := &restUpdateStoreFake{todo: updated}
+		refresh := &restUpdateRefreshFake{}
+		requests := &creatorRequestRecorder{}
+		service := NewUpdateService(UpdateServiceDependencies{Update: updates, Refresh: refresh, CreatorRequests: requests})
+		if _, err := service.Prepare(ctx, ResolvedUpdateTarget{ProjectContext: projectContext, Mode: store.ModeFull}).Update(UpdateCommand{LocalID: 5}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if len(requests.requests) != 1 || requests.requests[0].CreatedByUserID != creatorID || len(refresh.calls) != 1 || !refresh.calls[0].entity.PublicProjectionChanged {
+			t.Fatalf("requests=%+v refreshes=%d", requests.requests, len(refresh.calls))
+		}
+	})
+
+	t.Run("combined creator and assignment uses committed facts", func(t *testing.T) {
+		updated := creatorRequestTestTodo(creatorID)
+		updated.MaterialChanged = true
+		updated.CreatorChanged = true
+		updated.OtherMaterialChanged = true
+		updated.AssignmentChanged = true
+		updated.AssigneeUserID = &creatorID
+		updates := &restUpdateStoreFake{todo: updated}
+		refresh := &restUpdateRefreshFake{}
+		requests := &creatorRequestRecorder{}
+		service := NewUpdateService(UpdateServiceDependencies{Update: updates, Refresh: refresh, CreatorRequests: requests})
+		if _, err := service.Prepare(ctx, ResolvedUpdateTarget{ProjectContext: projectContext, Mode: store.ModeFull}).Update(UpdateCommand{LocalID: 5}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if len(requests.requests) != 1 || requests.requests[0].CreatedByUserID != creatorID ||
+			!requests.requests[0].AssignmentChanged || requests.requests[0].ToAssigneeUserID == nil ||
+			*requests.requests[0].ToAssigneeUserID != creatorID || len(refresh.calls) != 0 {
+			t.Fatalf("requests=%+v refreshes=%d", requests.requests, len(refresh.calls))
+		}
+	})
+
 	t.Run("move requests and preserves refresh", func(t *testing.T) {
 		moved := creatorRequestTestTodo(creatorID)
 		moved.ColumnKey = "doing"
@@ -248,6 +312,26 @@ func TestLegacyCreatorRequestProjectLookupIsPostCommitAndAncillary(t *testing.T)
 		}
 		if !reflect.DeepEqual(trace, []string{"move", "project", "refresh"}) || len(requests.requests) != 0 {
 			t.Fatalf("trace = %v requests=%+v", trace, requests.requests)
+		}
+	})
+
+	t.Run("creator-only update skips ancillary project lookup", func(t *testing.T) {
+		trace := []string{}
+		updated := creatorRequestTestTodo(creatorID)
+		updated.MaterialChanged = true
+		updated.CreatorChanged = true
+		updates := &legacyUpdateStoreFake{todo: updated, trace: &trace}
+		projects := &creatorProjectStoreFake{project: store.Project{ID: 7, Slug: "durable"}, trace: &trace}
+		requests := &creatorRequestRecorder{trace: &trace}
+		refresh := &legacyUpdateRefreshFake{trace: &trace}
+		service := NewLegacyUpdateService(LegacyUpdateServiceDependencies{
+			Update: updates, Refresh: refresh, Projects: projects, CreatorRequests: requests,
+		})
+		if _, err := service.Prepare(ctx, LegacyUpdateTarget{Mode: store.ModeFull}).Update(LegacyUpdateCommand{TodoID: 81}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if !reflect.DeepEqual(trace, []string{"update", "refresh"}) || len(projects.calls) != 0 || len(requests.requests) != 0 {
+			t.Fatalf("trace=%v projectReads=%d requests=%d", trace, len(projects.calls), len(requests.requests))
 		}
 	})
 }
