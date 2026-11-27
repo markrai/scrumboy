@@ -27,9 +27,37 @@ const (
 	ReasonOwnsProjects       = "owns_projects"
 	ReasonCannotDemoteSelf   = "cannot_demote_self"
 	ReasonCannotDemoteLastMt = "cannot_demote_last_maintainer"
+
+	// Import / backup validation (structured details; safe for localization).
+	ReasonImportProjectMissingName         = "import_project_missing_name"
+	ReasonImportDuplicateSlug              = "import_duplicate_slug"
+	ReasonImportProjectMissingSlug         = "import_project_missing_slug"
+	ReasonImportTodoMissingTitle           = "import_todo_missing_title"
+	ReasonImportTodoMissingLocalID         = "import_todo_missing_local_id"
+	ReasonImportTodoInvalidEstimation      = "import_todo_invalid_estimation"
+	ReasonImportTodoUnknownColumn          = "import_todo_unknown_column"
+	ReasonImportTodoUnknownPriority        = "import_todo_unknown_priority"
+	ReasonImportTodoUnknownSprint          = "import_todo_unknown_sprint"
+	ReasonImportWorkflowMinColumns         = "import_workflow_min_columns"
+	ReasonImportWorkflowDoneColumnRequired = "import_workflow_done_column_required"
+	ReasonImportInvalidLink                = "import_invalid_link"
+	ReasonImportWorkLimitExceeded          = "import_work_limit_exceeded"
+	ReasonImportRecordInvalid              = "import_record_invalid"
+	// ReasonImportFileInvalid is for file-level (non-project-scoped) format errors;
+	// these have no meaningful "project" to include in details.
+	ReasonImportFileInvalid   = "import_file_invalid"
+	ReasonImportInternalRedacted           = "import_internal_redacted"
 )
 
 // reasoned wraps base with a public reason code and the message shown in logs.
-func reasoned(base error, reason, message string) error {
-	return priorityError(base, reason, message)
+// An optional details map may be passed for structured localization parameters.
+func reasoned(base error, reason, message string, details ...map[string]any) error {
+	var d map[string]any
+	if len(details) > 0 {
+		d = details[0]
+	}
+	if d == nil {
+		return priorityError(base, reason, message)
+	}
+	return reasonedWithDetails(base, reason, message, d)
 }

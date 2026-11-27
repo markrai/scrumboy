@@ -8,6 +8,7 @@ import { bindViewTabsFit } from './view-tabs.js';
 import { navigate } from '../router.js';
 import type { Board } from '../types.js';
 import { escapeHTML, showToast, renderUserAvatar, confirmDelete, showPromptDialog } from '../utils.js';
+import { bindCodePointLimitsIn, reportCodePointLimitsIn } from '../unicode-limits.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import {
   getProjectsTab,
@@ -132,7 +133,7 @@ function renderWorkflowEditorBody(
       ${lanes.map((lane) => `
         <div class="row" style="margin-bottom:6px;" data-lane-key="${escapeHTML(lane.key)}">
           <button type="button" class="btn btn--ghost btn--small workflow-lane__handle" aria-label="${escapeHTML(t("projects.workflow.reorderLane"))}">↕</button>
-          <input class="input" data-lane-name="${escapeHTML(lane.key)}" value="${escapeHTML(lane.name)}" maxlength="50" />
+          <input class="input" data-lane-name="${escapeHTML(lane.key)}" value="${escapeHTML(lane.name)}" data-code-point-max="200" />
           <input type="color" class="settings-color-picker" data-lane-color="${escapeHTML(lane.key)}" value="${escapeHTML(lane.color || "#64748b")}" aria-label="${escapeHTML(t("projects.workflow.laneColor", { name: lane.name }))}" />
           <label class="muted workflow-done-label-wrap" style="display:flex; align-items:center; gap:4px;"${titleAttr(FIELD_TOOLTIPS.doneLane)}>
             <input type="radio" name="workflowModalDoneLane" data-lane-done="${escapeHTML(lane.key)}" ${lane.isDone ? "checked" : ""} aria-label="${escapeHTML(t("projects.workflow.setDoneLane", { name: lane.name }))}" />
@@ -160,6 +161,7 @@ function createWorkflowEditorRenderer() {
       const listId = "workflowModalLaneList";
       const ghostId = "workflowModalGhostInput";
       container.innerHTML = renderWorkflowEditorBody(lanes, listId, ghostId);
+      bindCodePointLimitsIn(container);
 
       const list = container.querySelector(`#${listId}`);
       const ghostInput = container.querySelector(`#${ghostId}`) as HTMLInputElement | null;
@@ -310,6 +312,7 @@ function openWorkflowSetupModal(projectName: string): void {
       ghostInput.value = "";
     };
     commitGhostLane();
+    if (!reportCodePointLimitsIn(contentDiv)) return;
 
     const err = validateWorkflowLanes(modalLanes);
     if (err) {
@@ -445,7 +448,7 @@ function renderProjectsContent(projects: Project[]): void {
           </div>
           ${tabsHTML}
           ${showBoardCreation ? `<form id="createProjectForm" class="row">
-            ${getProjectsTab() === "temporary" ? `<div class="spacer"></div>` : `<input class="input" id="projectName" placeholder="${escapeHTML(t("projects.fields.namePlaceholder"))}" data-i18n-placeholder="projects.fields.namePlaceholder" maxlength="200" required />`}
+            ${getProjectsTab() === "temporary" ? `<div class="spacer"></div>` : `<input class="input" id="projectName" placeholder="${escapeHTML(t("projects.fields.namePlaceholder"))}" data-i18n-placeholder="projects.fields.namePlaceholder" data-code-point-max="200" required />`}
             <button class="btn" type="submit" data-i18n-text="${createButtonKey}">${escapeHTML(t(createButtonKey))}</button>
           </form>` : ""}
           <div class="${getProjectView() === 'grid' ? 'project-grid' : 'list'}" id="projectList">
@@ -488,6 +491,7 @@ function renderProjectsContent(projects: Project[]): void {
       </div>
     </div>
   `;
+  bindCodePointLimitsIn(app);
 
   document.querySelectorAll("[data-projects-tab]").forEach((el) => {
     if (!(el as any)[BOUND_FLAG]) {
@@ -533,6 +537,7 @@ function renderProjectsContent(projects: Project[]): void {
         return;
       }
       const projectNameEl = document.getElementById("projectName") as HTMLInputElement;
+      if (projectNameEl && !reportCodePointLimitsIn(createProjectForm)) return;
       const name = (projectNameEl?.value || "").trim();
       if (!name) {
         showToast(t("projects.validation.nameRequired"));

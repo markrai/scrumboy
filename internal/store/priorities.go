@@ -25,28 +25,48 @@ const (
 )
 
 type reasonedStoreError struct {
-	base   error
-	reason string
-	msg    string
+	base    error
+	reason  string
+	msg     string
+	details map[string]any
 }
 
-func (e *reasonedStoreError) Error() string  { return e.msg }
-func (e *reasonedStoreError) Unwrap() error  { return e.base }
-func (e *reasonedStoreError) Reason() string { return e.reason }
+func (e *reasonedStoreError) Error() string           { return e.msg }
+func (e *reasonedStoreError) Unwrap() error           { return e.base }
+func (e *reasonedStoreError) Reason() string          { return e.reason }
+func (e *reasonedStoreError) Details() map[string]any { return e.details }
 
 func priorityError(base error, reason, message string) error {
 	return &reasonedStoreError{base: base, reason: reason, msg: message}
 }
 
+// reasonedWithDetails wraps base with a public reason code, message, and
+// optional structured details for localization (e.g. max, project, todo).
+func reasonedWithDetails(base error, reason, message string, details map[string]any) error {
+	return &reasonedStoreError{base: base, reason: reason, msg: message, details: details}
+}
+
 // ErrorReason returns a stable public classification only for explicitly
-// reason-bearing domain errors. Dynamic import diagnostics intentionally do
-// not use this mechanism.
+// reason-bearing domain errors. Classified import validation failures use this
+// mechanism with structured details so clients can localize safely without
+// trusting raw error text.
 func ErrorReason(err error) string {
 	var reasoned interface{ Reason() string }
 	if errors.As(err, &reasoned) {
 		return reasoned.Reason()
 	}
 	return ""
+}
+
+// ErrorDetails returns optional structured parameters attached to a reasoned
+// store error (for example max for number-range validation). Returns nil when
+// the error has no details.
+func ErrorDetails(err error) map[string]any {
+	var detailed interface{ Details() map[string]any }
+	if errors.As(err, &detailed) {
+		return detailed.Details()
+	}
+	return nil
 }
 
 // priorityTierDefinitionReason is shared by CRUD and import so both paths

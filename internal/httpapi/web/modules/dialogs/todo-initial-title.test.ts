@@ -67,13 +67,14 @@ describe("openTodoDialog initialTitle seeding", () => {
     expect(__normalizeSeedTitleForTest("   \n\t  ")).toBe("");
   });
 
-  it("normalizeSeedTitle truncates to the Title input's maxLength when set", async () => {
+  it("normalizeSeedTitle truncates to the Title input's code-point max when set", async () => {
     const input = installTodoDom();
-    input.maxLength = 12;
+    input.dataset.codePointMax = "12";
     const { __normalizeSeedTitleForTest } = await import("./todo.js");
 
     expect(__normalizeSeedTitleForTest("abcdefghijklmnopqrstuvwxyz")).toBe("abcdefghijkl");
     expect(__normalizeSeedTitleForTest("line1\nline2\tline3")).toBe("line1 line2 ");
+    expect(__normalizeSeedTitleForTest("😀".repeat(20))).toBe("😀".repeat(12));
   });
 
   it("seeds the Title input in create mode from initialTitle", async () => {

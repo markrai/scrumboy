@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -303,5 +304,246 @@ func TestAPI_TrelloPreviewRejectsOversizedUpload(t *testing.T) {
 	resp, body := doRawJSON(t, client, http.MethodPost, ts.URL+"/api/import/trello/preview", oversized, nil)
 	if resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected 413, got %d body=%s", resp.StatusCode, string(body))
+	}
+}
+
+// TestAPI_TrelloInvalidJSONNoRawParserDump asserts that invalid Trello JSON produces
+// a validation error with no raw parser output in details (finding 3 fix: c).
+func TestAPI_TrelloInvalidJSONNoRawParserDump(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithLimits(t, "full", 1<<20, 4<<20)
+	defer cleanup()
+
+	client := ts.Client()
+
+	for _, endpoint := range []string{"/api/import/trello/preview", "/api/import/trello"} {
+		t.Run(endpoint, func(t *testing.T) {
+			resp, body := doRawJSON(t, client, http.MethodPost, ts.URL+endpoint, `{not valid json`, nil)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d body=%s", resp.StatusCode, string(body))
+			}
+			var out map[string]any
+			if err := json.Unmarshal(body, &out); err != nil {
+				t.Fatalf("unmarshal: %v body=%s", err, string(body))
+			}
+			errObj, _ := out["error"].(map[string]any)
+			if errObj == nil {
+				t.Fatalf("missing error object: %s", string(body))
+			}
+			if errObj["code"] != "VALIDATION_ERROR" {
+				t.Fatalf("code = %v, want VALIDATION_ERROR", errObj["code"])
+			}
+			details, _ := errObj["details"].(map[string]any)
+			// No raw parser dump: details must not contain "detail" with parser text
+			if detail, ok := details["detail"]; ok && detail != nil {
+				t.Fatalf("response leaks raw parser output in details.detail: %v", detail)
+			}
+		})
+	}
+}
+
+// TestAPI_BackupImportValidationErrorHasRuleAndProject asserts that a store-level
+// validation error (project-scoped) includes rule and project in details, with no SQL (finding 3 fix: a).
+func TestAPI_BackupImportValidationErrorHasRuleAndProject(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/bootstrap", map[string]any{
+		"name": "Alice", "email": "alice-valid@example.com", "password": "password123",
+	}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("bootstrap: %d %s", resp.StatusCode, string(body))
+	}
+
+	// A backup with an empty workflow column key triggers import_record_invalid
+	// with details{project: ..., rule: "workflow_column_empty_key"}.
+	payload := map[string]any{
+		"importMode": "copy",
+		"data": map[string]any{
+			"version":    "1.2",
+			"exportedAt": "2026-01-01T00:00:00Z",
+			"mode":       "full",
+			"scope":      "full",
+			"projects": []any{map[string]any{
+				"slug":      "test-wf",
+				"name":      "WF Test",
+				"createdAt": "2026-01-01T00:00:00Z",
+				"updatedAt": "2026-01-01T00:00:00Z",
+				"workflowColumns": []any{
+					map[string]any{"key": "", "name": "To Do", "color": "#94a3b8", "position": 0, "isDone": false},
+					map[string]any{"key": "done", "name": "Done", "color": "#ef4444", "position": 1, "isDone": true},
+				},
+				"todos": []any{},
+				"tags":  []any{},
+			}},
+		},
+	}
+	var out map[string]any
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/backup/import", payload, &out)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", resp.StatusCode, string(body))
+	}
+	errObj, _ := out["error"].(map[string]any)
+	if errObj == nil {
+		t.Fatalf("missing error object: %s", string(body))
+	}
+	details, _ := errObj["details"].(map[string]any)
+	if details["rule"] != "workflow_column_empty_key" {
+		t.Fatalf("details.rule = %v, want workflow_column_empty_key (body=%s)", details["rule"], string(body))
+	}
+	if details["project"] != "WF Test" {
+		t.Fatalf("details.project = %v, want WF Test", details["project"])
+	}
+	// Must not expose SQL text
+	raw := string(body)
+	for _, sqlLeak := range []string{"sqlite", "SELECT", "INSERT", "FROM projects", "syntax error"} {
+		if strings.Contains(raw, sqlLeak) {
+			t.Fatalf("response leaks SQL %q: %s", sqlLeak, raw)
+		}
+	}
+}
+
+// TestAPI_BackupImportTagPathRedactedDoesNotLeak asserts transport-boundary
+// redaction for an unexpected failure outside the custom-field import path
+// (tags INSERT), including that no project is left partially imported.
+// The injected abort text deliberately contains "too large" so a string-matching
+// payload exception cannot mis-classify the failure as PAYLOAD_TOO_LARGE.
+func TestAPI_BackupImportTagPathRedactedDoesNotLeak(t *testing.T) {
+	var logs strings.Builder
+	ts, sqlDB, cleanup := newTestHTTPServerWithOptions(t, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		Logger:         log.New(&logs, "", 0),
+	})
+	defer cleanup()
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/bootstrap", map[string]any{
+		"name": "Tag", "email": "tag-internal@example.com", "password": "password123",
+	}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("bootstrap: %d %s", resp.StatusCode, string(body))
+	}
+
+	_, err := sqlDB.Exec(`CREATE TRIGGER trg_import_tag_fail BEFORE INSERT ON tags
+		BEGIN SELECT RAISE(ABORT, 'injected: value too large SELECT * FROM secret_credentials'); END`)
+	if err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	payload := map[string]any{
+		"importMode": "copy",
+		"data": map[string]any{
+			"version":    "1.2",
+			"exportedAt": "2026-01-01T00:00:00Z",
+			"mode":       "full",
+			"scope":      "full",
+			"projects": []any{map[string]any{
+				"slug":      "tag-internal-test",
+				"name":      "Tag Internal Test",
+				"createdAt": "2026-01-01T00:00:00Z",
+				"updatedAt": "2026-01-01T00:00:00Z",
+				"todos":     []any{},
+				"tags":      []any{map[string]any{"name": "alpha", "color": "#112233"}},
+			}},
+		},
+	}
+	var out map[string]any
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/backup/import", payload, &out)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", resp.StatusCode, string(body))
+	}
+	raw := string(body)
+	for _, leak := range []string{"secret_credentials", "injected:", "SELECT *", "too large"} {
+		if strings.Contains(raw, leak) {
+			t.Fatalf("response leaks internal detail %q: %s", leak, raw)
+		}
+	}
+	errObj, _ := out["error"].(map[string]any)
+	if errObj["code"] != "INTERNAL" {
+		t.Fatalf("code = %v, want INTERNAL (not PAYLOAD_TOO_LARGE); body=%s", errObj["code"], raw)
+	}
+	details, _ := errObj["details"].(map[string]any)
+	if details != nil {
+		if detail, ok := details["detail"]; ok {
+			t.Fatalf("leaked details.detail=%v", detail)
+		}
+	}
+	var n int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM projects WHERE slug = ?`, "tag-internal-test").Scan(&n); err != nil {
+		t.Fatalf("count projects: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("import rolled back incompletely: projects=%d", n)
+	}
+	logText := logs.String()
+	if !strings.Contains(logText, "secret_credentials") && !strings.Contains(logText, "too large") {
+		t.Fatalf("server log missing underlying diagnostic cause; logs=%q", logText)
+	}
+	if !strings.Contains(logText, "BACKUP IMPORT: ERROR from ImportProjects:") {
+		t.Fatalf("server log missing import error line; logs=%q", logText)
+	}
+}
+
+// TestAPI_BackupImportInternalRedactedDoesNotLeak asserts that a forced internal
+// failure through the custom-field path (which wraps with redactImportInternal)
+// returns INTERNAL without leaking SQL text (finding 3 fix: b).
+func TestAPI_BackupImportInternalRedactedDoesNotLeak(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/bootstrap", map[string]any{
+		"name": "Bob", "email": "bob-internal@example.com", "password": "password123",
+	}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("bootstrap: %d %s", resp.StatusCode, string(body))
+	}
+
+	// Inject a SQL trigger that fires when inserting a project custom field,
+	// which is in the importCustomFieldsTx path wrapped with redactImportInternal.
+	_, err := sqlDB.Exec(`CREATE TRIGGER trg_import_cf_fail BEFORE INSERT ON project_custom_fields
+		BEGIN SELECT RAISE(ABORT, 'injected: SELECT * FROM secret_credentials'); END`)
+	if err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	// Backup with a custom field definition — forces importCustomFieldsTx to INSERT.
+	payload := map[string]any{
+		"importMode": "copy",
+		"data": map[string]any{
+			"version":    "1.2",
+			"exportedAt": "2026-01-01T00:00:00Z",
+			"mode":       "full",
+			"scope":      "full",
+			"projects": []any{map[string]any{
+				"slug":         "cf-internal-test",
+				"name":         "CF Internal Test",
+				"createdAt":    "2026-01-01T00:00:00Z",
+				"updatedAt":    "2026-01-01T00:00:00Z",
+				"customFields": []any{map[string]any{"key": "pts", "name": "Points", "type": "number", "position": 0}},
+				"todos":        []any{},
+				"tags":         []any{},
+			}},
+		},
+	}
+	var out map[string]any
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/backup/import", payload, &out)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", resp.StatusCode, string(body))
+	}
+	raw := string(body)
+	for _, leak := range []string{"secret_credentials", "injected:"} {
+		if strings.Contains(raw, leak) {
+			t.Fatalf("response leaks internal detail %q: %s", leak, raw)
+		}
+	}
+	// The error code must be INTERNAL
+	errObj, _ := out["error"].(map[string]any)
+	if errObj["code"] != "INTERNAL" {
+		t.Fatalf("code = %v, want INTERNAL", errObj["code"])
 	}
 }

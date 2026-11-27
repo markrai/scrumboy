@@ -1,4 +1,5 @@
 import { hasI18nKey, t } from "../i18n/index.js";
+import { codePointLength } from "../unicode-limits.js";
 import { parseNoteMarkdownTokens } from "../markdown-preview.js";
 import { CANONICAL_ASSET_PATH_RE, NOTE_IMAGE_DEFAULT_MAX_WIDTH, NOTE_IMAGE_MIN_WIDTH, clampImageWidth, drawingPath, findNoteImageRefs, formatImageAlt, parseDrawingPath, parseImageAlt, referencedDrawingIds, } from "../note-images.js";
 import { attachImageOverlay, createStandaloneSvg, detachImageOverlay, renderDocumentIntoSvg } from "../drawing/drawing-overlay.js";
@@ -685,7 +686,17 @@ export function createNotesEditor(opts) {
             scrollIntoView: true,
         };
     });
-    const maxLengthFilter = EditorState.transactionFilter.of((tr) => tr.docChanged && tr.newDoc.length > opts.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr);
+    // maxLength is Unicode code points (Go rune count), not UTF-16 / CM positions.
+    const maxLengthFilter = EditorState.transactionFilter.of((tr) => {
+        if (!tr.docChanged)
+            return tr;
+        const nextPoints = codePointLength(tr.newDoc.toString());
+        if (nextPoints <= opts.maxLength)
+            return tr;
+        const prevPoints = codePointLength(tr.startState.doc.toString());
+        // Reject growth past the ceiling; never silently truncate. Allow shrinks.
+        return nextPoints > prevPoints ? [] : tr;
+    });
     const contentAttributes = { spellcheck: "true", autocapitalize: "sentences", "aria-multiline": "true" };
     if (opts.labelledBy)
         contentAttributes["aria-labelledby"] = opts.labelledBy;
@@ -754,8 +765,10 @@ export function createNotesEditor(opts) {
             const selection = sel.empty || uploads.selections.some((r) => r.batch === reservation.batch)
                 ? undefined
                 : { batch: reservation.batch, from: sel.from, to: sel.to, text: view.state.sliceDoc(sel.from, sel.to) };
-            const replaced = selection ? selection.to - selection.from : 0;
-            if (view.state.doc.length - replaced + reservation.length > opts.maxLength)
+            // CM positions address the document; character accounting uses code points of the
+            // actual replaced slice and the reserved markdown length (also measured in code points).
+            const replacedPoints = selection ? codePointLength(selection.text) : 0;
+            if (codePointLength(view.state.doc.toString()) - replacedPoints + reservation.length > opts.maxLength)
                 return false;
             view.dispatch({
                 effects: addPending.of({
@@ -795,7 +808,9 @@ export function createNotesEditor(opts) {
             const before = pos > 0 ? doc.sliceString(pos - 1, pos) : "\n";
             const after = doc.sliceString(to, to + 1);
             const insert = `${before === "\n" ? "" : "\n"}${markdown}${after === "\n" ? "" : "\n"}`;
-            if (doc.length - (to - pos) + insert.length > opts.maxLength) {
+            const replacedPoints = codePointLength(doc.sliceString(pos, to));
+            const nextLen = codePointLength(doc.toString()) - replacedPoints + codePointLength(insert);
+            if (nextLen > opts.maxLength) {
                 view.dispatch({ effects: removePending.of({ id }) });
                 return false;
             }
@@ -894,7 +909,8 @@ export function createNotesEditor(opts) {
             const before = sel.from > 0 ? doc.sliceString(sel.from - 1, sel.from) : "\n";
             const after = doc.sliceString(sel.to, sel.to + 1);
             const insert = `${before === "\n" ? "" : "\n"}${markdown}${after === "\n" ? "" : "\n"}`;
-            if (doc.length - (sel.to - sel.from) + insert.length > opts.maxLength)
+            const replacedPoints = codePointLength(doc.sliceString(sel.from, sel.to));
+            if (codePointLength(doc.toString()) - replacedPoints + codePointLength(insert) > opts.maxLength)
                 return false;
             view.dispatch({
                 changes: { from: sel.from, to: sel.to, insert },

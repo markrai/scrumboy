@@ -127,8 +127,8 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 
 		result, err := s.store.PreviewImport(ctx, in.Data, mode, in.ImportMode)
 		if err != nil {
-			s.logger.Printf("BACKUP PREVIEW ERROR: %v", err)
-			writeStoreErr(w, err, false)
+			s.logger.Printf("BACKUP PREVIEW ERROR: %s", formatErrorWithCause(err))
+			writeImportStoreErr(w, err)
 			return
 		}
 
@@ -178,11 +178,11 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 			if targetSlug != "" {
 				pc, err := s.store.GetProjectContextBySlug(ctx, targetSlug, mode)
 				if err != nil {
-					writeStoreErr(w, err, false)
+					writeImportStoreErr(w, err)
 					return
 				}
 				if pc.Project.ExpiresAt == nil {
-					writeStoreErr(w, fmt.Errorf("%w: target board is not an anonymous board", store.ErrValidation), false)
+					writeImportStoreErr(w, fmt.Errorf("%w: target board is not an anonymous board", store.ErrValidation))
 					return
 				}
 				if !s.admitAnonymousTargetedImport(w, r, pc.Project) {
@@ -196,8 +196,8 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 
 		result, err := s.store.ImportProjectsWithTarget(ctx, in.Data, mode, in.ImportMode, in.TargetSlug)
 		if err != nil {
-			s.logger.Printf("BACKUP IMPORT: ERROR from ImportProjects: %v", err)
-			writeStoreErr(w, err, false)
+			s.logger.Printf("BACKUP IMPORT: ERROR from ImportProjects: %s", formatErrorWithCause(err))
+			writeImportStoreErr(w, err)
 			return
 		}
 		// Phase 2 contract: import does not emit SSE events.

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	backupimportapp "scrumboy/internal/application/backupimport"
 	"scrumboy/internal/backuparchive"
@@ -294,6 +295,56 @@ func TestArchiveRequestsWhenFlagOffMatchBaseline(t *testing.T) {
 	}
 	if off.assetFiles(t) != 0 {
 		t.Fatal("flag off wrote files")
+	}
+}
+
+// TestArchiveImportInternalRedactedDoesNotLeak asserts that a forced internal
+// failure during .sbz custom-field import returns INTERNAL without leaking SQL.
+func TestArchiveImportInternalRedactedDoesNotLeak(t *testing.T) {
+	dst := newAssetHTTPFixture(t, assetFixtureOptions{})
+	_, err := dst.sqlDB.Exec(`CREATE TRIGGER trg_sbz_import_cf_fail BEFORE INSERT ON project_custom_fields
+		BEGIN SELECT RAISE(ABORT, 'injected: SELECT * FROM secret_credentials'); END`)
+	if err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	data := &store.ExportData{
+		Version:    "1.3",
+		ExportedAt: now,
+		Mode:       "full",
+		Scope:      "full",
+		Projects: []store.ProjectExport{{
+			Slug:         "sbz-cf-internal",
+			Name:         "SBZ CF Internal",
+			CreatedAt:    now,
+			UpdatedAt:    now,
+			Todos:        []store.TodoExport{},
+			Tags:         []store.TagExport{},
+			CustomFields: []store.CustomFieldExport{{Key: "pts", Name: "Points", Type: "number", Position: 0}},
+		}},
+	}
+	var buf bytes.Buffer
+	w := backuparchive.NewWriter(&buf)
+	if err := w.WriteManifest(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res := dst.postArchive(t, "maintainer", "import", "copy", "", buf.Bytes())
+	if res.status != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", res.status, res.raw)
+	}
+	for _, leak := range []string{"secret_credentials", "injected:"} {
+		if strings.Contains(res.raw, leak) {
+			t.Fatalf("response leaks internal detail %q: %s", leak, res.raw)
+		}
+	}
+	errObj, _ := res.body["error"].(map[string]any)
+	if errObj["code"] != "INTERNAL" {
+		t.Fatalf("code = %v, want INTERNAL", errObj["code"])
 	}
 }
 

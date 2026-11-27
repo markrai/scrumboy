@@ -10,7 +10,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"scrumboy/internal/store"
 )
+
 
 func TestClientErrorDetailsAllowlist(t *testing.T) {
 	err := newAdapterError(
@@ -92,5 +95,64 @@ func TestJSONRPCInternalErrorSanitizesStructuredContent(t *testing.T) {
 	}
 	if _, ok := structured["status"]; ok {
 		t.Fatalf("structured tool error copied legacy HTTP status: %#v", structured)
+	}
+}
+
+// TestReasonDetailsMergesStoreErrorDetails asserts that reasonDetails merges
+// store.ErrorDetails into the returned map so structured details reach the wire.
+func TestReasonDetailsMergesStoreErrorDetails(t *testing.T) {
+	// Build a store validation error that has both a reason and extra details.
+	// Use the custom_field_number_out_of_range reason which emits max.
+	storeErr := store.NewReasonedValidationError(store.ReasonCustomFieldNumberRange, "out of range", map[string]any{"max": float64(1 << 53)})
+	got := mapStoreError(storeErr)
+	if got.Code != CodeValidationError {
+		t.Fatalf("code = %q, want %q", got.Code, CodeValidationError)
+	}
+	details, ok := got.Details.(map[string]any)
+	if !ok {
+		t.Fatalf("details type = %T, want map[string]any", got.Details)
+	}
+	if details["reason"] != store.ReasonCustomFieldNumberRange {
+		t.Fatalf("details.reason = %v, want %q", details["reason"], store.ReasonCustomFieldNumberRange)
+	}
+	if details["max"] != float64(1<<53) {
+		t.Fatalf("details.max = %v, want %v", details["max"], float64(1<<53))
+	}
+}
+
+// TestMaxAllowedThroughClientErrorDetails asserts that the "max" key passes
+// through the clientErrorDetails allowlist (custom field number range, work limits).
+func TestMaxAllowedThroughClientErrorDetails(t *testing.T) {
+	err := newAdapterError(
+		http.StatusBadRequest,
+		CodeValidationError,
+		"number out of range",
+		map[string]any{
+			"reason":    "custom_field_number_out_of_range",
+			"max":       float64(1 << 53),
+			"sensitive": "must-not-appear",
+		},
+	)
+	got := clientErrorDetails(err)
+	want := map[string]any{
+		"reason": "custom_field_number_out_of_range",
+		"max":    float64(1 << 53),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("clientErrorDetails = %#v, want %#v", got, want)
+	}
+}
+
+// TestImportInternalRedactedReturnsSafeInternal asserts that import_internal_redacted
+// errors from the store produce a bare INTERNAL response (no detail field).
+func TestImportInternalRedactedReturnsSafeInternal(t *testing.T) {
+	redactedErr := store.RedactedImportError()
+	got := mapStoreError(redactedErr)
+	if got.Code != CodeInternal {
+		t.Fatalf("code = %q, want INTERNAL", got.Code)
+	}
+	// No detail must escape on the wire.
+	if details := clientErrorDetails(got); len(details) > 0 {
+		t.Fatalf("clientErrorDetails leaked details for redacted internal: %#v", details)
 	}
 }

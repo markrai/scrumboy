@@ -10,6 +10,7 @@
 import { getAppRuntime } from './platform/runtime.js';
 import { sanitizeHexColor } from './utils.js';
 import { tagIdentityKey } from './tag-names.js';
+import { truncateCodePoints } from './unicode-limits.js';
 export const EMPTY_PUBLIC_QUERY = Object.freeze({ search: '', tags: [], sprintNumber: null, priority: null });
 /** Server defaults and ceilings (Phase 2 contract). */
 export const PUBLIC_DEFAULT_PAGE_SIZE = 20;
@@ -209,10 +210,6 @@ export function normalizePublicSprints(value) {
 function clampPageSize(value) {
     const n = Number.isFinite(value) ? Math.trunc(value) : PUBLIC_DEFAULT_PAGE_SIZE;
     return Math.min(PUBLIC_MAX_PAGE_SIZE, Math.max(1, n));
-}
-function truncateCodePoints(value, max) {
-    const points = Array.from(value);
-    return points.length > max ? points.slice(0, max).join('') : value;
 }
 /** Normalizes user/URL input into a query the public API accepts. */
 export function normalizePublicQuery(input) {

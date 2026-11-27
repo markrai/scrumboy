@@ -176,22 +176,30 @@ func validateBackupVersionAndArchiveFields(data *ExportData) error {
 // assets) is accepted only from a .sbz archive, because only archives carry the image bytes.
 func validateBackupData(data *ExportData, fromArchive bool) error {
 	if data == nil {
-		return fmt.Errorf("%w: missing export data", ErrValidation)
+		return importValidation(ReasonImportFileInvalid, "missing export data", map[string]any{"rule": "missing_export_data"})
 	}
 	if fromArchive {
 		if !version.IsSupportedArchiveVersion(data.Version) {
-			return fmt.Errorf("%w: unsupported archive export version %q (expected %s)", ErrValidation, data.Version, version.ArchiveExportFormatVersion)
+			return importValidation(ReasonImportFileInvalid,
+				fmt.Sprintf("unsupported archive export version %q (expected %s)", data.Version, version.ArchiveExportFormatVersion),
+				map[string]any{"rule": "unsupported_archive_version", "version": data.Version})
 		}
 	} else {
 		if version.IsSupportedArchiveVersion(data.Version) {
-			return fmt.Errorf("%w: backups with images (format %s) must be imported as a .sbz archive", ErrValidation, data.Version)
+			return importValidation(ReasonImportFileInvalid,
+				fmt.Sprintf("backups with images (format %s) must be imported as a .sbz archive", data.Version),
+				map[string]any{"rule": "archive_required", "version": data.Version})
 		}
 		if !supportedExportVersion(data.Version) {
-			return fmt.Errorf("%w: unsupported export version %q (expected %s)", ErrValidation, data.Version, version.ExportFormatVersion)
+			return importValidation(ReasonImportFileInvalid,
+				fmt.Sprintf("unsupported export version %q (expected %s)", data.Version, version.ExportFormatVersion),
+				map[string]any{"rule": "unsupported_export_version", "version": data.Version})
 		}
 		for _, project := range data.Projects {
 			if len(project.Assets) > 0 {
-				return fmt.Errorf("%w: format %s project %q contains image assets; import the .sbz archive instead", ErrValidation, data.Version, project.Name)
+				return importValidation(ReasonImportRecordInvalid,
+					fmt.Sprintf("format %s project %q contains image assets; import the .sbz archive instead", data.Version, project.Name),
+					map[string]any{"rule": "archive_required", "project": project.Name, "version": data.Version})
 			}
 		}
 	}
@@ -201,15 +209,21 @@ func validateBackupData(data *ExportData, fromArchive bool) error {
 		for _, todo := range project.Todos {
 			if todo.LocalID != 0 {
 				if _, dup := localIDs[todo.LocalID]; dup {
-					return fmt.Errorf("%w: project %q has duplicate todo localId %d", ErrValidation, project.Name, todo.LocalID)
+					return importValidation(ReasonImportRecordInvalid,
+						fmt.Sprintf("project %q has duplicate todo localId %d", project.Name, todo.LocalID),
+						map[string]any{"project": project.Name, "localId": todo.LocalID, "rule": "duplicate_todo_local_id"})
 				}
 				localIDs[todo.LocalID] = struct{}{}
 			}
 			if data.Version == "1.1" && todo.ArchivedAtPresent {
-				return fmt.Errorf("%w: format 1.1 todo %d contains 1.2 archivedAt data", ErrValidation, todo.LocalID)
+				return importValidation(ReasonImportFileInvalid,
+					fmt.Sprintf("format 1.1 todo %d contains 1.2 archivedAt data", todo.LocalID),
+					map[string]any{"localId": todo.LocalID, "rule": "archived_at_version_mismatch"})
 			}
 			if todo.DueAt != nil && (*todo.DueAt <= 0 || *todo.DueAt >= maxDueAtMs) {
-				return fmt.Errorf("%w: todo %d dueAt out of range", ErrValidation, todo.LocalID)
+				return importValidation(ReasonImportRecordInvalid,
+					fmt.Sprintf("todo %d dueAt out of range", todo.LocalID),
+					map[string]any{"project": project.Name, "localId": todo.LocalID, "rule": "due_at_out_of_range"})
 			}
 			if todo.ArchivedAt == nil {
 				continue
@@ -217,10 +231,14 @@ func validateBackupData(data *ExportData, fromArchive bool) error {
 			// The archive cursor rejects negative timestamps, so a negative value here
 			// would import a row that no archive page could ever paginate past.
 			if *todo.ArchivedAt < 0 {
-				return fmt.Errorf("%w: todo %d archivedAt must be non-negative", ErrValidation, todo.LocalID)
+				return importValidation(ReasonImportRecordInvalid,
+					fmt.Sprintf("todo %d archivedAt must be non-negative", todo.LocalID),
+					map[string]any{"project": project.Name, "localId": todo.LocalID, "rule": "archived_at_negative"})
 			}
 			if *todo.ArchivedAt > ceiling {
-				return fmt.Errorf("%w: todo %d archivedAt %d is implausibly far in the future", ErrValidation, todo.LocalID, *todo.ArchivedAt)
+				return importValidation(ReasonImportRecordInvalid,
+					fmt.Sprintf("todo %d archivedAt %d is implausibly far in the future", todo.LocalID, *todo.ArchivedAt),
+					map[string]any{"project": project.Name, "localId": todo.LocalID, "rule": "archived_at_future"})
 			}
 		}
 	}
@@ -944,24 +962,34 @@ func validPriorityKeys(tiers []PriorityTier) map[string]struct{} {
 
 func validatePriorityTierExports(projectName string, exported []PriorityTierExport) ([]PriorityTier, error) {
 	if priorityTierCountReason(len(exported)) == ReasonPriorityTierLimitReached {
-		return nil, fmt.Errorf("%w: project %q may have at most %d priority tiers", ErrValidation, projectName, maxPriorityTiers)
+		return nil, importValidation(ReasonImportRecordInvalid,
+			fmt.Sprintf("project %q may have at most %d priority tiers", projectName, maxPriorityTiers),
+			map[string]any{"project": projectName, "rule": ReasonPriorityTierLimitReached, "max": maxPriorityTiers})
 	}
 	seen := make(map[string]struct{}, len(exported))
 	for index, tier := range exported {
 		key := strings.ToLower(strings.TrimSpace(tier.Key))
 		reason := priorityTierDefinitionReason(key, tier.Name, tier.Color, true, true)
 		if reason == ReasonInvalidPriorityKey {
-			return nil, fmt.Errorf("%w: project %q priority tier at index %d has invalid key %q", ErrValidation, projectName, index, tier.Key)
+			return nil, importValidation(ReasonImportRecordInvalid,
+				fmt.Sprintf("project %q priority tier at index %d has invalid key %q", projectName, index, tier.Key),
+				map[string]any{"project": projectName, "rule": ReasonInvalidPriorityKey, "index": index, "priority": tier.Key})
 		}
 		if _, exists := seen[key]; exists {
-			return nil, fmt.Errorf("%w: project %q priority tier key %q is duplicate", ErrValidation, projectName, tier.Key)
+			return nil, importValidation(ReasonImportRecordInvalid,
+				fmt.Sprintf("project %q priority tier key %q is duplicate", projectName, tier.Key),
+				map[string]any{"project": projectName, "rule": "duplicate_priority_key", "priority": tier.Key})
 		}
 		seen[key] = struct{}{}
 		if reason == ReasonInvalidPriorityTierName {
-			return nil, fmt.Errorf("%w: project %q priority tier %q has invalid name", ErrValidation, projectName, tier.Key)
+			return nil, importValidation(ReasonImportRecordInvalid,
+				fmt.Sprintf("project %q priority tier %q has invalid name", projectName, tier.Key),
+				map[string]any{"project": projectName, "rule": ReasonInvalidPriorityTierName, "priority": tier.Key})
 		}
 		if reason == ReasonInvalidPriorityTierColor {
-			return nil, fmt.Errorf("%w: project %q priority tier %q has invalid color %q", ErrValidation, projectName, tier.Key, tier.Color)
+			return nil, importValidation(ReasonImportRecordInvalid,
+				fmt.Sprintf("project %q priority tier %q has invalid color %q", projectName, tier.Key, tier.Color),
+				map[string]any{"project": projectName, "rule": ReasonInvalidPriorityTierColor, "priority": tier.Key, "color": tier.Color})
 		}
 	}
 	return priorityTiersFromExport(exported), nil
@@ -1296,10 +1324,14 @@ func (s *Store) rejectImportWorkLimit(data *ExportData) error {
 		maxTodos = DefaultMaxImportTodos
 	}
 	if projects > maxProjects {
-		return fmt.Errorf("%w: import has %d projects; maximum is %d", ErrValidation, projects, maxProjects)
+		return importValidation(ReasonImportWorkLimitExceeded,
+			fmt.Sprintf("import has %d projects; maximum is %d", projects, maxProjects),
+			map[string]any{"rule": "max_projects", "max": maxProjects, "count": projects})
 	}
 	if todos > maxTodos {
-		return fmt.Errorf("%w: import has %d stories; maximum is %d", ErrValidation, todos, maxTodos)
+		return importValidation(ReasonImportWorkLimitExceeded,
+			fmt.Sprintf("import has %d stories; maximum is %d", todos, maxTodos),
+			map[string]any{"rule": "max_todos", "max": maxTodos, "count": todos})
 	}
 	return nil
 }
@@ -1321,53 +1353,73 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 	for i, pExport := range data.Projects {
 		// Required: project name
 		if pExport.Name == "" {
-			return fmt.Errorf("%w: project at index %d missing name", ErrValidation, i)
+			return importValidation(ReasonImportProjectMissingName,
+				fmt.Sprintf("project at index %d missing name", i),
+				map[string]any{"index": i})
 		}
 		// Slug: required for merge/copy when matching; must be unique within import (case-insensitive)
 		if pExport.Slug != "" {
 			slug := strings.ToLower(strings.TrimSpace(pExport.Slug))
 			if slugSet[slug] {
-				return fmt.Errorf("%w: duplicate slug %q in import file", ErrValidation, pExport.Slug)
+				return importValidation(ReasonImportDuplicateSlug,
+					fmt.Sprintf("duplicate slug %q in import file", pExport.Slug),
+					map[string]any{"slug": pExport.Slug, "project": pExport.Name})
 			}
 			slugSet[slug] = true
 		} else if importMode == "merge" {
-			return fmt.Errorf("%w: project %q missing slug (required for merge)", ErrValidation, pExport.Name)
+			return importValidation(ReasonImportProjectMissingSlug,
+				fmt.Sprintf("project %q missing slug (required for merge)", pExport.Name),
+				map[string]any{"project": pExport.Name})
 		}
 
 		// Validate workflow columns when provided
 		var validColumnKeys map[string]struct{}
 		if len(pExport.WorkflowColumns) > 0 {
 			if len(pExport.WorkflowColumns) < 2 {
-				return fmt.Errorf("%w: project %q workflowColumns must have at least 2 columns", ErrValidation, pExport.Name)
+				return importValidation(ReasonImportWorkflowMinColumns,
+					fmt.Sprintf("project %q workflowColumns must have at least 2 columns", pExport.Name),
+					map[string]any{"project": pExport.Name, "max": 2})
 			}
 			seenKeys := make(map[string]struct{})
 			doneCount := 0
 			for j, c := range pExport.WorkflowColumns {
 				key := strings.TrimSpace(c.Key)
 				if key == "" {
-					return fmt.Errorf("%w: project %q workflow column at index %d has empty key", ErrValidation, pExport.Name, j)
+					return importValidation(ReasonImportRecordInvalid,
+						fmt.Sprintf("project %q workflow column at index %d has empty key", pExport.Name, j),
+						map[string]any{"project": pExport.Name, "rule": "workflow_column_empty_key", "index": j})
 				}
 				keyLower := strings.ToLower(key)
 				if !isValidColumnKey(key) {
-					return fmt.Errorf("%w: project %q workflow column key %q is invalid", ErrValidation, pExport.Name, key)
+					return importValidation(ReasonImportRecordInvalid,
+						fmt.Sprintf("project %q workflow column key %q is invalid", pExport.Name, key),
+						map[string]any{"project": pExport.Name, "rule": "invalid_workflow_key", "column": key})
 				}
 				if _, ok := seenKeys[keyLower]; ok {
-					return fmt.Errorf("%w: project %q workflow column key %q is duplicate", ErrValidation, pExport.Name, key)
+					return importValidation(ReasonImportRecordInvalid,
+						fmt.Sprintf("project %q workflow column key %q is duplicate", pExport.Name, key),
+						map[string]any{"project": pExport.Name, "rule": "duplicate_workflow_column_key", "column": key})
 				}
 				seenKeys[keyLower] = struct{}{}
 				if strings.TrimSpace(c.Name) == "" {
-					return fmt.Errorf("%w: project %q workflow column %q has empty name", ErrValidation, pExport.Name, key)
+					return importValidation(ReasonImportRecordInvalid,
+						fmt.Sprintf("project %q workflow column %q has empty name", pExport.Name, key),
+						map[string]any{"project": pExport.Name, "rule": "workflow_column_name_required", "column": key})
 				}
 				color := strings.TrimSpace(c.Color)
 				if color != "" && !colorHexRe.MatchString(color) {
-					return fmt.Errorf("%w: project %q workflow column %q has invalid color %q", ErrValidation, pExport.Name, key, c.Color)
+					return importValidation(ReasonImportRecordInvalid,
+						fmt.Sprintf("project %q workflow column %q has invalid color %q", pExport.Name, key, c.Color),
+						map[string]any{"project": pExport.Name, "rule": "invalid_workflow_column_color", "column": key, "color": c.Color})
 				}
 				if c.IsDone {
 					doneCount++
 				}
 			}
 			if doneCount != 1 {
-				return fmt.Errorf("%w: project %q workflow must have exactly one done column, got %d", ErrValidation, pExport.Name, doneCount)
+				return importValidation(ReasonImportWorkflowDoneColumnRequired,
+					fmt.Sprintf("project %q workflow must have exactly one done column, got %d", pExport.Name, doneCount),
+					map[string]any{"project": pExport.Name, "count": doneCount})
 			}
 			validColumnKeys = seenKeys
 		}
@@ -1389,16 +1441,22 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 			sprintStates := map[string]bool{SprintStatePlanned: true, SprintStateActive: true, SprintStateClosed: true}
 			for _, sp := range pExport.Sprints {
 				if _, ok := sprintNumbers[sp.Number]; ok {
-					return fmt.Errorf("%w: project %q has duplicate sprint number %d", ErrValidation, pExport.Name, sp.Number)
+					return importValidation(ReasonImportRecordInvalid,
+						fmt.Sprintf("project %q has duplicate sprint number %d", pExport.Name, sp.Number),
+						map[string]any{"project": pExport.Name, "rule": "duplicate_sprint_number", "sprint": sp.Number})
 				}
 				sprintNumbers[sp.Number] = struct{}{}
 				validSprintNumbers[sp.Number] = struct{}{}
 				if sp.PlannedEndAt < sp.PlannedStartAt {
-					return fmt.Errorf("%w: project %q sprint %d has plannedEndAt before plannedStartAt", ErrValidation, pExport.Name, sp.Number)
+					return importValidation(ReasonImportRecordInvalid,
+						fmt.Sprintf("project %q sprint %d has plannedEndAt before plannedStartAt", pExport.Name, sp.Number),
+						map[string]any{"project": pExport.Name, "rule": "sprint_end_before_start", "sprint": sp.Number})
 				}
 				state := strings.TrimSpace(sp.State)
 				if state != "" && !sprintStates[state] {
-					return fmt.Errorf("%w: project %q sprint %d has invalid state %q", ErrValidation, pExport.Name, sp.Number, sp.State)
+					return importValidation(ReasonImportRecordInvalid,
+						fmt.Sprintf("project %q sprint %d has invalid state %q", pExport.Name, sp.Number, sp.State),
+						map[string]any{"project": pExport.Name, "rule": "invalid_sprint_state", "sprint": sp.Number, "state": sp.State})
 				}
 			}
 		}
@@ -1407,31 +1465,45 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 		todoLocalIDs := make(map[int64]struct{})
 		for _, t := range pExport.Todos {
 			if t.LocalID == 0 {
-				return fmt.Errorf("%w: todo in project %q missing localId", ErrValidation, pExport.Name)
+				return importValidation(ReasonImportTodoMissingLocalID,
+					fmt.Sprintf("todo in project %q missing localId", pExport.Name),
+					map[string]any{"project": pExport.Name})
 			}
 			if t.Title == "" {
-				return fmt.Errorf("%w: todo localId %d in project %q missing title", ErrValidation, t.LocalID, pExport.Name)
+				return importValidation(ReasonImportTodoMissingTitle,
+					fmt.Sprintf("todo localId %d in project %q missing title", t.LocalID, pExport.Name),
+					map[string]any{"project": pExport.Name, "localId": t.LocalID})
 			}
 			if err := validateEstimationPoints(t.EstimationPoints); err != nil {
-				return fmt.Errorf("%w: todo %q: %v", ErrValidation, t.Title, err)
+				return importValidation(ReasonImportTodoInvalidEstimation,
+					fmt.Sprintf("todo %q: %v", t.Title, err),
+					map[string]any{"project": pExport.Name, "todo": t.Title, "localId": t.LocalID})
 			}
 			if validColumnKeys != nil {
 				if !statusResolvesInWorkflow(t.Status, validColumnKeys) {
-					return fmt.Errorf("%w: todo %q in project %q: unknown workflow column %q (not in backup workflowColumns)", ErrValidation, t.Title, pExport.Name, t.Status)
+					return importValidation(ReasonImportTodoUnknownColumn,
+						fmt.Sprintf("todo %q in project %q: unknown workflow column %q (not in backup workflowColumns)", t.Title, pExport.Name, t.Status),
+						map[string]any{"project": pExport.Name, "todo": t.Title, "localId": t.LocalID, "column": t.Status})
 				}
 			}
 			if pExport.PriorityTiersPresent && t.PriorityKeyPresent && t.PriorityKey != nil {
 				key := strings.ToLower(strings.TrimSpace(*t.PriorityKey))
 				if _, ok := priorityKeys[key]; !ok {
-					return fmt.Errorf("%w: todo %q in project %q has unknown priority key %q", ErrValidation, t.Title, pExport.Name, *t.PriorityKey)
+					return importValidation(ReasonImportTodoUnknownPriority,
+						fmt.Sprintf("todo %q in project %q has unknown priority key %q", t.Title, pExport.Name, *t.PriorityKey),
+						map[string]any{"project": pExport.Name, "todo": t.Title, "localId": t.LocalID, "priority": *t.PriorityKey})
 				}
 			}
 			if t.SprintNumber != nil {
 				if validSprintNumbers == nil {
-					return fmt.Errorf("%w: todo %q in project %q: SprintNumber %d but project has no sprints in backup", ErrValidation, t.Title, pExport.Name, *t.SprintNumber)
+					return importValidation(ReasonImportTodoUnknownSprint,
+						fmt.Sprintf("todo %q in project %q: SprintNumber %d but project has no sprints in backup", t.Title, pExport.Name, *t.SprintNumber),
+						map[string]any{"project": pExport.Name, "todo": t.Title, "localId": t.LocalID, "sprint": *t.SprintNumber})
 				}
 				if _, ok := validSprintNumbers[*t.SprintNumber]; !ok {
-					return fmt.Errorf("%w: todo %q in project %q: SprintNumber %d does not match any sprint in backup", ErrValidation, t.Title, pExport.Name, *t.SprintNumber)
+					return importValidation(ReasonImportTodoUnknownSprint,
+						fmt.Sprintf("todo %q in project %q: SprintNumber %d does not match any sprint in backup", t.Title, pExport.Name, *t.SprintNumber),
+						map[string]any{"project": pExport.Name, "todo": t.Title, "localId": t.LocalID, "sprint": *t.SprintNumber})
 				}
 			}
 			todoLocalIDs[t.LocalID] = struct{}{}
@@ -1440,27 +1512,37 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 		// Validate links reference existing todos
 		for _, l := range pExport.Links {
 			if l.FromLocalID == l.ToLocalID {
-				return fmt.Errorf("%w: invalid link in project %q: self-link %d->%d", ErrValidation, pExport.Name, l.FromLocalID, l.ToLocalID)
+				return importValidation(ReasonImportInvalidLink,
+					fmt.Sprintf("invalid link in project %q: self-link %d->%d", pExport.Name, l.FromLocalID, l.ToLocalID),
+					map[string]any{"project": pExport.Name, "rule": "self_link", "fromLocalId": l.FromLocalID, "toLocalId": l.ToLocalID})
 			}
 			if _, ok := todoLocalIDs[l.FromLocalID]; !ok {
-				return fmt.Errorf("%w: invalid link in project %q: fromLocalId %d does not match any todo", ErrValidation, pExport.Name, l.FromLocalID)
+				return importValidation(ReasonImportInvalidLink,
+					fmt.Sprintf("invalid link in project %q: fromLocalId %d does not match any todo", pExport.Name, l.FromLocalID),
+					map[string]any{"project": pExport.Name, "rule": "unknown_from_local_id", "fromLocalId": l.FromLocalID, "toLocalId": l.ToLocalID})
 			}
 			if _, ok := todoLocalIDs[l.ToLocalID]; !ok {
-				return fmt.Errorf("%w: invalid link in project %q: toLocalId %d does not match any todo", ErrValidation, pExport.Name, l.ToLocalID)
+				return importValidation(ReasonImportInvalidLink,
+					fmt.Sprintf("invalid link in project %q: toLocalId %d does not match any todo", pExport.Name, l.ToLocalID),
+					map[string]any{"project": pExport.Name, "rule": "unknown_to_local_id", "fromLocalId": l.FromLocalID, "toLocalId": l.ToLocalID})
 			}
 			lt := l.LinkType
 			if lt == "" {
 				lt = "relates_to"
 			}
 			if !linkTypesAllowed[lt] {
-				return fmt.Errorf("%w: invalid link type %q in project %q (link %d->%d)", ErrValidation, l.LinkType, pExport.Name, l.FromLocalID, l.ToLocalID)
+				return importValidation(ReasonImportInvalidLink,
+					fmt.Sprintf("invalid link type %q in project %q (link %d->%d)", l.LinkType, pExport.Name, l.FromLocalID, l.ToLocalID),
+					map[string]any{"project": pExport.Name, "rule": "invalid_link_type", "linkType": l.LinkType, "fromLocalId": l.FromLocalID, "toLocalId": l.ToLocalID})
 			}
 		}
 
 		// Validate tag names (basic)
 		for _, tag := range pExport.Tags {
 			if tag.Name == "" {
-				return fmt.Errorf("%w: project %q has tag with empty name", ErrValidation, pExport.Name)
+				return importValidation(ReasonImportRecordInvalid,
+					fmt.Sprintf("project %q has tag with empty name", pExport.Name),
+					map[string]any{"project": pExport.Name, "rule": "empty_tag_name"})
 			}
 		}
 	}
@@ -1470,7 +1552,7 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 	if importMode == "merge" && mode != ModeAnonymous && len(data.Projects) > 0 {
 		whereClause, args, err := s.getExportableProjectsSelector(ctx, mode)
 		if err != nil {
-			return fmt.Errorf("orphan check: %w", err)
+			return redactImportInternal(err)
 		}
 		for _, pExport := range data.Projects {
 			if pExport.Slug == "" || len(pExport.WorkflowColumns) < 2 {
@@ -1480,7 +1562,7 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 			if err := s.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT id FROM projects WHERE slug = ? AND (%s)`, whereClause), append([]any{pExport.Slug}, args...)...).Scan(&projectID); err == sql.ErrNoRows {
 				continue // new project, no orphan risk
 			} else if err != nil {
-				return fmt.Errorf("orphan check project %q: %w", pExport.Slug, err)
+				return redactImportInternal(err)
 			}
 			backupLocalIDs := make(map[int64]struct{})
 			for _, t := range pExport.Todos {
@@ -1489,7 +1571,7 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 			newKeys := validColumnKeysFromWorkflowExport(pExport.WorkflowColumns)
 			rows, err := s.db.QueryContext(ctx, `SELECT local_id, column_key FROM todos WHERE project_id = ?`, projectID)
 			if err != nil {
-				return fmt.Errorf("orphan check todos: %w", err)
+				return redactImportInternal(err)
 			}
 			var stranded []string
 			strandedSeen := make(map[string]struct{})
@@ -1498,7 +1580,7 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 				var columnKey string
 				if err := rows.Scan(&localID, &columnKey); err != nil {
 					rows.Close()
-					return fmt.Errorf("orphan check scan: %w", err)
+					return redactImportInternal(err)
 				}
 				if _, inBackup := backupLocalIDs[localID]; inBackup {
 					continue
@@ -1517,11 +1599,13 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 			}
 			rows.Close()
 			if err := rows.Err(); err != nil {
-				return fmt.Errorf("orphan check rows: %w", err)
+				return redactImportInternal(err)
 			}
 			if len(stranded) > 0 {
 				sort.Strings(stranded)
-				return fmt.Errorf("%w: cannot replace workflow for project %q: existing todos reference removed columns: %s", ErrValidation, pExport.Slug, strings.Join(stranded, ", "))
+				return importValidation(ReasonImportRecordInvalid,
+					fmt.Sprintf("cannot replace workflow for project %q: existing todos reference removed columns: %s", pExport.Slug, strings.Join(stranded, ", ")),
+					map[string]any{"project": pExport.Name, "slug": pExport.Slug, "rule": "workflow_orphan_columns", "columns": strings.Join(stranded, ", ")})
 			}
 		}
 	}
@@ -1538,7 +1622,7 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 			if err := s.db.QueryRowContext(ctx, `SELECT id, expires_at FROM projects WHERE slug = ? AND import_batch_id IS NULL`, p.Slug).Scan(&projectID, &expiresAt); err == sql.ErrNoRows {
 				continue
 			} else if err != nil {
-				return fmt.Errorf("check existing project: %w", err)
+				return redactImportInternal(err)
 			}
 			if !expiresAt.Valid {
 				if !hasUser {
@@ -1546,7 +1630,7 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 				}
 				ok, err := s.userHasProjectRole(ctx, projectID, userID, RoleMaintainer)
 				if err != nil {
-					return fmt.Errorf("check project role: %w", err)
+					return redactImportInternal(err)
 				}
 				if !ok {
 					return fmt.Errorf("%w: cannot import into project %q: maintainer role required", ErrUnauthorized, p.Slug)
@@ -1569,7 +1653,7 @@ func (s *Store) validateImportCustomFieldsPreflight(ctx context.Context, data *E
 	if matchExisting {
 		var err error
 		if whereClause, args, err = s.getExportableProjectsSelector(ctx, mode); err != nil {
-			return fmt.Errorf("custom field check: %w", err)
+			return redactImportInternal(err)
 		}
 	}
 	for _, p := range data.Projects {
@@ -1581,11 +1665,11 @@ func (s *Store) validateImportCustomFieldsPreflight(ctx context.Context, data *E
 			var projectID int64
 			err := s.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT id FROM projects WHERE slug = ? AND (%s)`, whereClause), append([]any{p.Slug}, args...)...).Scan(&projectID)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("custom field check project %q: %w", p.Slug, err)
+				return redactImportInternal(err)
 			}
 			if err == nil {
 				if existing, err = listCustomFieldsQ(ctx, s.db, projectID); err != nil {
-					return err
+					return redactImportInternal(err)
 				}
 			}
 		}

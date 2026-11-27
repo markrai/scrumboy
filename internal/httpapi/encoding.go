@@ -81,7 +81,7 @@ func writeStoreErr(w http.ResponseWriter, err error, hideUnauthorized bool) {
 	case errors.Is(err, store.ErrSprintsDisabled):
 		writeValidationError(w, store.ErrSprintsDisabled.Error(), "sprints_disabled", nil)
 	case errors.Is(err, store.ErrValidation):
-		writeValidationError(w, err.Error(), validationReasonFromStoreError(err), nil)
+		writeValidationError(w, err.Error(), validationReasonFromStoreError(err), store.ErrorDetails(err))
 	case errors.Is(err, store.ErrStorageBudget):
 		var budget *store.StorageBudgetError
 		details := map[string]any{}
@@ -90,7 +90,7 @@ func writeStoreErr(w http.ResponseWriter, err error, hideUnauthorized bool) {
 		}
 		writeError(w, http.StatusInsufficientStorage, "STORAGE_BUDGET_EXCEEDED", "storage budget exceeded", details)
 	case errors.Is(err, store.ErrConflict):
-		writeError(w, http.StatusConflict, "CONFLICT", err.Error(), validationDetails(store.ErrorReason(err), nil))
+		writeError(w, http.StatusConflict, "CONFLICT", err.Error(), validationDetails(store.ErrorReason(err), store.ErrorDetails(err)))
 	case errors.Is(err, store.ErrTooManyAttempts):
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "too many attempts; please sign in again", nil)
 	case errors.Is(err, store.Err2FAEncryptionNotConfigured):
@@ -98,12 +98,79 @@ func writeStoreErr(w http.ResponseWriter, err error, hideUnauthorized bool) {
 	case errors.Is(err, store.ErrEncryptionNotConfigured):
 		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Calendar feeds are not configured. Set SCRUMBOY_ENCRYPTION_KEY (e.g. openssl rand -base64 32) and restart.", nil)
 	default:
+		if reason := store.ErrorReason(err); reason == store.ReasonImportInternalRedacted {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "Import failed due to an internal error.", validationDetails(reason, store.ErrorDetails(err)))
+			return
+		}
+		if errors.Is(err, errUploadTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "upload too large", nil)
+			return
+		}
 		if strings.Contains(err.Error(), "too large") {
 			writeError(w, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", err.Error(), nil)
 			return
 		}
 		writeInternal(w, err)
 	}
+}
+
+// writeImportStoreErr is the transport boundary for backup/Trello import failures.
+// Recognized validation, authorization, conflict, payload and resource-limit
+// classifications are preserved; unexpected internals are redacted so raw SQL
+// and paths never reach the client (callers should log the original error first).
+func writeImportStoreErr(w http.ResponseWriter, err error) {
+	if err == nil {
+		return
+	}
+	if importErrorNeedsClientRedaction(err) {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "Import failed due to an internal error.", validationDetails(store.ReasonImportInternalRedacted, nil))
+		return
+	}
+	writeStoreErr(w, err, false)
+}
+
+func importErrorNeedsClientRedaction(err error) bool {
+	switch {
+	case errors.Is(err, store.ErrNotFound),
+		errors.Is(err, store.ErrUnauthorized),
+		errors.Is(err, store.ErrForbidden),
+		errors.Is(err, store.ErrSprintsDisabled),
+		errors.Is(err, store.ErrValidation),
+		errors.Is(err, store.ErrStorageBudget),
+		errors.Is(err, store.ErrConflict),
+		errors.Is(err, store.ErrTooManyAttempts),
+		errors.Is(err, store.Err2FAEncryptionNotConfigured),
+		errors.Is(err, store.ErrEncryptionNotConfigured):
+		return false
+	}
+	if store.ErrorReason(err) == store.ReasonImportInternalRedacted {
+		return false
+	}
+	// Legitimate payload limits must use typed sentinels (e.g. errUploadTooLarge).
+	// Unexpected errors whose text happens to contain "too large" stay redacted.
+	if errors.Is(err, errUploadTooLarge) {
+		return false
+	}
+	return true
+}
+
+// formatErrorWithCause returns the public error text plus any unwrap chain causes
+// so import logs keep diagnostic detail after client-facing redaction.
+func formatErrorWithCause(err error) string {
+	if err == nil {
+		return ""
+	}
+	parts := []string{err.Error()}
+	seen := map[string]bool{err.Error(): true}
+	for e := errors.Unwrap(err); e != nil; e = errors.Unwrap(e) {
+		s := e.Error()
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, ": ")
 }
 
 func validationDetails(reason string, extra map[string]any) map[string]any {

@@ -271,9 +271,12 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "errors.CONFLICT.sole_maintainer": "This account is the only maintainer of a project. Add another maintainer or delete the project first.",
   "errors.FORBIDDEN": "Forbidden",
   "errors.INTERNAL": "Something went wrong.",
+  "errors.INTERNAL.import_internal_redacted": "Import failed due to an internal error.",
   "errors.METHOD_NOT_ALLOWED": "Method not allowed",
   "errors.NOT_FOUND": "Not found",
   "errors.PAYLOAD_TOO_LARGE": "Upload is too large.",
+  "errors.PAYLOAD_TOO_LARGE.archive_too_large": "The backup archive is too large.",
+  "errors.PAYLOAD_TOO_LARGE.image_too_large": "The image is too large.",
   "errors.RATE_LIMITED": "Too many attempts. Try again later.",
   "errors.SERVICE_UNAVAILABLE": "Service unavailable.",
   "errors.UNAUTHORIZED": "Unauthorized",
@@ -293,10 +296,10 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "errors.VALIDATION_ERROR.closed_sprint_dates_locked": "Dates cannot be changed for a closed sprint.",
   "errors.VALIDATION_ERROR.color_required": "Please choose a color.",
   "errors.VALIDATION_ERROR.custom_field_limit_reached": "A project can have at most 25 custom fields.",
-  "errors.VALIDATION_ERROR.custom_field_number_out_of_range": "Enter a number below 9,007,199,254,740,992.",
+  "errors.VALIDATION_ERROR.custom_field_number_out_of_range": "Enter a finite number with an absolute value strictly less than {max}.",
   "errors.VALIDATION_ERROR.custom_field_unknown": "This field no longer exists on the project.",
   "errors.VALIDATION_ERROR.custom_field_value_empty": "This field cannot be empty. Clear it instead.",
-  "errors.VALIDATION_ERROR.custom_field_value_not_number": "Enter a number.",
+  "errors.VALIDATION_ERROR.custom_field_value_not_number": "Enter a finite number.",
   "errors.VALIDATION_ERROR.custom_field_value_not_text": "Enter text for this field.",
   "errors.VALIDATION_ERROR.custom_field_value_not_url": "Enter a full link starting with http:// or https://.",
   "errors.VALIDATION_ERROR.custom_field_value_too_long": "This field can have at most 2,000 characters.",
@@ -307,7 +310,48 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "errors.VALIDATION_ERROR.file_must_be_image": "Please choose an image file.",
   "errors.VALIDATION_ERROR.image_too_large": "The image is too large.",
   "errors.VALIDATION_ERROR.image_wallpaper_requires_upload": "Image wallpaper must be uploaded first.",
+  "errors.VALIDATION_ERROR.import_duplicate_slug": "The import file has a duplicate project slug \"{slug}\".",
+  "errors.VALIDATION_ERROR.import_file_invalid": "Import rejected: {rule}.",
   "errors.VALIDATION_ERROR.import_full_scope_anonymous_forbidden": "Full-scope imports are not allowed in anonymous mode.",
+  "errors.VALIDATION_ERROR.import_invalid_link": "Project \"{project}\" has an invalid todo link ({rule}).",
+  "errors.VALIDATION_ERROR.import_project_missing_name": "A project in the import is missing a name.",
+  "errors.VALIDATION_ERROR.import_project_missing_slug": "Project \"{project}\" is missing a slug required for merge.",
+  "errors.VALIDATION_ERROR.import_record_invalid": "Import rejected for project \"{project}\": {rule}.",
+  "errors.importRules.archive_required": "archive format required",
+  "errors.importRules.archived_at_future": "archived-at timestamp is implausibly far in the future",
+  "errors.importRules.archived_at_negative": "archived-at timestamp must not be negative",
+  "errors.importRules.archived_at_version_mismatch": "archive version mismatch",
+  "errors.importRules.due_at_out_of_range": "due date out of range",
+  "errors.importRules.duplicate_priority_key": "duplicate priority key",
+  "errors.importRules.duplicate_sprint_number": "duplicate sprint number",
+  "errors.importRules.duplicate_todo_local_id": "duplicate todo local ID",
+  "errors.importRules.duplicate_workflow_column_key": "duplicate workflow column key",
+  "errors.importRules.empty_tag_name": "tag name cannot be empty",
+  "errors.importRules.invalid_link_type": "unsupported link type",
+  "errors.importRules.invalid_sprint_state": "invalid sprint state",
+  "errors.importRules.invalid_workflow_column_color": "invalid workflow column color",
+  "errors.importRules.invalid_workflow_key": "invalid workflow column key",
+  "errors.importRules.max_projects": "projects",
+  "errors.importRules.max_todos": "stories",
+  "errors.importRules.missing_export_data": "missing export data",
+  "errors.importRules.self_link": "a todo cannot link to itself",
+  "errors.importRules.sprint_end_before_start": "sprint end must be after start",
+  "errors.importRules.unknown_from_local_id": "source todo does not exist",
+  "errors.importRules.unknown_to_local_id": "target todo does not exist",
+  "errors.importRules.unsupported_archive_version": "unsupported archive version",
+  "errors.importRules.unsupported_export_version": "unsupported export version",
+  "errors.importRules.workflow_column_empty_key": "workflow column key cannot be empty",
+  "errors.importRules.workflow_column_name_required": "workflow column name required",
+  "errors.importRules.workflow_orphan_columns": "workflow has orphaned columns",
+  "errors.VALIDATION_ERROR.import_todo_invalid_estimation": "Todo \"{todo}\" in project \"{project}\" has an invalid estimation.",
+  "errors.VALIDATION_ERROR.import_todo_missing_local_id": "A todo in project \"{project}\" is missing a local ID.",
+  "errors.VALIDATION_ERROR.import_todo_missing_title": "Todo local ID {localId} in project \"{project}\" is missing a title.",
+  "errors.VALIDATION_ERROR.import_todo_unknown_column": "Todo \"{todo}\" in project \"{project}\" references unknown workflow column \"{column}\".",
+  "errors.VALIDATION_ERROR.import_todo_unknown_priority": "Todo \"{todo}\" in project \"{project}\" references unknown priority \"{priority}\".",
+  "errors.VALIDATION_ERROR.import_todo_unknown_sprint": "Todo \"{todo}\" in project \"{project}\" references unknown sprint {sprint}.",
+  "errors.VALIDATION_ERROR.import_work_limit_exceeded": "This import exceeds the allowed {rule} limit of {max}.",
+  "errors.VALIDATION_ERROR.import_workflow_done_column_required": "Project \"{project}\" workflow must have exactly one done column.",
+  "errors.VALIDATION_ERROR.import_workflow_min_columns": "Project \"{project}\" workflow must have at least 2 columns.",
   "errors.VALIDATION_ERROR.invalid_agenda_color": "Colors must be in #RRGGBB format.",
   "errors.VALIDATION_ERROR.invalid_agenda_timezone": "Choose a valid time zone.",
   "errors.VALIDATION_ERROR.invalid_agenda_title": "The agenda title is required and can be at most 200 characters.",
@@ -542,6 +586,11 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "tooltips.tags": "Free-form labels for filtering and grouping. On shared boards, tag colors are the same for everyone; your personal tag colors apply across your projects.",
   "tooltips.voiceCommand": "Story and todo mean the same thing. Use a local ID (12, #12) or a title phrase. One clear command per line \u2014 no pronouns like it or that.",
   "tooltips.workflowAddLane": "Adds a new column before the done lane. Lane names can be renamed later; internal keys stay fixed.",
+  "errors.importRules.invalid_priority_key": "invalid priority key",
+  "errors.importRules.invalid_priority_tier_color": "invalid priority tier color",
+  "errors.importRules.invalid_priority_tier_name": "invalid priority tier name",
+  "errors.importRules.priority_tier_limit_reached": "too many priority tiers",
+  "validation.codePointLimit": "Use at most {max} characters.",
 };
 
 type LocaleLoader = (locale: LocaleId) => Promise<MessageCatalog>;
@@ -1038,14 +1087,25 @@ export function apiErrorMessage(err: unknown, options: ApiErrorMessageOptions = 
   const reason = typeof details?.reason === "string" ? details.reason : "";
   const code = typeof error?.code === "string" ? error.code : "";
 
+  // Resolve details.rule through the import-rule registry when a locale key exists.
+  // This lets templates like "Import rejected: {rule}" show "projects" instead of "max_projects".
+  let resolvedDetails: MessageValues | undefined = details as MessageValues | undefined;
+  if (details && typeof (details as Record<string, unknown>).rule === "string") {
+    const rawRule = (details as Record<string, unknown>).rule as string;
+    const ruleKey = `errors.importRules.${rawRule}`;
+    if (rawRule && hasI18nKey(ruleKey)) {
+      resolvedDetails = { ...(details as Record<string, unknown>), rule: t(ruleKey) } as MessageValues;
+    }
+  }
+
   if (code) {
     const reasonKey = reason ? `errors.${code}.${reason}` : "";
     if (reasonKey && hasI18nKey(reasonKey)) {
-      return t(reasonKey, details as MessageValues);
+      return t(reasonKey, resolvedDetails || {});
     }
     const codeKey = `errors.${code}`;
     if (hasI18nKey(codeKey)) {
-      return t(codeKey, (details || {}) as MessageValues);
+      return t(codeKey, resolvedDetails || {});
     }
   }
 
@@ -1083,6 +1143,7 @@ export function apiErrorMessageOrRaw(
   const reasonKey = code && reason ? `errors.${code}.${reason}` : "";
 
   if (reasonKey && hasI18nKey(reasonKey)) {
+    // Delegate to apiErrorMessage which handles rule-registry resolution.
     return apiErrorMessage(err, options);
   }
 

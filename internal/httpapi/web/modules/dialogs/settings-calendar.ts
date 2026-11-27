@@ -2,6 +2,7 @@ import { apiFetch } from '../api.js';
 import { getBoard, getSlug } from '../state/selectors.js';
 import { confirmDelete, escapeHTML, sanitizeHexColor, showToast } from '../utils.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
+import { bindCodePointLimitsIn, getCodePointLimitHandle } from '../unicode-limits.js';
 import {
   getAgendaStartOfDayPreference,
   saveAgendaStartOfDayPreference,
@@ -177,7 +178,7 @@ function renderCalendarTabHTML(data: CalendarSourcesResponse): string {
       <div class="settings-agenda-name-row">
         <label class="field settings-agenda-name-field" for="agendaTitleInput">
           <span class="field__label" data-i18n-text="settings.calendar.title.label">Lane name</span>
-          <input class="input" id="agendaTitleInput" autocomplete="off" maxlength="200" value="${escapeHTML(resolveAgendaTitle(data.agendaTitle))}" />
+          <input class="input" id="agendaTitleInput" autocomplete="off" data-code-point-max="200" value="${escapeHTML(resolveAgendaTitle(data.agendaTitle))}" />
         </label>
         <label class="field settings-agenda-color-field" for="agendaColorInput">
           <span class="field__label" data-i18n-text="settings.calendar.color.label">Lane color</span>
@@ -201,7 +202,7 @@ function renderCalendarTabHTML(data: CalendarSourcesResponse): string {
       <h3 data-i18n-text="settings.calendar.add.title">Add ICS feed</h3>
       <label class="field">
         <span class="field__label" data-i18n-text="settings.calendar.add.name">Name</span>
-        <input class="input" id="calendarSourceNameInput" autocomplete="off" />
+        <input class="input" id="calendarSourceNameInput" autocomplete="off" data-code-point-max="200" />
       </label>
       <label class="field">
         <span class="field__label" data-i18n-text="settings.calendar.add.url">ICS URL</span>
@@ -220,6 +221,11 @@ export function bindCalendarTabInteractions(options: BindCalendarTabOptions): vo
   const slug = getSlug();
   if (!slug) return;
   const { signal, rerender } = options;
+  const tabRoot =
+    document.getElementById('settingsCalendarTab') ||
+    document.getElementById('settingsContent') ||
+    document;
+  bindCodePointLimitsIn(tabRoot);
 
   const startOfDayInput = document.getElementById('agendaStartOfDay') as HTMLInputElement | null;
   startOfDayInput?.addEventListener(
@@ -288,6 +294,8 @@ export function bindCalendarTabInteractions(options: BindCalendarTabOptions): vo
   const titleInput = document.getElementById('agendaTitleInput') as HTMLInputElement | null;
   const saveAgendaTitle = async () => {
     if (!titleInput) return;
+    const titleLimit = getCodePointLimitHandle(titleInput);
+    if (titleLimit && !titleLimit.report()) return;
     const title = titleInput.value.trim();
     if (!title) {
       showToast(t('settings.calendar.toast.titleRequired'));
@@ -394,6 +402,8 @@ export function bindCalendarTabInteractions(options: BindCalendarTabOptions): vo
     async () => {
       const nameInput = document.getElementById('calendarSourceNameInput') as HTMLInputElement | null;
       const urlInput = document.getElementById('calendarSourceUrlInput') as HTMLInputElement | null;
+      const nameLimit = nameInput ? getCodePointLimitHandle(nameInput) : null;
+      if (nameLimit && !nameLimit.report()) return;
       const name = nameInput?.value.trim() ?? '';
       const url = urlInput?.value.trim() ?? '';
       try {

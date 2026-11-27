@@ -3,6 +3,7 @@ import { settingsDialog, closeSettingsBtn } from '../dom/elements.js';
 import { apiFetch, apiFetchForm } from '../api.js';
 import { fetchProjectMembers } from '../members-cache.js';
 import { attachDialogClose, bindDialogLocale, escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent, sanitizeHexColor } from '../utils.js';
+import { bindCodePointLimitsIn, reportCodePointLimitsIn } from '../unicode-limits.js';
 import { getStoredTheme, handleThemeChange, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from '../theme.js';
 import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWallpaperImage } from '../wallpaper.js';
 import {
@@ -3266,7 +3267,7 @@ function showCreateUserDialog(): void {
           class="input" 
           placeholder="User Name" 
           data-i18n-placeholder="settings.users.createUser.namePlaceholder"
-          maxlength="200" 
+          data-code-point-max="200" 
           autocomplete="name" 
           required 
         />
@@ -3300,6 +3301,7 @@ function showCreateUserDialog(): void {
   `;
   document.body.appendChild(dialog);
   (dialog as HTMLDialogElement).showModal();
+  bindCodePointLimitsIn(dialog);
 
   const closeBtn = dialog.querySelector<HTMLElement>("#createUserDialogClose");
   const cancelBtn = dialog.querySelector<HTMLElement>("#createUserCancel");
@@ -3352,6 +3354,7 @@ function showCreateUserDialog(): void {
   if (form && emailInput && nameInput && passwordInput) {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (!reportCodePointLimitsIn(dialog)) return;
       const email = emailInput.value.trim();
       const name = nameInput.value.trim();
       const password = passwordInput.value;

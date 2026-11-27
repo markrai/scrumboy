@@ -11,6 +11,7 @@
 import { getAppRuntime } from './platform/runtime.js';
 import { sanitizeHexColor } from './utils.js';
 import { tagIdentityKey } from './tag-names.js';
+import { truncateCodePoints } from './unicode-limits.js';
 
 // ---- Wire DTOs (server contract) ----
 
@@ -307,11 +308,6 @@ export function normalizePublicSprints(value: unknown): PublicSprint[] {
 function clampPageSize(value: number | undefined): number {
   const n = Number.isFinite(value) ? Math.trunc(value as number) : PUBLIC_DEFAULT_PAGE_SIZE;
   return Math.min(PUBLIC_MAX_PAGE_SIZE, Math.max(1, n));
-}
-
-function truncateCodePoints(value: string, max: number): string {
-  const points = Array.from(value);
-  return points.length > max ? points.slice(0, max).join('') : value;
 }
 
 /** Normalizes user/URL input into a query the public API accepts. */

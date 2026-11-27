@@ -413,6 +413,44 @@ describe("visual notes editor", () => {
     expect(ed.getValue()).toBe("x".repeat(90));
   });
 
+  it("measures near-limit reservations with code points for emoji and combining selections", async () => {
+    const prefix = "😀".repeat(8); // 8 code points, 16 UTF-16 units
+    const ed = await editor(prefix, 10);
+    const v = view();
+    // Select the last two emoji (2 code points / 4 UTF-16 units).
+    const from = v.state.doc.length - 4;
+    const to = v.state.doc.length;
+    v.dispatch({ selection: { anchor: from, head: to } });
+    // Reservation of 3 code points would fit after replacing 2 (8-2+3=9 <= 10).
+    expect(ed.uploadTarget.begin("ok", { batch: "b", index: 0, length: 3 })).toBe(true);
+    // Oversized reservation must fail and must not leave a pending entry that finish() could honor.
+    expect(ed.uploadTarget.begin("no", { batch: "b2", index: 0, length: 5 })).toBe(false);
+    expect(ed.uploadTarget.finish("no", "![x](/api/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee)")).toBe(true);
+    expect(ed.getValue()).toBe(prefix);
+
+    // finish() that would exceed after measuring the real replaced slice drops the reservation.
+    expect(ed.uploadTarget.finish("ok", "![alt](/api/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee)")).toBe(false);
+    expect(ed.getValue()).toBe(prefix);
+  });
+
+  it("rejects standalone drawing inserts that would exceed the code-point ceiling", async () => {
+    const ed = await editor("e\u0301".repeat(5), 6); // 10 code points already over? 5*2=10
+    ed.destroy();
+    const ed2 = await editor("e\u0301".repeat(2), 5); // 4 code points
+    ed2.setDrawingHost({
+      canEdit: () => true,
+      slug: () => "board",
+      get: () => undefined,
+      isKnown: () => true,
+      subscribe: () => () => {},
+      adoptPasted: () => null,
+      rememberCopied: () => {},
+      notify: () => {},
+    });
+    expect(ed2.insertStandaloneDrawing("drw_abcdef", "x")).toBe(false);
+    expect(ed2.getValue()).toBe("e\u0301".repeat(2));
+  });
+
   it("is read-only when notes cannot be edited", async () => {
     const ed = await editor(`a ${img(U1)}`);
     ed.setReadOnly(true);

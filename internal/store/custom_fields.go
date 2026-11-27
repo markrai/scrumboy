@@ -238,7 +238,9 @@ func normalizeCustomFieldValue(f CustomField, v any) (any, error) {
 			return nil, bad(ReasonCustomFieldNotNumber, "expected a finite number")
 		}
 		if math.Abs(n) >= maxCustomFieldNumber {
-			return nil, bad(ReasonCustomFieldNumberRange, "number out of range (must be below 2^53)")
+			return nil, reasoned(ErrValidation, ReasonCustomFieldNumberRange,
+				fmt.Sprintf("%s: custom field %q: number out of range", ErrValidation, f.Key),
+				map[string]any{"max": maxCustomFieldNumber})
 		}
 		return n, nil
 	}
@@ -515,7 +517,7 @@ func importCustomFieldsTx(ctx context.Context, tx *sql.Tx, projectID int64, p Pr
 	}
 	existing, err := listCustomFieldsQ(ctx, tx, projectID)
 	if err != nil {
-		return err
+		return redactImportInternal(err)
 	}
 	byKey, toCreate, err := planImportCustomFields(p, existing)
 	if err != nil {
@@ -526,11 +528,11 @@ func importCustomFieldsTx(ctx context.Context, tx *sql.Tx, projectID int64, p Pr
 INSERT INTO project_custom_fields(project_id, key, name, type, position)
 VALUES (?, ?, ?, ?, ?)`, projectID, f.Key, f.Name, string(f.Type), f.Position)
 		if err != nil {
-			return fmt.Errorf("insert custom field: %w", err)
+			return redactImportInternal(err)
 		}
 		id, err := res.LastInsertId()
 		if err != nil {
-			return fmt.Errorf("custom field id: %w", err)
+			return redactImportInternal(err)
 		}
 		f.ID, f.ProjectID = id, projectID
 		byKey[f.Key] = f
