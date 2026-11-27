@@ -38,6 +38,7 @@ import { escapeHTML, isAnonymousBoard, showConfirmDialog, showToast } from '../u
 import { applyFieldTooltips, TODO_DIALOG_TOOLTIPS } from '../field-tooltips.js';
 import { apiErrorMessage, formatDate as formatLocalizedDate, hasI18nKey, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
+import { codePointLength, getCodePointLimitHandle, truncateCodePoints } from '../unicode-limits.js';
 import { tagIdentityKey } from '../tag-names.js';
 import {
   bindShareTodoButton,
@@ -299,14 +300,21 @@ function isModifiedFibonacciMode(): boolean {
 // Collapse arbitrary text (e.g. a multi-line sticky-note body) into a value
 // suitable for the single-line Title input: trim ends, collapse runs of
 // whitespace (including newlines) to a single space, and honor the input's
-// maxLength if one is set.
+// Unicode code-point ceiling when one is set (data-code-point-max or maxLength).
 function normalizeSeedTitle(raw: string | undefined): string {
   if (!raw) return "";
   const collapsed = raw.replace(/\s+/g, " ").trim();
   const input = todoTitle as HTMLInputElement | null;
-  const max = input?.maxLength;
-  if (typeof max === "number" && max > 0 && collapsed.length > max) {
-    return collapsed.slice(0, max);
+  const fromData = Number(input?.dataset.codePointMax);
+  const fromAttr = input?.maxLength;
+  const max =
+    Number.isFinite(fromData) && fromData > 0
+      ? Math.trunc(fromData)
+      : typeof fromAttr === "number" && fromAttr > 0
+        ? fromAttr
+        : 0;
+  if (max > 0 && codePointLength(collapsed) > max) {
+    return truncateCodePoints(collapsed, max);
   }
   return collapsed;
 }
@@ -338,9 +346,11 @@ function ensureTodoNotesEditor(): NotesEditor | null {
     return todoNotesEditor;
   }
   const status = document.getElementById("todoBodyEditorStatus");
+  const bodyMaxFromData = Number((todoBody as HTMLTextAreaElement | null)?.dataset.codePointMax);
+  const bodyMaxFallback = (todoBody as HTMLTextAreaElement | null)?.maxLength || 20000;
   todoNotesEditor = createNotesEditor({
     parent: host,
-    maxLength: (todoBody as HTMLTextAreaElement | null)?.maxLength || 20000,
+    maxLength: Number.isFinite(bodyMaxFromData) && bodyMaxFromData > 0 ? Math.trunc(bodyMaxFromData) : bodyMaxFallback,
     labelledBy: "todoBodyLabel",
     announce: (message) => {
       if (status) status.textContent = message;
@@ -377,6 +387,13 @@ function loadTodoNotes(body: string, readOnly: boolean): void {
     todoNotesEditor?.clear();
   }
   textarea.readOnly = readOnly;
+  getCodePointLimitHandle(textarea)?.sync();
+}
+
+/** Re-sync code-point validity after programmatic title/body assignment or dialog reuse. */
+function syncTodoCodePointLimits(): void {
+  getCodePointLimitHandle(todoTitle as HTMLInputElement | null)?.sync();
+  getCodePointLimitHandle(todoBody as HTMLTextAreaElement | null)?.sync();
 }
 
 async function renderTodoNotesPreview(): Promise<void> {
@@ -720,6 +737,9 @@ function bindTodoDialogCloseGuards(): void {
     releaseTodoNotesPreview();
     // Releases the editor's image files (native handles on Android) right away.
     todoNotesEditor?.clear();
+    if (todoTitle) (todoTitle as HTMLInputElement).value = "";
+    if (todoBody) (todoBody as HTMLTextAreaElement).value = "";
+    syncTodoCodePointLimits();
     resetTodoDialogCloseState();
   });
 }
@@ -993,6 +1013,7 @@ export async function openTodoDialog(opts: {
     setTodoDialogTitleKey("todo.dialog.title.new");
     (todoTitle as HTMLInputElement).value = normalizeSeedTitle(opts.initialTitle);
     loadTodoNotes("", !permissions.canEditNotes);
+    syncTodoCodePointLimits();
     (todoTags as HTMLInputElement).value = "";
     const initialKey = resolveColumnKey(status);
     const selected = populateTodoStatusOptions(initialKey);
@@ -1009,6 +1030,7 @@ export async function openTodoDialog(opts: {
     setTodoDialogTitleKey(isArchived ? "todo.dialog.title.archived" : permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
     (todoTitle as HTMLInputElement).value = todo.title || "";
     loadTodoNotes(todo.body || "", !permissions.canEditNotes);
+    syncTodoCodePointLimits();
     (todoTags as HTMLInputElement).value = "";
     const initialKey = resolveColumnKey(todo.columnKey || todo.status);
     const selected = populateTodoStatusOptions(initialKey);

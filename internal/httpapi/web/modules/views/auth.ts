@@ -5,6 +5,7 @@ import { bindPublicLocaleSelect, renderPublicLocaleSelectHTML, syncPublicLocaleS
 import { showToast, getAppVersion, escapeHTML, redirectAfterAuth } from '../utils.js';
 import { getAppRuntime } from '../platform/runtime.js';
 import { appHomePath } from '../app-home.js';
+import { bindCodePointLimitsIn, getCodePointLimitHandle } from '../unicode-limits.js';
 
 const PATH_SHOW = "M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z";
 const PATH_HIDE = "M2 5.27L3.28 4 20 20.72 18.73 22 15.65 18.92C14.5 19.3 13.28 19.5 12 19.5 7 19.5 2.73 16.39 1 12c.69-1.76 1.79-3.31 3.19-4.54L2 5.27zM12 9a3 3 0 0 1 3 3c0 .35-.06.69-.17 1l-3.83-3.83c.31-.06.65-.17 1-.17zM12 4.5c5 0 9.27 3.11 11 7.5-.82 2.08-2.21 3.88-4 5.19L17.58 15.76C18.94 14.82 20.06 13.54 20.82 12 19.17 8.64 15.76 6.5 12 6.5c-1.09 0-2.16.18-3.16.5L7.3 5.47C8.74 4.85 10.33 4.5 12 4.5zM3.18 12C4.83 15.36 8.24 17.5 12 17.5c.69 0 1.37-.07 2-.21L11.72 15c-1.43-.15-2.57-1.29-2.72-2.72L5.6 8.87C4.61 9.72 3.78 10.78 3.18 12z";
@@ -327,7 +328,7 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
     ${dividerHTML}
     ${showLocalForm ? `
       <form id="authForm" class="stack">
-        ${bootstrap ? `<input class="input" id="authName" placeholder="${escapeHTML(t("auth.fields.name.placeholder"))}" maxlength="200" autocomplete="name" required />` : ``}
+        ${bootstrap ? `<input class="input" id="authName" placeholder="${escapeHTML(t("auth.fields.name.placeholder"))}" data-code-point-max="200" autocomplete="name" required />` : ``}
         <input class="input" id="authEmail" placeholder="${escapeHTML(t("auth.fields.email.placeholder"))}" maxlength="200" autocomplete="email" required />
         <div class="password-row">
           <input class="input" id="authPassword" placeholder="${escapeHTML(t("auth.fields.password.placeholder"))}" type="password" maxlength="200" autocomplete="current-password" required />
@@ -348,6 +349,7 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
     ` : ""}
   `, version);
   bindAuthLocaleSelect();
+  bindCodePointLimitsIn(app);
 
   const nameEl = document.getElementById("authName") as HTMLInputElement | null;
   const emailEl = document.getElementById("authEmail") as HTMLInputElement | null;
@@ -359,6 +361,7 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
 
   if (nameEl) {
     nameEl.value = state.draft.name;
+    getCodePointLimitHandle(nameEl)?.sync();
     nameEl.addEventListener("input", () => {
       state.draft.name = nameEl.value;
     });
@@ -418,6 +421,10 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
     const bootstrapBtn = document.getElementById("bootstrapBtn");
     if (bootstrapBtn && emailEl && pwEl) {
       bootstrapBtn.addEventListener("click", async () => {
+        const nameLimit = nameEl ? getCodePointLimitHandle(nameEl) : null;
+        if (nameLimit && !nameLimit.report()) {
+          return;
+        }
         state.draft = {
           name: nameEl?.value || "",
           email: emailEl.value,

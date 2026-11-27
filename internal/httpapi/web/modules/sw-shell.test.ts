@@ -71,6 +71,13 @@ describe('service worker shell separation', () => {
     expect(sw.store.has('/modules/dialogs/todo-creator-selector.ts')).toBe(false);
   });
 
+  it('precaches unicode-limits.js for offline shell startup', async () => {
+    const sw = loadServiceWorker(async (path) => response(path));
+    await sw.install();
+    expect(sw.store.get('/dist/unicode-limits.js')?.body).toBe('/dist/unicode-limits.js');
+    expect(sw.store.has('/modules/unicode-limits.ts')).toBe(false);
+  });
+
   it('offline board and workspace navigations fall back to the app shell, never marketing HTML', async () => {
     let online = true;
     const sw = loadServiceWorker(async (path) => {

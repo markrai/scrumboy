@@ -111,4 +111,26 @@ describe("wall-edit-controller", () => {
     expect(onCommitText).toHaveBeenCalledOnce();
     expect(onCommitText).toHaveBeenCalledWith("n1", "updated");
   });
+
+  it("blocks commit of over-limit text and keeps the draft in the editor", () => {
+    mountEditable();
+    const n = note({ text: "hello" });
+    const el = buildNoteElement(n, true);
+    document.body.appendChild(el);
+    const onCommitText = vi.fn();
+    beginEdit(el, n, { onCommitText, onFlushDeferredRefetch: vi.fn() });
+
+    const ta = el.querySelector<HTMLTextAreaElement>(".wall-note__editor");
+    expect(ta).toBeTruthy();
+    ta!.value = "😀".repeat(4001);
+    ta!.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    ta!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+
+    expect(onCommitText).not.toHaveBeenCalled();
+    expect(isEditing(el)).toBe(true);
+    expect(ta!.value).toBe("😀".repeat(4001));
+    expect(ta!.validationMessage.length).toBeGreaterThan(0);
+  });
 });

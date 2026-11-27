@@ -4,6 +4,7 @@ import { apiFetch } from '../api.js';
 import { getSlug } from '../state/selectors.js';
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
+import { bindCodePointLimitsIn, getCodePointLimitHandle } from '../unicode-limits.js';
 import { invalidateCustomFieldDefs, loadCustomFieldDefs } from './todo-custom-fields.js';
 const TYPES = ['text', 'url', 'number'];
 export function renderCustomFieldsTabShell() {
@@ -12,7 +13,7 @@ export function renderCustomFieldsTabShell() {
     <div class="settings-section__description muted" data-i18n-text="settings.customFields.description">${escapeHTML(t('settings.customFields.description'))}</div>
     <div id="customFieldsList" class="muted">${escapeHTML(t('settings.customFields.loading'))}</div>
     <div class="settings-priorities-add-row" style="display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap;">
-      <input class="input" type="text" maxlength="100" id="customFieldName" placeholder="${escapeHTML(t('settings.customFields.namePlaceholder'))}" aria-label="${escapeHTML(t('settings.customFields.nameLabel'))}" />
+      <input class="input" type="text" data-code-point-max="100" id="customFieldName" placeholder="${escapeHTML(t('settings.customFields.namePlaceholder'))}" aria-label="${escapeHTML(t('settings.customFields.nameLabel'))}" />
       <select class="select" id="customFieldType" aria-label="${escapeHTML(t('settings.customFields.typeLabel'))}">
         ${TYPES.map((type) => `<option value="${type}">${escapeHTML(t(`settings.customFields.type.${type}`))}</option>`).join('')}
       </select>
@@ -38,6 +39,10 @@ export function bindCustomFieldsTabInteractions(options) {
     const list = document.getElementById('customFieldsList');
     if (!slug || !list)
         return;
+    const root = document.getElementById('settingsCustomFields') ||
+        document.getElementById('settingsContent') ||
+        document;
+    bindCodePointLimitsIn(root);
     const refresh = async () => {
         const defs = await loadCustomFieldDefs(slug, { force: true });
         if (getSlug() !== slug || !list.isConnected)
@@ -48,6 +53,9 @@ export function bindCustomFieldsTabInteractions(options) {
     const nameInput = document.getElementById('customFieldName');
     const typeSelect = document.getElementById('customFieldType');
     const add = async () => {
+        const nameLimit = nameInput ? getCodePointLimitHandle(nameInput) : null;
+        if (nameLimit && !nameLimit.report())
+            return;
         const name = nameInput?.value.trim() ?? '';
         if (!name) {
             nameInput?.focus();

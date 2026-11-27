@@ -15,6 +15,7 @@ import {
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
+import { bindCodePointLimitsIn, reportCodePointLimitsIn } from '../unicode-limits.js';
 
 type PriorityTierCountsState =
   | { status: 'loading' }
@@ -196,7 +197,7 @@ function renderPriorityTabContent(countsState: PriorityTierCountsState): string 
               class="input"
               data-priority-name="${escapeHTML(tier.key)}"
               value="${escapeHTML(tier.name)}"
-              maxlength="200"
+              data-code-point-max="200"
               aria-label="${escapeHTML(priorityTierLabelAria(tier.key))}"
               style="flex:1; min-width:120px;"
             />
@@ -220,7 +221,7 @@ function renderPriorityTabContent(countsState: PriorityTierCountsState): string 
           class="input"
           type="text"
           data-priority-ghost-input
-          maxlength="200"
+          data-code-point-max="200"
           placeholder="Add priority tier..."
           data-i18n-placeholder="settings.priorities.addPlaceholder"
           aria-label="${escapeHTML(t('settings.priorities.addTierAria'))}"
@@ -387,6 +388,11 @@ export function loadPriorityTabContent(options: { slug: string; rerender: Rerend
 
 export function bindPriorityTabInteractions(options: BindPriorityTabInteractionsOptions): void {
   const { closeSettingsBtn, rerender, settingsDialog, signal } = options;
+  const tabRoot =
+    document.getElementById('settingsPriorityTab') ||
+    document.getElementById('settingsContent') ||
+    document;
+  bindCodePointLimitsIn(tabRoot);
   const addInput = document.querySelector('[data-priority-ghost-input]') as HTMLInputElement | null;
   const addTier = () => {
     if (!addInput) return;
@@ -449,6 +455,8 @@ export function bindPriorityTabInteractions(options: BindPriorityTabInteractions
     saveChangesBtn.addEventListener(
       'click',
       () => {
+        const root = document.getElementById('settingsPriorityTab') || document.getElementById('settingsContent');
+        if (root && !reportCodePointLimitsIn(root)) return;
         void savePriorityDraftChanges(rerender);
       },
       { signal }

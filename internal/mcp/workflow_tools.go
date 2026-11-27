@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/store"
@@ -144,7 +145,7 @@ func (a *Adapter) handleWorkflowCreate(ctx context.Context, input any) (any, map
 	if in.Name == "" {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "name required", map[string]any{"field": "name"})
 	}
-	if len(in.Name) > 200 {
+	if utf8.RuneCountInString(in.Name) > 200 {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid workflow column name", map[string]any{"field": "name"})
 	}
 
@@ -199,7 +200,7 @@ func (a *Adapter) handleWorkflowUpdate(ctx context.Context, input any) (any, map
 	if in.Name == "" {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "name required", map[string]any{"field": "name"})
 	}
-	if len(in.Name) > 200 {
+	if utf8.RuneCountInString(in.Name) > 200 {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid workflow column name", map[string]any{"field": "name"})
 	}
 	in.Color = strings.TrimSpace(in.Color)

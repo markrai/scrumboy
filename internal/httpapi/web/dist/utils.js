@@ -1,5 +1,6 @@
 import { toast } from './dom/elements.js';
 import { hydrateI18n, I18N_LOCALE_CHANGED, t } from './i18n/index.js';
+import { bindCodePointLimit } from './unicode-limits.js';
 /**
  * Keeps a dynamically-created `<dialog>` re-localized as the active locale changes,
  * without needing to reopen it. Call once right after `showModal()`; pass an
@@ -456,8 +457,8 @@ export function showPromptDialog(options = {}) {
     return new Promise((resolve, reject) => {
         const dialog = document.createElement("dialog");
         dialog.className = "dialog";
-        const maxLengthAttr = typeof maxLength === "number" && Number.isFinite(maxLength) && maxLength > 0
-            ? ` maxlength="${Math.trunc(maxLength)}"`
+        const codePointMaxAttr = typeof maxLength === "number" && Number.isFinite(maxLength) && maxLength > 0
+            ? ` data-code-point-max="${Math.trunc(maxLength)}"`
             : "";
         dialog.innerHTML = `
       <form method="dialog" class="dialog__form" data-dialog-content-root id="promptDialogForm">
@@ -473,7 +474,7 @@ export function showPromptDialog(options = {}) {
               type="text"
               id="promptDialogInput"
               value="${escapeHTML(initialValue)}"
-              placeholder="${escapeHTML(placeholder)}"${maxLengthAttr}
+              placeholder="${escapeHTML(placeholder)}"${codePointMaxAttr}
               autocomplete="off"
             />
           </label>
@@ -499,12 +500,19 @@ export function showPromptDialog(options = {}) {
         dialog.addEventListener("close", () => settle(intent), { once: true });
         const input = dialog.querySelector("#promptDialogInput");
         const form = dialog.querySelector("#promptDialogForm");
+        if (typeof maxLength === "number" && Number.isFinite(maxLength) && maxLength > 0) {
+            bindCodePointLimit(input, Math.trunc(maxLength));
+        }
         const onCancelClose = () => {
             intent = null;
             dialog.close();
         };
         form.addEventListener("submit", (event) => {
             event.preventDefault();
+            if (!input.checkValidity()) {
+                input.reportValidity();
+                return;
+            }
             intent = input.value;
             dialog.close();
         });

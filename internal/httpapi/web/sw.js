@@ -51,7 +51,8 @@ const urlsToCache = [
   '/dist/features/context-menu-button.js',
   '/dist/orchestration/board-refresh.js',
   '/dist/pwaUpdate.js',
-  '/dist/types.js'
+  '/dist/types.js',
+  '/dist/unicode-limits.js'
 ];
 
 self.addEventListener('install', (event) => {

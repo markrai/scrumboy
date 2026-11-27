@@ -1,6 +1,7 @@
 import { toast } from './dom/elements.js';
 import { hydrateI18n, I18N_LOCALE_CHANGED, t } from './i18n/index.js';
 import { User, Board } from './types.js';
+import { bindCodePointLimit } from './unicode-limits.js';
 
 /**
  * Keeps a dynamically-created `<dialog>` re-localized as the active locale changes,
@@ -503,9 +504,9 @@ export function showPromptDialog(options: PromptDialogOptions = {}): Promise<str
   return new Promise((resolve, reject) => {
     const dialog = document.createElement("dialog");
     dialog.className = "dialog";
-    const maxLengthAttr =
+    const codePointMaxAttr =
       typeof maxLength === "number" && Number.isFinite(maxLength) && maxLength > 0
-        ? ` maxlength="${Math.trunc(maxLength)}"`
+        ? ` data-code-point-max="${Math.trunc(maxLength)}"`
         : "";
 
     dialog.innerHTML = `
@@ -522,7 +523,7 @@ export function showPromptDialog(options: PromptDialogOptions = {}): Promise<str
               type="text"
               id="promptDialogInput"
               value="${escapeHTML(initialValue)}"
-              placeholder="${escapeHTML(placeholder)}"${maxLengthAttr}
+              placeholder="${escapeHTML(placeholder)}"${codePointMaxAttr}
               autocomplete="off"
             />
           </label>
@@ -550,6 +551,9 @@ export function showPromptDialog(options: PromptDialogOptions = {}): Promise<str
 
     const input = dialog.querySelector("#promptDialogInput") as HTMLInputElement;
     const form = dialog.querySelector("#promptDialogForm") as HTMLFormElement;
+    if (typeof maxLength === "number" && Number.isFinite(maxLength) && maxLength > 0) {
+      bindCodePointLimit(input, Math.trunc(maxLength));
+    }
     const onCancelClose = (): void => {
       intent = null;
       dialog.close();
@@ -557,6 +561,10 @@ export function showPromptDialog(options: PromptDialogOptions = {}): Promise<str
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (!input.checkValidity()) {
+        input.reportValidity();
+        return;
+      }
       intent = input.value;
       dialog.close();
     });

@@ -97,6 +97,25 @@ func TestAPIErrorExitCode(t *testing.T) {
 	}
 }
 
+func TestAPIErrorIncludesSafeDetailsMax(t *testing.T) {
+	err := &APIError{
+		Code:    "VALIDATION_ERROR",
+		Message: "validation: custom field number out of range",
+		Details: map[string]any{
+			"reason": "custom_field_number_out_of_range",
+			"max":    float64(1 << 53),
+		},
+		Status: 400,
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, `"max":9.007199254740992e+15`) && !strings.Contains(msg, `"max":9007199254740992`) {
+		t.Fatalf("Error() missing safe max detail: %q", msg)
+	}
+	if !strings.Contains(msg, "custom_field_number_out_of_range") {
+		t.Fatalf("Error() missing reason: %q", msg)
+	}
+}
+
 func TestNonJSONResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, "<html>login</html>")

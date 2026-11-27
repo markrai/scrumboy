@@ -18,8 +18,10 @@ const enCatalog = {
   "errors.CONFLICT": "Conflict",
   "errors.NOT_FOUND": "Not found",
   "errors.VALIDATION_ERROR": "Please check the request and try again.",
+  "errors.VALIDATION_ERROR.import_record_invalid": "Import rejected for project \"{project}\": {rule}.",
   "errors.VALIDATION_ERROR.invalid_workflow_column_color": "Enter a valid workflow column color.",
   "errors.VALIDATION_ERROR.name_required": "Please enter a name.",
+  "errors.importRules.empty_tag_name": "tag name cannot be empty",
   "errors.generic": "Something went wrong.",
   "errors.httpStatus": "HTTP {status}",
   "test.aria": "Close panel",
@@ -570,6 +572,24 @@ describe("i18n catalog loading", () => {
         },
       },
     }, { fallbackKey: "todo.saveFailed" })).toBe(deCatalog["errors.VALIDATION_ERROR.name_required"]);
+  });
+
+  it("localizes import rule codes and keeps hostile project names as plain text", async () => {
+    const i18n = await loadModule();
+    await i18n.initI18n({ locale: "en", loadLocale: loader({ en: enCatalog, pseudo: pseudoCatalog }) });
+    const hostile = `<script>alert(1)</script>`;
+    const message = i18n.apiErrorMessage({
+      data: {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "validation: ignored",
+          details: { reason: "import_record_invalid", project: hostile, rule: "empty_tag_name" },
+        },
+      },
+    });
+    expect(message).toContain(hostile);
+    expect(message).not.toContain("empty_tag_name");
+    expect(message).toContain("tag name cannot be empty");
   });
 
   it("apiErrorMessageOrRaw preserves raw API messages for unknown or missing reasons", async () => {

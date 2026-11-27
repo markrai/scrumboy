@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ensureProjectHasMaintainer ensures a project has at least one maintainer.
@@ -708,7 +709,7 @@ func (s *Store) CreateProject(ctx context.Context, name string) (Project, error)
 
 func (s *Store) CreateProjectWithWorkflow(ctx context.Context, name string, workflow []WorkflowColumn) (Project, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || len(name) > 200 {
+	if name == "" || utf8.RuneCountInString(name) > 200 {
 		return Project{}, fmt.Errorf("%w: invalid project name", ErrValidation)
 	}
 
@@ -730,7 +731,7 @@ func (s *Store) CreateProjectWithWorkflow(ctx context.Context, name string, work
 	// Generate base slug from name
 	baseSlug, err := generateSlugFromName(name)
 	if err != nil {
-		return Project{}, fmt.Errorf("%w: %v", ErrValidation, err)
+		return Project{}, reasoned(ErrValidation, ReasonProjectNameNoSlug, fmt.Sprintf("%s: %v", ErrValidation, err))
 	}
 
 	nowMs := time.Now().UTC().UnixMilli()
@@ -1318,7 +1319,7 @@ func (s *Store) UpdateProjectPatch(ctx context.Context, projectID int64, userID 
 	var trimmedName string
 	if patch.Name != nil {
 		trimmedName = strings.TrimSpace(*patch.Name)
-		if trimmedName == "" || len(trimmedName) > 200 {
+		if trimmedName == "" || utf8.RuneCountInString(trimmedName) > 200 {
 			return fmt.Errorf("%w: invalid project name", ErrValidation)
 		}
 	}
@@ -1509,7 +1510,7 @@ func (s *Store) UpdateProjectName(ctx context.Context, projectID int64, userID i
 	}
 
 	name = strings.TrimSpace(name)
-	if name == "" || len(name) > 200 {
+	if name == "" || utf8.RuneCountInString(name) > 200 {
 		return fmt.Errorf("%w: invalid project name", ErrValidation)
 	}
 

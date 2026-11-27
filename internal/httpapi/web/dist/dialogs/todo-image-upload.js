@@ -1,5 +1,6 @@
 import { apiFetchForm } from "../api.js";
 import { hasI18nKey, t } from "../i18n/index.js";
+import { codePointLength } from "../unicode-limits.js";
 import { showToast } from "../utils.js";
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif"];
 export const MAX_FILES_PER_ACTION = 5;
@@ -74,8 +75,13 @@ export function createTextareaUploadTarget(textarea) {
         isReadOnly: () => textarea.readOnly,
         begin(id) {
             const placeholder = placeholderFor(id);
-            const max = textarea.maxLength > 0 ? textarea.maxLength : Infinity;
-            if (textarea.value.length + placeholder.length + 2 > max) {
+            const fromData = Number(textarea.dataset.codePointMax);
+            const max = Number.isFinite(fromData) && fromData > 0
+                ? Math.trunc(fromData)
+                : textarea.maxLength > 0
+                    ? textarea.maxLength
+                    : Infinity;
+            if (codePointLength(textarea.value) + codePointLength(placeholder) + 2 > max) {
                 return false;
             }
             const start = textarea.selectionStart ?? textarea.value.length;
@@ -135,7 +141,8 @@ export function createTodoImageUploader(opts) {
         const id = uploadId();
         const alt = altTextForFile(file.name || "");
         // The final Markdown, ![alt](/api/assets/<36-character id>), plus line breaks around it.
-        const length = alt.length + "![]()".length + "/api/assets/".length + 36 + 2;
+        // Reservation length is Unicode code points so it matches the notes editor ceiling.
+        const length = codePointLength(alt) + "![]()".length + "/api/assets/".length + 36 + 2;
         if (!target.begin(id, { batch, index, length })) {
             notesFull();
             return;

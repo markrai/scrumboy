@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 var columnKeyRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9_]*[a-z0-9])?$`)
@@ -321,7 +322,7 @@ func (s *Store) UpdateWorkflowColumn(ctx context.Context, projectID int64, key, 
 	}
 	name = strings.TrimSpace(name)
 	color = strings.TrimSpace(color)
-	if name == "" || len(name) > maxWorkflowNameLength {
+	if name == "" || utf8.RuneCountInString(name) > maxWorkflowNameLength {
 		return fmt.Errorf("%w: invalid workflow column name", ErrValidation)
 	}
 	if color == "" || !colorHexRe.MatchString(color) {
@@ -346,7 +347,7 @@ WHERE project_id = ? AND key = ?`, name, color, projectID, key)
 
 func (s *Store) AddWorkflowColumn(ctx context.Context, projectID int64, name string) (WorkflowColumn, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || len(name) > maxWorkflowNameLength {
+	if name == "" || utf8.RuneCountInString(name) > maxWorkflowNameLength {
 		return WorkflowColumn{}, fmt.Errorf("%w: invalid workflow column name", ErrValidation)
 	}
 
