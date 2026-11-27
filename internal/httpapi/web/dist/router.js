@@ -5,6 +5,7 @@ import { hydrateNotificationsForUser, initNotificationBadge } from './core/notif
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getMobileOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
 import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setInlineImagesEnabled, setPublicProjectsEnabled, setLandingPageEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, setBoardAccess, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { invalidateServiceAccountsLifecycle } from './dialogs/settings-service-accounts.js';
 import { setDrawingFeatureFlags } from './drawing/drawing-flags.js';
 import { getTagsFromUrl, sameOrderedTags } from './state/board-filter-url.js';
 import { loadUserTheme } from './theme.js';
@@ -161,6 +162,7 @@ async function routeOnceBody() {
         if (oldUserId !== newUserId) {
             // User changed (logout, login as different user, or initial load)
             resetUserScopedState();
+            invalidateServiceAccountsLifecycle();
             stopGlobalRealtime();
             // Access mode depends on the signed-in identity: re-resolve the board.
             stopPublicBoard();

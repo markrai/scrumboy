@@ -2,6 +2,22 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.42.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles), **3.41.0** (`.sbz` archive format 1.4; older versions cannot import new archives) - see those releases.
 
+## [3.45.0] - 2026-11-27
+
+### Added
+
+- **Service-account administration in Settings (PR #388)** - Owners and Admins manage non-interactive identities from Settings → Users in a dedicated Service accounts section. Create and list accounts (Owner or Admin); mint tokens (Owner only); list and revoke tokens (Owner or Admin); delete accounts (Owner only). Minted credentials return plaintext once with `Cache-Control: no-store`. REST routes wrap the same store authorization matrix as the MCP `admin_*Service*` tools.
+- **Service-account admin REST** - `GET`/`POST` `/api/admin/service-accounts`, `DELETE` `/api/admin/service-accounts/{id}`, `GET`/`POST` `/api/admin/service-accounts/{id}/tokens`, and `DELETE` `/api/admin/service-tokens/{tokenId}` with cursor pagination (`limit`, `nextCursor`).
+
+### Improved
+
+- **User Management table lists humans only** - Service accounts remain on `/api/admin/users` (with `isService`) for identity pickers and membership UIs, but the Settings human table filters them client-side now that they have their own section.
+- **Service-token mint dialog resilience** - Matches personal API-token patterns: duplicate-submit prevention, successful mint separated from failed refresh, best-effort revoke when a 2xx mint lacks usable plaintext, teardown that cannot reopen stale dialogs or expose secrets to another session, and one-time plaintext display with clipboard fallback.
+
+### Security
+
+- **Service-account REST transport redacts unexpected internals** - Typed validation, conflict, authorization, not-found and storage-budget failures stay client-visible; unexpected errors return `INTERNAL` without classifying by message text. Server logs retain `formatErrorWithCause` diagnostics. Fault-injection and containment tests cover human-token isolation, Admin revoke, CSRF on mutations, and credential stop after revoke or account deletion.
+
 ## [3.44.3] - 2026-11-26
 
 ### Fixed

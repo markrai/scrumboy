@@ -16,8 +16,8 @@ import {
 } from '../orchestration/board-refresh.js';
 import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
-import { 
-  getSlug, 
+import {
+  getSlug,
   getTagsFromUrl,
   getSearch,
   getSprintIdFromUrl,
@@ -25,12 +25,12 @@ import {
   getSortFromUrl,
   getPriorityFromUrl,
   getBoard,
-  getProjectId, 
-  getProjects, 
-  getSettingsProjectId, 
-  getSettingsActiveTab, 
-  getTagColors, 
-  getUser, 
+  getProjectId,
+  getProjects,
+  getSettingsProjectId,
+  getSettingsActiveTab,
+  getTagColors,
+  getUser,
   getAuthStatusAvailable,
   getOidcEnabled,
   getLocalAuthEnabled,
@@ -53,9 +53,9 @@ import { bindSharingTab, renderSharingTabShell } from './settings-sharing.js';
 import { bindGitHubSettingsTab } from './settings-github.js';
 import { bindAutomationTab, renderAutomationTabShell } from './settings-automations.js';
 import { isPublicBoardAccess } from '../state/board-access.js';
-import { 
-  setSettingsProjectId, 
-  setSettingsActiveTab, 
+import {
+  setSettingsProjectId,
+  setSettingsActiveTab,
   setTagColors,
   setBoard,
   setBackupImportBtn,
@@ -151,7 +151,7 @@ import {
 import { recordLocalMutation } from '../realtime/guard.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { bindApiTokensInteractions, invalidateApiTokensCache, renderApiTokensSectionHTML } from './settings-api-tokens.js';
-import { bindServiceAccountsInteractions, renderServiceAccountsSectionHTML } from './settings-service-accounts.js';
+import { bindServiceAccountsInteractions, invalidateServiceAccountsLifecycle, renderServiceAccountsSectionHTML } from './settings-service-accounts.js';
 import { bindSettingsTabsFit, fitSettingsTabsNav } from './settings-tabs-fit.js';
 import { bindPublicLocaleSelect, renderPublicLocaleSelectHTML, syncPublicLocaleSelect } from '../i18n/locale-select.js';
 import { appHomePath } from '../app-home.js';
@@ -189,6 +189,10 @@ function installSettingsDialogCloseForKeybindingCaptureOnce(): void {
   settingsKeybindingCloseListenerInstalled = true;
   settingsDialog.addEventListener("close", () => {
     resetKeybindingCaptureUI();
+    // Tear down SA token/plaintext dialogs and invalidate in-flight completions
+    // so Settings close / logout cannot leave secrets or stale rerenders behind.
+    settingsAbortController?.abort();
+    invalidateServiceAccountsLifecycle();
   });
 }
 
@@ -899,7 +903,7 @@ async function handleBackupExport(): Promise<void> {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    
+
     // Format: scrumboy-backup-2026-01-24-03-45-PM.json
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0];
@@ -1052,7 +1056,7 @@ function updateBackupUI(): void {
 
 async function handleBackupImport(): Promise<void> {
   console.log("handleBackupImport: Function called");
-  
+
   if (!getBackupData()) {
     console.log("handleBackupImport: No backup data");
     showToast(t("settings.backup.toast.noFile"));
@@ -1061,12 +1065,12 @@ async function handleBackupImport(): Promise<void> {
 
   // Use stored reference if available, otherwise find by ID
   const importBtn = (getBackupImportBtn() || document.getElementById("backupImportBtn")) as HTMLButtonElement | null;
-  console.log("handleBackupImport: Button found", { 
-    hasButton: !!importBtn, 
+  console.log("handleBackupImport: Button found", {
+    hasButton: !!importBtn,
     isDisabled: importBtn?.disabled,
-    buttonText: importBtn?.textContent 
+    buttonText: importBtn?.textContent
   });
-  
+
   if (importBtn && importBtn.disabled) {
     console.log("handleBackupImport: Button is disabled, returning");
     showToast(t("settings.backup.toast.completeConfirmation"));
@@ -1075,10 +1079,10 @@ async function handleBackupImport(): Promise<void> {
 
   const importMode = (document.querySelector('input[name="importMode"]:checked') as HTMLInputElement)?.value || "merge";
   const confirmationInput = document.getElementById("backupConfirmationInput") as HTMLInputElement | null;
-  console.log("handleBackupImport: Mode and confirmation", { 
-    importMode, 
+  console.log("handleBackupImport: Mode and confirmation", {
+    importMode,
     confirmationValue: confirmationInput?.value,
-    confirmationTrimmed: confirmationInput?.value?.trim() 
+    confirmationTrimmed: confirmationInput?.value?.trim()
   });
 
   // Validate confirmation for replace mode
@@ -1092,7 +1096,7 @@ async function handleBackupImport(): Promise<void> {
 
   try {
     console.log("handleBackupImport: Starting", { importMode, hasData: !!getBackupData() });
-    
+
     const body: any = {
       data: getBackupData(),
       importMode: importMode
@@ -1100,19 +1104,19 @@ async function handleBackupImport(): Promise<void> {
     if (importMode === "replace") {
       body.confirmation = confirmationInput!.value.trim();
     }
-    
+
     // In anonymous mode, import into current board (if viewing one)
     const currentSlug = getSlug();
     if (currentSlug) {
       body.targetSlug = currentSlug;
     }
 
-    console.log("handleBackupImport: Request body prepared", { 
+    console.log("handleBackupImport: Request body prepared", {
       importMode: body.importMode,
-      targetSlug: body.targetSlug, 
+      targetSlug: body.targetSlug,
       hasData: !!body.data,
       hasConfirmation: !!body.confirmation,
-      projectsCount: body.data?.projects?.length 
+      projectsCount: body.data?.projects?.length
     });
 
     // Show loading state
@@ -1460,7 +1464,7 @@ async function setupBackupTab(signal?: AbortSignal): Promise<void> {
     trelloImportBtn.addEventListener("click", handleTrelloImport, signal ? { signal } : undefined);
     setTrelloImportBtn(trelloImportBtn);
   }
-  
+
   // Call updateBackupUI to set initial state after a brief delay to ensure DOM is ready
   setTimeout(() => {
     updateBackupUI();
@@ -1482,12 +1486,12 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
 
   // Full mode only: show Profile tab (auth status endpoint exists only in full mode).
   const showProfileTab = !!getAuthStatusAvailable();
-  
+
   // Show Users tab only if user has admin or owner role
   const currentUser = getUser();
   const showUsersTab = showProfileTab && (currentUser?.systemRole === "owner" || currentUser?.systemRole === "admin");
   const canSeePushConfigurationDetails = currentUser?.systemRole === "owner" || currentUser?.systemRole === "admin";
-  
+
   // In board view we have a slug and can use capability routes.
   // In projects listing view (full mode), show the user's cross-project personal library.
   // Tag mutation scope is explicit (mine/board) and must not be inferred from
@@ -1628,7 +1632,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   // Fetch tags and chart data only if we have project access
   let tagsHTML = "";
   let realBurndownData: any[] = [];
-  
+
   if (hasProjectAccess && tagSettingsScope) {
     try {
       tagsHTML = await loadTagSettingsContent(tagsURL!, tagSettingsScope);
@@ -2045,7 +2049,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     ` : "";
 
   // Determine content for each tab
-  const tagColorsContent = hasProjectAccess 
+  const tagColorsContent = hasProjectAccess
     ? `
       <div class="settings-section">
         <div class="settings-section__title" data-i18n-text="settings.tagColors.title">Tag Colors</div>
@@ -2281,6 +2285,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   const logoutBtn = document.getElementById("logoutBtn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", () => {
+      invalidateServiceAccountsLifecycle();
       (settingsDialog as HTMLDialogElement).close();
       void getAppRuntime().transport().logout();
     }, { signal });
@@ -2398,7 +2403,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       btn.addEventListener("click", async (e) => {
         const userId = (e.currentTarget as HTMLElement).getAttribute("data-user-id");
         if (!userId) return;
-        
+
         try {
           await apiFetch(`/api/admin/users/${userId}/role`, {
             method: "PATCH",
@@ -2417,7 +2422,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       btn.addEventListener("click", async (e) => {
         const userId = (e.currentTarget as HTMLElement).getAttribute("data-user-id");
         if (!userId) return;
-        
+
         const confirmed = await showConfirmDialog(
           t("settings.users.demote.confirmMessage"),
           t("settings.users.demote.confirmTitle"),
@@ -2426,7 +2431,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         if (!confirmed) {
           return;
         }
-        
+
         try {
           await apiFetch(`/api/admin/users/${userId}/role`, {
             method: "PATCH",
@@ -2464,11 +2469,11 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       btn.addEventListener("click", async (e) => {
         const userId = (e.currentTarget as HTMLElement).getAttribute("data-user-id");
         if (!userId) return;
-        
+
         if (!await confirmDelete(t("settings.users.delete.confirmMessage"))) {
           return;
         }
-        
+
         try {
           await apiFetch(`/api/admin/users/${userId}`, {
             method: "DELETE",
@@ -3052,11 +3057,19 @@ async function renderUsersTabContent(): Promise<string> {
 
     const defaultBoardHTML = renderDefaultBoardSection(defaultBoardSetting, projects);
 
-    if (users.length === 0) {
-      return `${defaultBoardHTML}<div class="settings-section"><div class="muted" data-i18n-text="settings.users.empty">No users found.</div></div>`;
+    // Service accounts have a dedicated Settings section; keep them out of the
+    // human User Management table without changing the /api/admin/users contract.
+    const humanUsers = users.filter((user: any) => !user.isService);
+
+    if (humanUsers.length === 0) {
+      return `
+        ${defaultBoardHTML}
+        <div class="settings-section"><div class="muted" data-i18n-text="settings.users.empty">No users found.</div></div>
+        ${isOwner || isAdmin ? await renderServiceAccountsSectionHTML(isOwner) : ""}
+      `;
     }
 
-    const rows = users.map((user: any) => {
+    const rows = humanUsers.map((user: any) => {
       const isSelf = user.id === currentUser?.id;
       const userRole = user.systemRole || "user";
       const isAdminRole = userRole === "admin";
@@ -3070,7 +3083,7 @@ async function renderUsersTabContent(): Promise<string> {
           : isGuestRole
             ? ""
             : `<button class="btn btn--ghost btn--small" data-action="promote" data-user-id="${user.id}" data-i18n-text="settings.users.actions.promote">Promote</button>`;
-        const guestRoleAction = user.isService ? "" : isGuestRole
+        const guestRoleAction = isGuestRole
           ? `<button class="btn btn--ghost btn--small" data-guest-role="user" data-user-id="${user.id}" data-i18n-text="settings.users.actions.setUser">${escapeHTML(t("settings.users.actions.setUser"))}</button>`
           : `<button class="btn btn--ghost btn--small" data-guest-role="guest" data-user-id="${user.id}" data-i18n-text="settings.users.actions.setGuest">${escapeHTML(t("settings.users.actions.setGuest"))}</button>`;
         actionsHTML = `
@@ -3254,44 +3267,44 @@ function showCreateUserDialog(): void {
 
       <label class="field">
         <div class="field__label" data-i18n-text="settings.users.createUser.emailLabel">Email</div>
-        <input 
-          type="email" 
-          id="createUserEmail" 
-          class="input" 
-          placeholder="user@example.com" 
+        <input
+          type="email"
+          id="createUserEmail"
+          class="input"
+          placeholder="user@example.com"
           data-i18n-placeholder="settings.users.createUser.emailPlaceholder"
-          maxlength="200" 
-          autocomplete="email" 
-          required 
+          maxlength="200"
+          autocomplete="email"
+          required
         />
       </label>
 
       <label class="field">
         <div class="field__label" data-i18n-text="settings.users.createUser.nameLabel">Name</div>
-        <input 
-          type="text" 
-          id="createUserName" 
-          class="input" 
-          placeholder="User Name" 
+        <input
+          type="text"
+          id="createUserName"
+          class="input"
+          placeholder="User Name"
           data-i18n-placeholder="settings.users.createUser.namePlaceholder"
-          data-code-point-max="200" 
-          autocomplete="name" 
-          required 
+          data-code-point-max="200"
+          autocomplete="name"
+          required
         />
       </label>
 
       <label class="field">
         <div class="field__label" data-i18n-text="settings.users.createUser.passwordLabel">Temporary Password</div>
         <div class="password-row">
-          <input 
-            type="password" 
-            id="createUserPassword" 
-            class="input" 
-            placeholder="Password (min 8 characters)" 
+          <input
+            type="password"
+            id="createUserPassword"
+            class="input"
+            placeholder="Password (min 8 characters)"
             data-i18n-placeholder="settings.users.createUser.passwordPlaceholder"
-            maxlength="200" 
-            autocomplete="new-password" 
-            required 
+            maxlength="200"
+            autocomplete="new-password"
+            required
           />
           <button type="button" class="password-toggle" id="createUserPasswordToggle" aria-label="Show password" title="Show password">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>

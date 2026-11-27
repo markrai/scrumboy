@@ -1,11 +1,18 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"scrumboy/internal/store"
 )
 
 // REST transport for the settings UI. The store owns the authorization matrix; these tests pin that
@@ -126,6 +133,40 @@ func TestServiceAccountREST_AdminCanListAndCreateButNotMintOrDelete(t *testing.T
 	}
 }
 
+// Admins may revoke service tokens (reducing access only); Owners mint, Admins revoke.
+func TestServiceAccountREST_AdminCanRevokeServiceToken(t *testing.T) {
+	f, _ := newServiceAccountHTTPFixture(t)
+	admin := serviceAccountRESTClient(t, f, "admin")
+
+	tokensURL := fmt.Sprintf("%s/api/admin/service-accounts/%d/tokens", f.ts, f.svc.ID)
+	resp, body := doJSON(t, f.owner, http.MethodPost, tokensURL, map[string]any{"name": "admin-revokes"}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("owner mint: %d %s", resp.StatusCode, body)
+	}
+	var minted struct {
+		TokenID int64  `json:"tokenId"`
+		Token   string `json:"token"`
+	}
+	if err := json.Unmarshal(body, &minted); err != nil || minted.TokenID == 0 || minted.Token == "" {
+		t.Fatalf("mint body = %s (%v)", body, err)
+	}
+	if _, err := f.st.GetUserByAPIToken(context.Background(), minted.Token); err != nil {
+		t.Fatalf("minted credential must authenticate before revoke: %v", err)
+	}
+
+	resp, body = doJSON(t, admin, http.MethodDelete, fmt.Sprintf("%s/api/admin/service-tokens/%d", f.ts, minted.TokenID), nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("admin revoke: %d %s", resp.StatusCode, body)
+	}
+	if _, err := f.st.GetUserByAPIToken(context.Background(), minted.Token); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("revoked credential still authenticates: %v", err)
+	}
+	_, body = doJSON(t, admin, http.MethodGet, tokensURL+"?limit=100", nil, nil)
+	if !strings.Contains(string(body), "revokedAt") {
+		t.Fatalf("token not marked revoked after admin revoke: %s", body)
+	}
+}
+
 func TestServiceAccountREST_PlainUserAndAnonymousAreRejected(t *testing.T) {
 	f, _ := newServiceAccountHTTPFixture(t)
 	user := serviceAccountRESTClient(t, f, "user")
@@ -184,28 +225,28 @@ func TestServiceAccountREST_AdminCannotTouchHumanAccountsOrTokens(t *testing.T) 
 	f, _ := newServiceAccountHTTPFixture(t)
 	admin := serviceAccountRESTClient(t, f, "admin")
 
-	// Owner's personal API token.
-	resp, body := doJSON(t, f.owner, http.MethodPost, f.ts+"/api/me/tokens", map[string]any{"name": "personal"}, nil)
-	if resp.StatusCode >= 300 {
-		t.Skipf("personal token route unavailable: %d %s", resp.StatusCode, body)
+	// Deterministic fixture: Owner's personal API token via /api/me/tokens (response uses "id").
+	resp, body := doJSON(t, f.owner, http.MethodPost, f.ts+"/api/me/tokens", map[string]any{"name": "personal-containment"}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("personal token mint prerequisite failed: %d %s", resp.StatusCode, body)
 	}
 	var personal struct {
-		ID      int64  `json:"id"`
-		TokenID int64  `json:"tokenId"`
-		Token   string `json:"token"`
+		ID    int64  `json:"id"`
+		Token string `json:"token"`
 	}
-	_ = json.Unmarshal(body, &personal)
-	tokenID := personal.ID
-	if tokenID == 0 {
-		tokenID = personal.TokenID
+	if err := json.Unmarshal(body, &personal); err != nil || personal.ID == 0 || personal.Token == "" {
+		t.Fatalf("personal token fixture unusable: %s (%v)", body, err)
 	}
-	if tokenID == 0 {
-		t.Skipf("could not read personal token id: %s", body)
+	if _, err := f.st.GetUserByAPIToken(context.Background(), personal.Token); err != nil {
+		t.Fatalf("personal token must authenticate before containment checks: %v", err)
 	}
 
-	resp, body = doJSON(t, admin, http.MethodDelete, fmt.Sprintf("%s/api/admin/service-tokens/%d", f.ts, tokenID), nil, nil)
+	resp, body = doJSON(t, admin, http.MethodDelete, fmt.Sprintf("%s/api/admin/service-tokens/%d", f.ts, personal.ID), nil, nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("admin revoke owner's personal token: %d %s, want 404", resp.StatusCode, body)
+	}
+	if _, err := f.st.GetUserByAPIToken(context.Background(), personal.Token); err != nil {
+		t.Fatalf("personal token must still authenticate after rejected service-token revoke: %v", err)
 	}
 	resp, body = doJSON(t, admin, http.MethodGet, fmt.Sprintf("%s/api/admin/service-accounts/%d/tokens", f.ts, f.ownerID), nil, nil)
 	if resp.StatusCode != http.StatusNotFound {
@@ -219,6 +260,154 @@ func TestServiceAccountREST_AdminCannotTouchHumanAccountsOrTokens(t *testing.T) 
 	resp, body = doJSON(t, f.owner, http.MethodGet, f.ts+"/api/admin/service-accounts", nil, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("owner list after attempts: %d %s", resp.StatusCode, body)
+	}
+}
+
+func TestServiceAccountREST_MintedCredentialWorksUntilRevokeOrAccountDelete(t *testing.T) {
+	f, _ := newServiceAccountHTTPFixture(t)
+	ctx := store.WithUserID(context.Background(), f.ownerID)
+	project, err := f.st.CreateProject(ctx, "SA Credential Project")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := f.st.AddProjectMember(ctx, f.ownerID, project.ID, f.svc.ID, store.RoleViewer); err != nil {
+		t.Fatalf("add service member: %v", err)
+	}
+
+	tokensURL := fmt.Sprintf("%s/api/admin/service-accounts/%d/tokens", f.ts, f.svc.ID)
+	resp, body := doJSON(t, f.owner, http.MethodPost, tokensURL, map[string]any{"name": "lifecycle"}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("mint: %d %s", resp.StatusCode, body)
+	}
+	var minted struct {
+		TokenID int64  `json:"tokenId"`
+		Token   string `json:"token"`
+	}
+	if err := json.Unmarshal(body, &minted); err != nil || minted.Token == "" || minted.TokenID == 0 {
+		t.Fatalf("mint body = %s (%v)", body, err)
+	}
+	authenticated, err := f.st.GetUserByAPIToken(context.Background(), minted.Token)
+	if err != nil || authenticated.ID != f.svc.ID || !authenticated.IsService {
+		t.Fatalf("minted auth = %+v, %v", authenticated, err)
+	}
+	role, err := f.st.GetProjectRole(context.Background(), project.ID, authenticated.ID)
+	if err != nil || role != store.RoleViewer {
+		t.Fatalf("intended project permission = %v, %v", role, err)
+	}
+
+	resp, body = doJSON(t, f.owner, http.MethodDelete, fmt.Sprintf("%s/api/admin/service-tokens/%d", f.ts, minted.TokenID), nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("revoke: %d %s", resp.StatusCode, body)
+	}
+	if _, err := f.st.GetUserByAPIToken(context.Background(), minted.Token); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("after revoke: %v", err)
+	}
+
+	resp, body = doJSON(t, f.owner, http.MethodPost, tokensURL, map[string]any{"name": "pre-delete"}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("second mint: %d %s", resp.StatusCode, body)
+	}
+	var second struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(body, &second); err != nil || second.Token == "" {
+		t.Fatalf("second mint body = %s (%v)", body, err)
+	}
+	if _, err := f.st.GetUserByAPIToken(context.Background(), second.Token); err != nil {
+		t.Fatalf("second mint must authenticate: %v", err)
+	}
+	resp, body = doJSON(t, f.owner, http.MethodDelete, fmt.Sprintf("%s/api/admin/service-accounts/%d", f.ts, f.svc.ID), nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete account: %d %s", resp.StatusCode, body)
+	}
+	if _, err := f.st.GetUserByAPIToken(context.Background(), second.Token); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("after account delete: %v", err)
+	}
+}
+
+func TestWriteServiceAdminErr_RedactsUnexpectedInternals(t *testing.T) {
+	sensitive := fmt.Errorf(`sql: SELECT * FROM secret_credentials WHERE path='/var/lib/scrumboy.db' value too large`)
+	rr := httptest.NewRecorder()
+	writeServiceAdminErr(rr, sensitive)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rr.Code)
+	}
+	body := decodeAPIErrorTestBody(t, rr)
+	if body.Error.Code != "INTERNAL" || body.Error.Message != "internal error" {
+		t.Fatalf("envelope = %+v", body.Error)
+	}
+	raw := rr.Body.String()
+	for _, leak := range []string{"secret_credentials", "too large", "SELECT", "/var/lib", "scrumboy.db"} {
+		if strings.Contains(raw, leak) {
+			t.Fatalf("client response leaks %q: %s", leak, raw)
+		}
+	}
+}
+
+func TestWriteServiceAdminErr_PreservesTypedFailures(t *testing.T) {
+	cases := []struct {
+		name    string
+		err     error
+		status  int
+		code    string
+		message string
+	}{
+		{"unauthorized", store.ErrUnauthorized, http.StatusForbidden, "FORBIDDEN", "forbidden"},
+		{"not found", store.ErrNotFound, http.StatusNotFound, "NOT_FOUND", "not found"},
+		{"conflict", fmt.Errorf("%w: sole maintainer", store.ErrConflict), http.StatusConflict, "CONFLICT", "conflict: sole maintainer"},
+		{"validation", fmt.Errorf("%w: invalid name", store.ErrValidation), http.StatusBadRequest, "VALIDATION_ERROR", "validation: invalid name"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			writeServiceAdminErr(rr, tc.err)
+			if rr.Code != tc.status {
+				t.Fatalf("status = %d, want %d body=%s", rr.Code, tc.status, rr.Body.String())
+			}
+			body := decodeAPIErrorTestBody(t, rr)
+			if body.Error.Code != tc.code {
+				t.Fatalf("code = %q, want %q", body.Error.Code, tc.code)
+			}
+			if body.Error.Message != tc.message {
+				t.Fatalf("message = %q, want %q", body.Error.Message, tc.message)
+			}
+		})
+	}
+}
+
+func TestServiceAccountREST_CSRFRequiredOnMutations(t *testing.T) {
+	f, _ := newServiceAccountHTTPFixture(t)
+	base, err := url.Parse(f.ts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := []struct {
+		method, path string
+	}{
+		{http.MethodPost, f.ts + "/api/admin/service-accounts"},
+		{http.MethodDelete, fmt.Sprintf("%s/api/admin/service-accounts/%d", f.ts, f.svc.ID)},
+		{http.MethodPost, fmt.Sprintf("%s/api/admin/service-accounts/%d/tokens", f.ts, f.svc.ID)},
+		{http.MethodDelete, f.ts + "/api/admin/service-tokens/1"},
+	}
+	for _, tc := range paths {
+		req, err := http.NewRequest(tc.method, tc.path, strings.NewReader(`{"name":"x"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		// Session cookie without X-Scrumboy must still be CSRF-rejected.
+		for _, c := range f.owner.Jar.Cookies(base) {
+			req.AddCookie(c)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), "missing X-Scrumboy header") {
+			t.Errorf("%s %s: %d %s, want CSRF 403", tc.method, tc.path, resp.StatusCode, body)
+		}
 	}
 }
 

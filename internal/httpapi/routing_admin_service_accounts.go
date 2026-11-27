@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,14 +50,35 @@ func serviceTokenMetaToJSON(t store.APITokenMeta) serviceTokenJSON {
 	}
 }
 
-// writeServiceAdminErr maps store.ErrUnauthorized to 403, as the MCP tools do. The requester is
-// already authenticated here, so a 401 would make the SPA treat "not the owner" as "signed out".
+// writeServiceAdminErr maps typed store failures for the service-account admin
+// surface. ErrUnauthorized becomes 403 (the requester is already authenticated,
+// so a 401 would make the SPA treat "not the owner" as "signed out"). Unexpected
+// errors are redacted as INTERNAL without matching message text; diagnostics
+// stay in the server log via formatErrorWithCause.
 func writeServiceAdminErr(w http.ResponseWriter, err error) {
-	if errors.Is(err, store.ErrUnauthorized) {
+	switch {
+	case errors.Is(err, store.ErrUnauthorized):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
-		return
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+	case errors.Is(err, store.ErrForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
+	case errors.Is(err, store.ErrConflict):
+		writeError(w, http.StatusConflict, "CONFLICT", err.Error(), nil)
+	case errors.Is(err, store.ErrValidation):
+		writeValidationError(w, err.Error(), validationReasonFromStoreError(err), store.ErrorDetails(err))
+	case errors.Is(err, store.ErrStorageBudget):
+		var budget *store.StorageBudgetError
+		details := map[string]any{}
+		if errors.As(err, &budget) {
+			details = map[string]any{"scope": budget.Scope, "limitBytes": budget.LimitBytes, "usedBytes": budget.UsedBytes}
+		}
+		writeError(w, http.StatusInsufficientStorage, "STORAGE_BUDGET_EXCEEDED", "storage budget exceeded", details)
+	default:
+		// Do not classify by matching arbitrary message text (e.g. "too large").
+		log.Printf("service-account admin: %s", formatErrorWithCause(err))
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "internal error", nil)
 	}
-	writeStoreErr(w, err, false)
 }
 
 func parsePageLimit(w http.ResponseWriter, r *http.Request, max int) (int, bool) {

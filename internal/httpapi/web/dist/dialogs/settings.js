@@ -38,7 +38,7 @@ import { bindCalendarTabInteractions, loadCalendarTabContent, } from './settings
 import { recordLocalMutation } from '../realtime/guard.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { bindApiTokensInteractions, invalidateApiTokensCache, renderApiTokensSectionHTML } from './settings-api-tokens.js';
-import { bindServiceAccountsInteractions, renderServiceAccountsSectionHTML } from './settings-service-accounts.js';
+import { bindServiceAccountsInteractions, invalidateServiceAccountsLifecycle, renderServiceAccountsSectionHTML } from './settings-service-accounts.js';
 import { bindSettingsTabsFit, fitSettingsTabsNav } from './settings-tabs-fit.js';
 import { bindPublicLocaleSelect, renderPublicLocaleSelectHTML, syncPublicLocaleSelect } from '../i18n/locale-select.js';
 import { appHomePath } from '../app-home.js';
@@ -66,6 +66,10 @@ function installSettingsDialogCloseForKeybindingCaptureOnce() {
     settingsKeybindingCloseListenerInstalled = true;
     settingsDialog.addEventListener("close", () => {
         resetKeybindingCaptureUI();
+        // Tear down SA token/plaintext dialogs and invalidate in-flight completions
+        // so Settings close / logout cannot leave secrets or stale rerenders behind.
+        settingsAbortController?.abort();
+        invalidateServiceAccountsLifecycle();
     });
 }
 installSettingsDialogCloseForKeybindingCaptureOnce();
@@ -2067,6 +2071,7 @@ export async function renderSettingsModal(options) {
     const logoutBtn = document.getElementById("logoutBtn");
     if (logoutBtn) {
         logoutBtn.addEventListener("click", () => {
+            invalidateServiceAccountsLifecycle();
             settingsDialog.close();
             void getAppRuntime().transport().logout();
         }, { signal });
@@ -2771,10 +2776,17 @@ async function renderUsersTabContent() {
             apiFetch("/api/projects").catch(() => []),
         ]);
         const defaultBoardHTML = renderDefaultBoardSection(defaultBoardSetting, projects);
-        if (users.length === 0) {
-            return `${defaultBoardHTML}<div class="settings-section"><div class="muted" data-i18n-text="settings.users.empty">No users found.</div></div>`;
+        // Service accounts have a dedicated Settings section; keep them out of the
+        // human User Management table without changing the /api/admin/users contract.
+        const humanUsers = users.filter((user) => !user.isService);
+        if (humanUsers.length === 0) {
+            return `
+        ${defaultBoardHTML}
+        <div class="settings-section"><div class="muted" data-i18n-text="settings.users.empty">No users found.</div></div>
+        ${isOwner || isAdmin ? await renderServiceAccountsSectionHTML(isOwner) : ""}
+      `;
         }
-        const rows = users.map((user) => {
+        const rows = humanUsers.map((user) => {
             const isSelf = user.id === currentUser?.id;
             const userRole = user.systemRole || "user";
             const isAdminRole = userRole === "admin";
@@ -2787,7 +2799,7 @@ async function renderUsersTabContent() {
                     : isGuestRole
                         ? ""
                         : `<button class="btn btn--ghost btn--small" data-action="promote" data-user-id="${user.id}" data-i18n-text="settings.users.actions.promote">Promote</button>`;
-                const guestRoleAction = user.isService ? "" : isGuestRole
+                const guestRoleAction = isGuestRole
                     ? `<button class="btn btn--ghost btn--small" data-guest-role="user" data-user-id="${user.id}" data-i18n-text="settings.users.actions.setUser">${escapeHTML(t("settings.users.actions.setUser"))}</button>`
                     : `<button class="btn btn--ghost btn--small" data-guest-role="guest" data-user-id="${user.id}" data-i18n-text="settings.users.actions.setGuest">${escapeHTML(t("settings.users.actions.setGuest"))}</button>`;
                 actionsHTML = `
@@ -2963,44 +2975,44 @@ function showCreateUserDialog() {
 
       <label class="field">
         <div class="field__label" data-i18n-text="settings.users.createUser.emailLabel">Email</div>
-        <input 
-          type="email" 
-          id="createUserEmail" 
-          class="input" 
-          placeholder="user@example.com" 
+        <input
+          type="email"
+          id="createUserEmail"
+          class="input"
+          placeholder="user@example.com"
           data-i18n-placeholder="settings.users.createUser.emailPlaceholder"
-          maxlength="200" 
-          autocomplete="email" 
-          required 
+          maxlength="200"
+          autocomplete="email"
+          required
         />
       </label>
 
       <label class="field">
         <div class="field__label" data-i18n-text="settings.users.createUser.nameLabel">Name</div>
-        <input 
-          type="text" 
-          id="createUserName" 
-          class="input" 
-          placeholder="User Name" 
+        <input
+          type="text"
+          id="createUserName"
+          class="input"
+          placeholder="User Name"
           data-i18n-placeholder="settings.users.createUser.namePlaceholder"
-          data-code-point-max="200" 
-          autocomplete="name" 
-          required 
+          data-code-point-max="200"
+          autocomplete="name"
+          required
         />
       </label>
 
       <label class="field">
         <div class="field__label" data-i18n-text="settings.users.createUser.passwordLabel">Temporary Password</div>
         <div class="password-row">
-          <input 
-            type="password" 
-            id="createUserPassword" 
-            class="input" 
-            placeholder="Password (min 8 characters)" 
+          <input
+            type="password"
+            id="createUserPassword"
+            class="input"
+            placeholder="Password (min 8 characters)"
             data-i18n-placeholder="settings.users.createUser.passwordPlaceholder"
-            maxlength="200" 
-            autocomplete="new-password" 
-            required 
+            maxlength="200"
+            autocomplete="new-password"
+            required
           />
           <button type="button" class="password-toggle" id="createUserPasswordToggle" aria-label="Show password" title="Show password">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>

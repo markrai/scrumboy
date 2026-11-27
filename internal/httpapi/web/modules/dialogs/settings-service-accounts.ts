@@ -1,6 +1,6 @@
 import { apiFetch } from '../api.js';
 import { attachDialogClose, bindDialogLocale, escapeHTML, showConfirmDialog, showToast } from '../utils.js';
-import { apiErrorMessageOrRaw, formatDate, t } from '../i18n/index.js';
+import { apiErrorMessageOrRaw, formatDate, hydrateI18n, t } from '../i18n/index.js';
 
 /**
  * Admin UI for service accounts and their tokens (Settings > Users).
@@ -26,22 +26,84 @@ type BindOptions = {
   isOwner: boolean;
 };
 
+type MintResponse = {
+  tokenId?: number;
+  token?: unknown;
+};
+
 const DATE_OPTS: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
 
+/** Hard bound on list walks so a hostile/nextCursor loop cannot grow without limit. */
+export const MAX_LIST_PAGES = 100;
+
+/**
+ * Bumped on Settings teardown, logout and account switching so in-flight mint/create/delete
+ * completions cannot reopen dialogs, show secrets, revoke under another session, or rerender.
+ */
+let serviceAccountsLifecycleGeneration = 0;
+
+/** Closers for open SA management / plaintext dialogs; invoked on lifecycle invalidation. */
+const openServiceAccountDialogClosers = new Set<() => void>();
+
+function registerServiceAccountDialogCloser(close: () => void): () => void {
+  openServiceAccountDialogClosers.add(close);
+  return () => {
+    openServiceAccountDialogClosers.delete(close);
+  };
+}
+
+/**
+ * Ends the current service-account UI lifecycle: closes open token/plaintext dialogs
+ * (clearing any displayed secret) and invalidates in-flight completion handlers.
+ * Does not issue revoke/cleanup mutations — those must not run under a different session.
+ */
+export function invalidateServiceAccountsLifecycle(): void {
+  serviceAccountsLifecycleGeneration++;
+  const closers = [...openServiceAccountDialogClosers];
+  openServiceAccountDialogClosers.clear();
+  for (const close of closers) {
+    try {
+      close();
+    } catch {
+      // Best-effort UI cleanup only.
+    }
+  }
+}
+
+/** Test helper: current lifecycle generation. */
+export function getServiceAccountsLifecycleGeneration(): number {
+  return serviceAccountsLifecycleGeneration;
+}
+
+function lifecycleStillValid(generation: number): boolean {
+  return generation === serviceAccountsLifecycleGeneration;
+}
+
 /** Follows nextCursor to the end so no account or token is hidden behind a page boundary. */
-async function fetchAllPages<T>(path: string): Promise<T[]> {
+export async function fetchAllPages<T>(path: string): Promise<T[]> {
   const out: T[] = [];
   let cursor = "";
-  for (let page = 0; page < 100; page++) {
+  const seen = new Set<string>();
+  for (let page = 0; page < MAX_LIST_PAGES; page++) {
+    if (cursor) {
+      if (seen.has(cursor)) {
+        throw new Error("service-account list returned a repeated cursor");
+      }
+      seen.add(cursor);
+    }
     const sep = path.includes("?") ? "&" : "?";
     const res = await apiFetch<{ items: T[]; nextCursor?: string | null } | null>(
       `${path}${sep}limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
     );
     out.push(...(res?.items ?? []));
-    if (!res?.nextCursor) break;
+    if (!res?.nextCursor) {
+      return out;
+    }
     cursor = res.nextCursor;
   }
-  return out;
+  throw new Error(
+    "service-account list incomplete: page limit reached while more results remain",
+  );
 }
 
 export async function renderServiceAccountsSectionHTML(isOwner: boolean): Promise<string> {
@@ -93,10 +155,19 @@ export async function renderServiceAccountsSectionHTML(isOwner: boolean): Promis
   `;
 }
 
-/** Shows a freshly minted token once, with a copy action. */
+function clearPlaintextTokenInput(dialog: HTMLElement): void {
+  const input = dialog.querySelector<HTMLInputElement>("#saTokenCreatedDisplay");
+  if (input) {
+    input.value = "";
+    input.removeAttribute("value");
+  }
+}
+
+/** Shows a freshly minted token once, with a copy action. Dialog cleanup removes secret-bearing DOM. */
 function showServiceTokenCreatedDialog(token: string): void {
   const dialog = document.createElement("dialog");
   dialog.className = "dialog";
+  dialog.dataset.saTokenCreatedDialog = "1";
   dialog.innerHTML = `
     <div class="dialog__form">
       <div class="dialog__header">
@@ -117,7 +188,13 @@ function showServiceTokenCreatedDialog(token: string): void {
   document.body.appendChild(dialog);
   (dialog as HTMLDialogElement).showModal();
   const releaseLocale = bindDialogLocale(dialog);
-  const close = attachDialogClose(dialog, releaseLocale);
+
+  let unregister = () => {};
+  const close = attachDialogClose(dialog, releaseLocale, () => {
+    clearPlaintextTokenInput(dialog);
+    unregister();
+  });
+  unregister = registerServiceAccountDialogCloser(close);
   dialog.querySelector("#saTokenCreatedClose")?.addEventListener("click", close);
   dialog.querySelector("#saTokenCreatedDone")?.addEventListener("click", close);
   dialog.addEventListener("click", (e) => {
@@ -135,8 +212,20 @@ function showServiceTokenCreatedDialog(token: string): void {
   });
 }
 
-function renderTokenRows(tokens: ServiceToken[], isOwner: boolean): string {
-  void isOwner;
+/**
+ * Best-effort revoke when a mint 2xx response lacked a usable secret, or when the
+ * mint dialog was dismissed in the same authenticated lifecycle before the secret
+ * could be shown. Failures are swallowed — the caller already warns when needed.
+ */
+async function bestEffortRevokeServiceToken(tokenId: string | number): Promise<void> {
+  try {
+    await apiFetch(`/api/admin/service-tokens/${encodeURIComponent(String(tokenId))}`, { method: "DELETE" });
+  } catch {
+    // Caller already warned; nothing more to surface.
+  }
+}
+
+function renderTokenRows(tokens: ServiceToken[]): string {
   if (tokens.length === 0) {
     return `<div class="muted" data-i18n-text="settings.serviceAccounts.tokens.empty">No tokens yet.</div>`;
   }
@@ -170,10 +259,11 @@ function renderTokenRows(tokens: ServiceToken[], isOwner: boolean): string {
 async function showServiceAccountTokensDialog(accountId: number, accountName: string, isOwner: boolean): Promise<void> {
   const dialog = document.createElement("dialog");
   dialog.className = "dialog";
+  dialog.dataset.saTokensDialog = "1";
   dialog.innerHTML = `
     <div class="dialog__form">
       <div class="dialog__header">
-        <div class="dialog__title">${escapeHTML(t("settings.serviceAccounts.tokens.title", { name: accountName }))}</div>
+        <div class="dialog__title" id="saTokensTitle">${escapeHTML(t("settings.serviceAccounts.tokens.title", { name: accountName }))}</div>
         <button class="btn btn--ghost" type="button" id="saTokensClose" aria-label="Close" data-i18n-aria-label="common.close">✕</button>
       </div>
       <div id="saTokensBody"></div>
@@ -189,8 +279,20 @@ async function showServiceAccountTokensDialog(accountId: number, accountName: st
   `;
   document.body.appendChild(dialog);
   (dialog as HTMLDialogElement).showModal();
-  const releaseLocale = bindDialogLocale(dialog);
-  const close = attachDialogClose(dialog, releaseLocale);
+  const syncTitleLocale = () => {
+    const title = dialog.querySelector<HTMLElement>("#saTokensTitle");
+    if (title) title.textContent = t("settings.serviceAccounts.tokens.title", { name: accountName });
+  };
+  const releaseLocale = bindDialogLocale(dialog, syncTitleLocale);
+  let dialogAlive = true;
+  let refreshGeneration = 0;
+  let unregister = () => {};
+  const close = attachDialogClose(dialog, releaseLocale, () => {
+    dialogAlive = false;
+    refreshGeneration++;
+    unregister();
+  });
+  unregister = registerServiceAccountDialogCloser(close);
   dialog.querySelector("#saTokensClose")?.addEventListener("click", close);
   dialog.addEventListener("click", (e) => {
     if (e.target === dialog) close();
@@ -199,15 +301,10 @@ async function showServiceAccountTokensDialog(accountId: number, accountName: st
   const bodyEl = dialog.querySelector<HTMLElement>("#saTokensBody")!;
   const pendingRevokes = new Set<string>();
 
-  const refresh = async () => {
-    try {
-      const items = await fetchAllPages<ServiceToken>(`/api/admin/service-accounts/${accountId}/tokens`);
-      bodyEl.innerHTML = renderTokenRows(items, isOwner);
-    } catch (err: any) {
-      bodyEl.innerHTML = `<div class="muted" role="alert">${escapeHTML(apiErrorMessageOrRaw(err, { fallbackKey: "settings.serviceAccounts.tokens.loadFailed" }))}</div>`;
-    }
+  const wireRevokeButtons = () => {
     bodyEl.querySelectorAll<HTMLElement>('[data-action="sa-revoke"]').forEach((btn) => {
       btn.addEventListener("click", async () => {
+        if (!dialogAlive) return;
         const id = btn.getAttribute("data-token-id");
         if (!id || pendingRevokes.has(id)) return;
         const name = btn.getAttribute("data-token-name") || t("settings.profile.apiTokens.unnamed");
@@ -216,46 +313,125 @@ async function showServiceAccountTokensDialog(accountId: number, accountName: st
           t("settings.profile.apiTokens.revoke.confirmTitle"),
           t("settings.profile.apiTokens.revoke.confirmAction"),
         );
-        if (!confirmed || pendingRevokes.has(id)) return;
+        if (!dialogAlive || !confirmed || pendingRevokes.has(id)) return;
         pendingRevokes.add(id);
         if (btn instanceof HTMLButtonElement) btn.disabled = true;
         try {
-          await apiFetch(`/api/admin/service-tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
-          showToast(t("settings.profile.apiTokens.toast.revoked"));
-        } catch (err: any) {
-          showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.apiTokens.toast.revokeFailed" }));
+          try {
+            await apiFetch(`/api/admin/service-tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
+          } catch (err: any) {
+            if (err?.status !== 404) {
+              if (dialogAlive) {
+                showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.apiTokens.toast.revokeFailed" }));
+                if (btn instanceof HTMLButtonElement) btn.disabled = false;
+              }
+              return;
+            }
+          }
+          if (dialogAlive) showToast(t("settings.profile.apiTokens.toast.revoked"));
         } finally {
           pendingRevokes.delete(id);
         }
-        await refresh();
+        if (dialogAlive) {
+          try {
+            await refresh();
+          } catch {
+            // Revocation already succeeded; refresh is best-effort.
+          }
+        }
       });
     });
+  };
+
+  const refresh = async () => {
+    const generation = ++refreshGeneration;
+    try {
+      const items = await fetchAllPages<ServiceToken>(`/api/admin/service-accounts/${accountId}/tokens`);
+      if (!dialogAlive || generation !== refreshGeneration) return;
+      bodyEl.innerHTML = renderTokenRows(items);
+      // Dynamically inserted rows need locale hydration after render.
+      hydrateI18n(bodyEl);
+      wireRevokeButtons();
+    } catch (err: any) {
+      if (!dialogAlive || generation !== refreshGeneration) return;
+      bodyEl.innerHTML = `<div class="muted" role="alert">${escapeHTML(apiErrorMessageOrRaw(err, { fallbackKey: "settings.serviceAccounts.tokens.loadFailed" }))}</div>`;
+    }
   };
 
   const mintForm = dialog.querySelector<HTMLFormElement>("#saTokenMintForm");
   mintForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (!dialogAlive) return;
+    const lifecycleGen = serviceAccountsLifecycleGeneration;
     const nameInput = dialog.querySelector<HTMLInputElement>("#saTokenMintName");
     const submit = dialog.querySelector<HTMLButtonElement>("#saTokenMintSubmit");
     const name = nameInput?.value.trim() || undefined;
-    if (submit) submit.disabled = true;
+    const resetSubmit = () => {
+      if (submit && dialogAlive && lifecycleStillValid(lifecycleGen)) {
+        submit.disabled = false;
+        submit.textContent = t("settings.profile.apiTokens.create.submit");
+      }
+    };
+    if (submit) {
+      if (submit.disabled) return;
+      submit.disabled = true;
+      submit.textContent = t("settings.profile.apiTokens.create.creating");
+    }
+
+    let created: MintResponse | null | undefined;
     try {
-      const created = await apiFetch<{ token?: string } | null>(`/api/admin/service-accounts/${accountId}/tokens`, {
+      created = await apiFetch<MintResponse>(`/api/admin/service-accounts/${accountId}/tokens`, {
         method: "POST",
         body: JSON.stringify({ name }),
       });
-      if (!created?.token) {
-        showToast(t("settings.profile.apiTokens.toast.createMalformed"));
-      } else {
-        if (nameInput) nameInput.value = "";
-        showServiceTokenCreatedDialog(created.token);
-      }
     } catch (err: any) {
-      showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.apiTokens.toast.createFailed" }));
-    } finally {
-      if (submit) submit.disabled = false;
+      if (dialogAlive && lifecycleStillValid(lifecycleGen)) {
+        showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.apiTokens.toast.createFailed" }));
+      }
+      resetSubmit();
+      return;
     }
-    await refresh();
+
+    // Authenticated session / Settings lifecycle ended while mint was in flight:
+    // never show the secret and never revoke under a different session.
+    if (!lifecycleStillValid(lifecycleGen)) {
+      return;
+    }
+
+    if (!dialogAlive) {
+      // Same lifecycle, dialog dismissed before the secret could be shown — revoke.
+      if (created?.tokenId != null) {
+        await bestEffortRevokeServiceToken(created.tokenId);
+      }
+      return;
+    }
+
+    const secret = created?.token;
+    const hasUsableSecret = typeof secret === "string" && secret.length > 0;
+    if (!hasUsableSecret) {
+      if (created?.tokenId != null) {
+        await bestEffortRevokeServiceToken(created.tokenId);
+      }
+      if (!lifecycleStillValid(lifecycleGen) || !dialogAlive) return;
+      showToast(t("settings.profile.apiTokens.toast.createMalformed"));
+      try {
+        await refresh();
+      } catch {
+        // Best-effort only.
+      }
+      resetSubmit();
+      return;
+    }
+
+    if (nameInput) nameInput.value = "";
+    showToast(t("settings.profile.apiTokens.toast.created"));
+    showServiceTokenCreatedDialog(secret);
+    try {
+      await refresh();
+    } catch {
+      // Secret already shown; refresh failure must not look like mint failure.
+    }
+    resetSubmit();
   });
 
   await refresh();
@@ -270,12 +446,20 @@ export function bindServiceAccountsInteractions({ signal, rerender, isOwner }: B
     const submit = document.getElementById("createServiceAccountSubmit") as HTMLButtonElement | null;
     const name = input?.value.trim();
     if (!name) return;
+    if (submit?.disabled) return;
     if (submit) submit.disabled = true;
+    const lifecycleGen = serviceAccountsLifecycleGeneration;
     try {
       await apiFetch("/api/admin/service-accounts", { method: "POST", body: JSON.stringify({ name }) });
+      if (signal.aborted || !lifecycleStillValid(lifecycleGen)) return;
       showToast(t("settings.serviceAccounts.toast.created"));
-      await rerender();
+      try {
+        await rerender();
+      } catch {
+        // Create succeeded; refresh is best-effort.
+      }
     } catch (err: any) {
+      if (signal.aborted || !lifecycleStillValid(lifecycleGen)) return;
       showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.serviceAccounts.toast.createFailed" }));
       if (submit) submit.disabled = false;
     }
@@ -294,18 +478,29 @@ export function bindServiceAccountsInteractions({ signal, rerender, isOwner }: B
       const id = btn.getAttribute("data-sa-id");
       if (!id) return;
       const name = btn.getAttribute("data-sa-name") ?? "";
+      const lifecycleGen = serviceAccountsLifecycleGeneration;
       const confirmed = await showConfirmDialog(
         t("settings.serviceAccounts.delete.confirmMessage", { name }),
         t("settings.serviceAccounts.delete.confirmTitle"),
         t("settings.serviceAccounts.delete.confirmAction"),
       );
       if (!confirmed) return;
-      if (btn instanceof HTMLButtonElement) btn.disabled = true;
+      if (signal.aborted || !lifecycleStillValid(lifecycleGen)) return;
+      if (btn instanceof HTMLButtonElement) {
+        if (btn.disabled) return;
+        btn.disabled = true;
+      }
       try {
         await apiFetch(`/api/admin/service-accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (signal.aborted || !lifecycleStillValid(lifecycleGen)) return;
         showToast(t("settings.serviceAccounts.toast.deleted"));
-        await rerender();
+        try {
+          await rerender();
+        } catch {
+          // Deletion already final.
+        }
       } catch (err: any) {
+        if (signal.aborted || !lifecycleStillValid(lifecycleGen)) return;
         showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.serviceAccounts.toast.deleteFailed" }));
         if (btn instanceof HTMLButtonElement) btn.disabled = false;
       }
