@@ -33,9 +33,16 @@ export function buildTodoCreatePayload(input) {
     }, input);
 }
 export function buildTodoPatchPayload(input) {
-    return appendOptionalFields({
+    const payload = appendOptionalFields({
         title: input.title,
         body: input.body,
         tags: input.tags,
     }, input);
+    if (input.creatorEnabled &&
+        Number.isSafeInteger(input.creatorUserId) &&
+        Number(input.creatorUserId) > 0 &&
+        Number(input.creatorUserId) !== Number(input.originalCreatorUserId)) {
+        payload.createdByUserId = input.creatorUserId;
+    }
+    return payload;
 }

@@ -149,6 +149,10 @@ jobs:
         working-directory: internal/httpapi/web
         run: npm run test:inline-images
 
+      - name: Test Todo creator attribution end-to-end
+        working-directory: internal/httpapi/web
+        run: npm run test:todo-creator
+
       - name: Test card footer layout end-to-end
         working-directory: internal/httpapi/web
         run: npm run test:card-footer

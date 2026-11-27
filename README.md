@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.44.1-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.44.2-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -148,6 +148,8 @@ Owner, Admin, and User control instance-wide capabilities such as user managemen
 ### Project roles (per project)
 
 Project access requires project membership. Per-project roles are **Maintainer** (full project management), **Contributor** (limited edits, including body editing on cards assigned to them), and **Viewer** (read-only). Temporary/anonymous boards use a separate link-based permission model instead of these roles. Details: [docs/roles-and-permissions.md](docs/roles-and-permissions.md).
+
+Project Maintainers can correct an existing story's creator from the pencil beside its created timestamp in the Edit Todo dialog. The selector includes project members and other existing users. A choice remains pending until **Save**; **Reset** restores the original attribution, and discarding the dialog leaves the saved attribution unchanged. Creator attribution cannot be cleared. It is historical information only: it grants no membership, ownership, or edit permission, and a creator-only correction sends no creator-specific notification.
 
 ---
 

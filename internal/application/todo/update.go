@@ -30,8 +30,11 @@ type UpdatePatch struct {
 	Tags             Field[[]string]
 	EstimationPoints Field[*int64]
 	AssigneeUserID   Field[*int64]
-	SprintID         Field[*int64]
-	PriorityKey      Field[*string]
+	// CreatedByUserID reassigns the creator attribution (maintainers only). A
+	// present nil is rejected by the store: the creator cannot be cleared.
+	CreatedByUserID Field[*int64]
+	SprintID        Field[*int64]
+	PriorityKey     Field[*string]
 	// DueAt: present with a nil value clears the due date.
 	DueAt Field[*time.Time]
 	// CustomFields is a sparse key->value patch; a nil value clears that field.
@@ -50,6 +53,7 @@ func (p UpdatePatch) HasFields() bool {
 		p.Tags.Present ||
 		p.EstimationPoints.Present ||
 		p.AssigneeUserID.Present ||
+		p.CreatedByUserID.Present ||
 		p.SprintID.Present ||
 		p.PriorityKey.Present ||
 		p.DueAt.Present ||
@@ -151,16 +155,18 @@ func MaterializeUpdateInput(existing store.Todo, patch UpdatePatch) store.Update
 		BodyAppend:         bodyAppend,
 		BodyReplaces:       patch.Body.Present,
 
-		KeepTitle:            !patch.Title.Present,
-		KeepBody:             !patch.Body.Present,
-		KeepTags:             !patch.Tags.Present,
-		KeepEstimationPoints: !patch.EstimationPoints.Present,
-		KeepAssigneeUserID:   !patch.AssigneeUserID.Present,
-		DueAt:                dueAt,
-		DueAtPresent:         patch.DueAt.Present,
-		CustomFields:         cloneUpdateCustomFields(patch.CustomFields),
-		Drawings:             cloneDrawings(patch.Drawings.Value),
-		NotesInk:             store.NotesInkChange{Present: patch.NotesInk.Present, Data: append(json.RawMessage(nil), patch.NotesInk.Value...)},
+		KeepTitle:              !patch.Title.Present,
+		KeepBody:               !patch.Body.Present,
+		KeepTags:               !patch.Tags.Present,
+		KeepEstimationPoints:   !patch.EstimationPoints.Present,
+		KeepAssigneeUserID:     !patch.AssigneeUserID.Present,
+		CreatedByUserID:        cloneUpdateInt64Ptr(patch.CreatedByUserID.Value),
+		CreatedByUserIDPresent: patch.CreatedByUserID.Present,
+		DueAt:                  dueAt,
+		DueAtPresent:           patch.DueAt.Present,
+		CustomFields:           cloneUpdateCustomFields(patch.CustomFields),
+		Drawings:               cloneDrawings(patch.Drawings.Value),
+		NotesInk:               store.NotesInkChange{Present: patch.NotesInk.Present, Data: append(json.RawMessage(nil), patch.NotesInk.Value...)},
 	}
 }
 

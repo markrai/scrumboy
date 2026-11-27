@@ -7,6 +7,7 @@ export interface BoardMember {
   email?: string;
   image?: string;
   role: string;
+  isService?: boolean;
 }
 
 export interface State {

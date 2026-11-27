@@ -15,14 +15,14 @@ import (
 
 func creatorEmailCandidateEvent(t *testing.T, materialChanged bool) eventbus.Event {
 	t.Helper()
-	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRecipientAuthorizedPayload{
+	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRequestedPayload{
 		ProjectID:             7,
 		ProjectSlug:           "stale-slug",
 		TodoID:                11,
 		LocalID:               4,
 		Title:                 "Ship it",
 		ActivityReason:        todoapp.RefreshReasonTodoUpdated,
-		RecipientUserID:       2,
+		CreatedByUserID:       2,
 		ActorUserID:           1,
 		MaterialChanged:       materialChanged,
 		CardActivityCandidate: true,
@@ -31,7 +31,7 @@ func creatorEmailCandidateEvent(t *testing.T, materialChanged bool) eventbus.Eve
 		t.Fatal(err)
 	}
 	return eventbus.Event{
-		Type:      eventbus.TodoCreatorNotificationRecipientAuthorizedEventType,
+		Type:      eventbus.TodoCreatorNotificationRequestedEventType,
 		ProjectID: 7,
 		Payload:   payload,
 	}
@@ -39,7 +39,7 @@ func creatorEmailCandidateEvent(t *testing.T, materialChanged bool) eventbus.Eve
 
 func creatorMovedEmailCandidateEvent(t *testing.T, fromName, toName string) eventbus.Event {
 	t.Helper()
-	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRecipientAuthorizedPayload{
+	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRequestedPayload{
 		ProjectID:             7,
 		ProjectSlug:           "stale-slug",
 		TodoID:                11,
@@ -48,7 +48,7 @@ func creatorMovedEmailCandidateEvent(t *testing.T, fromName, toName string) even
 		ActivityReason:        todoapp.RefreshReasonTodoMoved,
 		FromName:              fromName,
 		ToName:                toName,
-		RecipientUserID:       2,
+		CreatedByUserID:       2,
 		ActorUserID:           1,
 		MaterialChanged:       true,
 		CardActivityCandidate: true,
@@ -57,10 +57,24 @@ func creatorMovedEmailCandidateEvent(t *testing.T, fromName, toName string) even
 		t.Fatal(err)
 	}
 	return eventbus.Event{
-		Type:      eventbus.TodoCreatorNotificationRecipientAuthorizedEventType,
+		Type:      eventbus.TodoCreatorNotificationRequestedEventType,
 		ProjectID: 7,
 		Payload:   payload,
 	}
+}
+
+func creatorAssignmentEmailCandidateEvent(t *testing.T) eventbus.Event {
+	t.Helper()
+	event := creatorEmailCandidateEvent(t, true)
+	var payload eventbus.TodoCreatorNotificationRequestedPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	recipientID := payload.CreatedByUserID
+	payload.AssignmentChanged = true
+	payload.ToAssigneeUserID = &recipientID
+	event.Payload, _ = json.Marshal(payload)
+	return event
 }
 
 func queuedCreatorEmailCandidate(t *testing.T, st *emailNotifyFakeStore) mailDelivery {
@@ -105,6 +119,151 @@ func TestCreatorEmailCandidateReauthorizesBeforeQueue(t *testing.T) {
 	n.handleCreatorCandidate(context.Background(), creatorEmailCandidateEvent(t, true))
 	if got := len(q.Drain()); got != 0 {
 		t.Fatalf("removed creator produced %d queued candidates, want 0", got)
+	}
+}
+
+func TestCreatorEmailCandidateStaleCreatorIsDiscardedNotRedirected(t *testing.T) {
+	st := newEmailNotifyFake()
+	newCreatorID := int64(3)
+	st.dueTodo.CreatedByUserID = &newCreatorID
+	st.prefs[2] = store.EmailNotifyPref{V: 2, Enabled: true, CreatedByMe: true}
+	st.prefs[3] = store.EmailNotifyPref{V: 2, Enabled: true, CreatedByMe: true}
+	q := newMailQueue(discardLogger())
+	n := newEmailNotifier(st, q, "https://example.test", true, discardLogger())
+
+	n.handleCreatorCandidate(context.Background(), creatorEmailCandidateEvent(t, true))
+	items := q.Drain()
+	if len(items) != 1 || items[0].Prepare == nil || items[0].To != "" {
+		t.Fatalf("stale creator arbitration work = %+v", items)
+	}
+	prepared, ok, err := items[0].Prepare(context.Background())
+	if err != nil || ok || prepared.To != "" {
+		t.Fatalf("stale creator candidate delivered or redirected: %+v ok=%v err=%v", prepared, ok, err)
+	}
+}
+
+func TestCreatorEmailStaleCreatorPreservesIndependentAssignmentBeforeInitialAuthorization(t *testing.T) {
+	st := newEmailNotifyFake()
+	creatorID := int64(2)
+	newCreatorID := int64(3)
+	st.prefs[creatorID] = store.EmailNotifyPref{
+		V: 2, Enabled: true, Assigned: true, CreatedByMe: true, CardActivity: true,
+	}
+	q := newMailQueue(discardLogger())
+	n := newEmailNotifier(st, q, "https://example.test", true, discardLogger())
+
+	assignmentCtx := withTodoAssignedMutationFacts(context.Background(), store.TodoAssignedMutationFacts{
+		CreatedByUserID: &creatorID,
+		DurableProject:  true,
+	})
+	n.handleTodoAssigned(assignmentCtx, assignedEvent(t, 1, &creatorID, todoapp.RefreshReasonTodoUpdated))
+	ordinary := q.Drain()
+	if len(ordinary) != 1 || ordinary[0].To != "member@example.com" {
+		t.Fatalf("delegated assignment ordinary deliveries=%+v", ordinary)
+	}
+
+	st.dueTodo.CreatedByUserID = &newCreatorID
+	n.handleCreatorCandidate(context.Background(), creatorAssignmentEmailCandidateEvent(t))
+	items := q.Drain()
+	if len(items) != 1 || items[0].Prepare == nil {
+		t.Fatalf("assignment arbitration work=%+v", items)
+	}
+	prepared, ok, err := items[0].Prepare(context.Background())
+	if err != nil || !ok || prepared.To != "assignee@example.com" || !strings.Contains(prepared.LogRef, "category=assigned") {
+		t.Fatalf("independent assignment=%+v ok=%v err=%v", prepared, ok, err)
+	}
+}
+
+func TestCreatorEmailStaleBeforeEnqueueFallsBackToIndependentCardActivity(t *testing.T) {
+	st := newEmailNotifyFake()
+	newCreatorID := int64(3)
+	st.dueTodo.CreatedByUserID = &newCreatorID
+	st.prefs[2] = store.EmailNotifyPref{V: 2, Enabled: true, CardActivity: true}
+	q := newMailQueue(discardLogger())
+	n := newEmailNotifier(st, q, "https://example.test", true, discardLogger())
+
+	n.handleCreatorCandidate(context.Background(), creatorAssignmentEmailCandidateEvent(t))
+	items := q.Drain()
+	if len(items) != 1 || items[0].Prepare == nil {
+		t.Fatalf("card-activity arbitration work=%+v", items)
+	}
+	prepared, ok, err := items[0].Prepare(context.Background())
+	if err != nil || !ok || prepared.To != "assignee@example.com" || !strings.Contains(prepared.LogRef, "category=cardActivity") {
+		t.Fatalf("independent card activity=%+v ok=%v err=%v", prepared, ok, err)
+	}
+}
+
+func TestCreatorEmailStaleAfterEnqueuePreservesIndependentCategories(t *testing.T) {
+	tests := []struct {
+		name     string
+		pref     store.EmailNotifyPref
+		event    func(*testing.T) eventbus.Event
+		category emailCategory
+	}{
+		{
+			name:  "assignment",
+			pref:  store.EmailNotifyPref{V: 2, Enabled: true, Assigned: true, CreatedByMe: true, CardActivity: true},
+			event: creatorAssignmentEmailCandidateEvent, category: emailCategoryAssigned,
+		},
+		{
+			name:  "card activity",
+			pref:  store.EmailNotifyPref{V: 2, Enabled: true, CreatedByMe: true, CardActivity: true},
+			event: func(t *testing.T) eventbus.Event { return creatorEmailCandidateEvent(t, true) }, category: emailCategoryCardActivity,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := newEmailNotifyFake()
+			st.prefs[2] = tt.pref
+			q := newMailQueue(discardLogger())
+			n := newEmailNotifier(st, q, "https://example.test", true, discardLogger())
+			n.handleCreatorCandidate(context.Background(), tt.event(t))
+			items := q.Drain()
+			if len(items) != 1 || items[0].Prepare == nil {
+				t.Fatalf("arbitration work=%+v", items)
+			}
+			newCreatorID := int64(3)
+			st.dueTodo.CreatedByUserID = &newCreatorID
+			prepared, ok, err := items[0].Prepare(context.Background())
+			if err != nil || !ok || !strings.Contains(prepared.LogRef, "category="+string(tt.category)) {
+				t.Fatalf("independent fallback=%+v ok=%v err=%v", prepared, ok, err)
+			}
+		})
+	}
+}
+
+func TestCreatorEmailStaleAfterEnqueueAndMembershipRemovalHasNoFallback(t *testing.T) {
+	st := newEmailNotifyFake()
+	st.prefs[2] = store.EmailNotifyPref{V: 2, Enabled: true, Assigned: true, CreatedByMe: true, CardActivity: true}
+	q := newMailQueue(discardLogger())
+	n := newEmailNotifier(st, q, "https://example.test", true, discardLogger())
+	n.handleCreatorCandidate(context.Background(), creatorAssignmentEmailCandidateEvent(t))
+	items := q.Drain()
+	if len(items) != 1 || items[0].Prepare == nil {
+		t.Fatalf("arbitration work=%+v", items)
+	}
+	newCreatorID := int64(3)
+	st.dueTodo.CreatedByUserID = &newCreatorID
+	delete(st.roles, 2)
+	prepared, ok, err := items[0].Prepare(context.Background())
+	if err != nil || ok || prepared.To != "" {
+		t.Fatalf("revoked member fallback=%+v ok=%v err=%v", prepared, ok, err)
+	}
+}
+
+func TestCreatorEmailSelectedCreatorFallsBackOnlyWhenEligibilityIsLost(t *testing.T) {
+	st := newEmailNotifyFake()
+	st.prefs[2] = store.EmailNotifyPref{V: 2, Enabled: true, CreatedByMe: true, CardActivity: true}
+	delivery := queuedCreatorEmailCandidate(t, st)
+	first, ok, err := delivery.Prepare(context.Background())
+	if err != nil || !ok || !strings.Contains(first.LogRef, "category=createdByMe") {
+		t.Fatalf("first preparation=%+v ok=%v err=%v", first, ok, err)
+	}
+	newCreatorID := int64(3)
+	st.dueTodo.CreatedByUserID = &newCreatorID
+	second, ok, err := delivery.Prepare(context.Background())
+	if err != nil || !ok || !strings.Contains(second.LogRef, "category=cardActivity") {
+		t.Fatalf("stale creator retry fallback=%+v ok=%v err=%v", second, ok, err)
 	}
 }
 
@@ -200,6 +359,7 @@ func TestCreatorEmailPrepareFailsClosedAfterQueue(t *testing.T) {
 		mutate func(*emailNotifyFakeStore)
 	}{
 		{name: "membership removed", mutate: func(st *emailNotifyFakeStore) { delete(st.roles, 2) }},
+		{name: "creator reassigned", mutate: func(st *emailNotifyFakeStore) { id := int64(3); st.dueTodo.CreatedByUserID = &id }},
 		{name: "project deleted or unavailable", mutate: func(st *emailNotifyFakeStore) { st.projectErr = store.ErrNotFound }},
 		{name: "temporary project", mutate: func(st *emailNotifyFakeStore) { st.project.ExpiresAt = ptrTimeForCreatorEmail() }},
 		{name: "recipient deleted", mutate: func(st *emailNotifyFakeStore) { delete(st.users, 2) }},
@@ -273,7 +433,7 @@ func TestCreatorEmailCategoryPrecedenceAndFallback(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := selectCreatorEmailCategory(tt.pref, tt.candidate)
+			got, ok := selectCreatorEmailCategory(tt.pref, tt.candidate, true)
 			if got != tt.want || ok != tt.ok {
 				t.Fatalf("category = %q ok %v, want %q ok %v", got, ok, tt.want, tt.ok)
 			}
@@ -475,7 +635,7 @@ func TestCreatorEmailAssignmentOverlapUsesSingleCreatorCandidate(t *testing.T) {
 		t.Fatalf("assignment/activity deliveries=%+v, want no direct creator email", activity)
 	}
 	event := creatorEmailCandidateEvent(t, true)
-	var payload eventbus.TodoCreatorNotificationRecipientAuthorizedPayload
+	var payload eventbus.TodoCreatorNotificationRequestedPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		t.Fatal(err)
 	}
@@ -533,7 +693,7 @@ func TestCreatorEmailDeferredAssignmentFailsClosedWhenAuthorizationDisappears(t 
 	}
 	delete(st.roles, creatorID)
 	event := creatorEmailCandidateEvent(t, true)
-	var payload eventbus.TodoCreatorNotificationRecipientAuthorizedPayload
+	var payload eventbus.TodoCreatorNotificationRequestedPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		t.Fatal(err)
 	}

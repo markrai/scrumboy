@@ -6,12 +6,10 @@ import (
 	"scrumboy/internal/store"
 )
 
-// CreatorNotificationAuthorizationStore supplies the fresh project and
-// membership facts needed to turn historical attribution into a current,
-// point-in-time recipient authorization decision.
+// CreatorNotificationAuthorizationStore supplies the current facts needed to
+// turn historical attribution into a point-in-time recipient decision.
 type CreatorNotificationAuthorizationStore interface {
-	GetProject(ctx context.Context, projectID int64) (store.Project, error)
-	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
+	GetTodoCreatorNotificationFacts(ctx context.Context, projectID, todoID, recipientUserID int64) (store.TodoCreatorNotificationFacts, bool, error)
 }
 
 // AuthorizedCreatorNotification is a creator-specific, point-in-time decision
@@ -33,6 +31,11 @@ type AuthorizedCreatorNotification struct {
 	AssignmentChanged     bool
 	ToAssigneeUserID      *int64
 	CardActivityCandidate bool
+}
+
+type CreatorNotificationRecipientAccess struct {
+	Notification   AuthorizedCreatorNotification
+	CurrentCreator bool
 }
 
 type CreatorNotificationAuthorizationService struct {
@@ -58,7 +61,7 @@ func (s *CreatorNotificationAuthorizationService) Authorize(
 		return AuthorizedCreatorNotification{}, false, nil
 	}
 
-	return s.authorizeCurrentRecipient(ctx, AuthorizedCreatorNotification{
+	access, ok, err := s.authorizeCurrentRecipientAccess(ctx, AuthorizedCreatorNotification{
 		ProjectID:             request.ProjectID,
 		ProjectSlug:           request.ProjectSlug,
 		TodoID:                request.TodoID,
@@ -74,6 +77,10 @@ func (s *CreatorNotificationAuthorizationService) Authorize(
 		ToAssigneeUserID:      cloneUpdateInt64Ptr(request.ToAssigneeUserID),
 		CardActivityCandidate: request.CardActivityCandidate,
 	})
+	if err != nil || !ok || !access.CurrentCreator {
+		return AuthorizedCreatorNotification{}, false, err
+	}
+	return access.Notification, true, nil
 }
 
 // ReauthorizeRecipient performs the fresh access check required immediately
@@ -86,33 +93,52 @@ func (s *CreatorNotificationAuthorizationService) ReauthorizeRecipient(
 	if s == nil || s.store == nil || !validAuthorizedCreatorNotification(authorized) {
 		return AuthorizedCreatorNotification{}, false, nil
 	}
-	return s.authorizeCurrentRecipient(ctx, authorized)
+	access, ok, err := s.authorizeCurrentRecipientAccess(ctx, authorized)
+	if err != nil || !ok || !access.CurrentCreator {
+		return AuthorizedCreatorNotification{}, false, err
+	}
+	return access.Notification, true, nil
 }
 
-func (s *CreatorNotificationAuthorizationService) authorizeCurrentRecipient(
+func (s *CreatorNotificationAuthorizationService) ReauthorizeRecipientAccess(
 	ctx context.Context,
 	candidate AuthorizedCreatorNotification,
-) (AuthorizedCreatorNotification, bool, error) {
-	project, err := s.store.GetProject(ctx, candidate.ProjectID)
-	if err != nil {
-		return AuthorizedCreatorNotification{}, false, err
+) (CreatorNotificationRecipientAccess, bool, error) {
+	if s == nil || s.store == nil || !validAuthorizedCreatorNotification(candidate) {
+		return CreatorNotificationRecipientAccess{}, false, nil
 	}
-	if project.ID != candidate.ProjectID || project.ExpiresAt != nil || project.Slug == "" {
-		return AuthorizedCreatorNotification{}, false, nil
+	return s.authorizeCurrentRecipientAccess(ctx, candidate)
+}
+
+func (s *CreatorNotificationAuthorizationService) authorizeCurrentRecipientAccess(
+	ctx context.Context,
+	candidate AuthorizedCreatorNotification,
+) (CreatorNotificationRecipientAccess, bool, error) {
+	facts, found, err := s.store.GetTodoCreatorNotificationFacts(
+		ctx,
+		candidate.ProjectID,
+		candidate.TodoID,
+		candidate.RecipientUserID,
+	)
+	if err != nil {
+		return CreatorNotificationRecipientAccess{}, false, err
+	}
+	if !found ||
+		facts.ProjectID != candidate.ProjectID ||
+		!facts.DurableProject ||
+		facts.ProjectSlug == "" ||
+		facts.TodoID != candidate.TodoID ||
+		facts.TodoProjectID != candidate.ProjectID ||
+		facts.TodoLocalID != candidate.LocalID ||
+		!facts.RecipientRole.HasMinimumRole(store.RoleViewer) {
+		return CreatorNotificationRecipientAccess{}, false, nil
 	}
 
-	role, err := s.store.GetProjectRole(ctx, project.ID, candidate.RecipientUserID)
-	if err != nil {
-		return AuthorizedCreatorNotification{}, false, err
-	}
-	if !role.HasMinimumRole(store.RoleViewer) {
-		return AuthorizedCreatorNotification{}, false, nil
-	}
-
-	return AuthorizedCreatorNotification{
-		ProjectID:             project.ID,
-		ProjectSlug:           project.Slug,
-		ProjectName:           project.Name,
+	currentCreator := facts.CreatedByUserID != nil && *facts.CreatedByUserID == candidate.RecipientUserID
+	return CreatorNotificationRecipientAccess{Notification: AuthorizedCreatorNotification{
+		ProjectID:             facts.ProjectID,
+		ProjectSlug:           facts.ProjectSlug,
+		ProjectName:           facts.ProjectName,
 		TodoID:                candidate.TodoID,
 		LocalID:               candidate.LocalID,
 		Title:                 candidate.Title,
@@ -125,7 +151,7 @@ func (s *CreatorNotificationAuthorizationService) authorizeCurrentRecipient(
 		AssignmentChanged:     candidate.AssignmentChanged,
 		ToAssigneeUserID:      cloneUpdateInt64Ptr(candidate.ToAssigneeUserID),
 		CardActivityCandidate: candidate.CardActivityCandidate,
-	}, true, nil
+	}, CurrentCreator: currentCreator}, true, nil
 }
 
 func validCreatorNotificationAuthorizationRequest(request CreatorNotificationRequest) bool {

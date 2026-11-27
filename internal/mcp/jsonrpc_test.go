@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -709,10 +710,20 @@ func TestJSONRPC_ToolsList_TodosUpdateSchema(t *testing.T) {
 		t.Fatalf("patch additionalProperties expected false, got %v", patch["additionalProperties"])
 	}
 	patchProps := patch["properties"].(map[string]any)
-	expectedPatchFields := []string{"title", "body", "tags", "estimationPoints", "assigneeUserId", "sprintId"}
+	expectedPatchFields := []string{"title", "body", "tags", "estimationPoints", "assigneeUserId", "createdByUserId", "sprintId"}
 	for _, field := range expectedPatchFields {
 		if patchProps[field] == nil {
 			t.Fatalf("todos_update patch missing field %q", field)
+		}
+	}
+	creatorSchema := patchProps["createdByUserId"].(map[string]any)
+	if creatorSchema["type"] != "integer" || creatorSchema["minimum"] != float64(1) {
+		t.Fatalf("todos_update patch.createdByUserId schema=%#v, want positive non-null integer", creatorSchema)
+	}
+	creatorDescription := creatorSchema["description"].(string)
+	for _, phrase := range []string{"historical creator attribution", "Maintainer", "grants no membership"} {
+		if !strings.Contains(creatorDescription, phrase) {
+			t.Fatalf("createdByUserId description %q missing %q", creatorDescription, phrase)
 		}
 	}
 

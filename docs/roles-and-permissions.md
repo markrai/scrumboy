@@ -53,6 +53,7 @@ Guest permissions apply to the signed-in account. Direct creation, Trello and ba
 | Edit an archived todo          | Nobody        | Read-only until restored (**409** `todo_archived`); role is checked first |
 | Self-assign todo               | Maintainer    | Contributor cannot self-assign          |
 | Assign todo to others          | Maintainer    |                                        |
+| Correct todo creator attribution | Maintainer  | Existing positive user ID; target need not be a member; cannot clear |
 | Create tags                    | Contributor+  |                                        |
 | Delete project-scoped tag      | Maintainer+   | Shared board tag; not a personal/user-owned tag |
 | Update project-scoped tag color | Maintainer+  | Shared `tags.color` for everyone on the board |
@@ -77,6 +78,15 @@ Permissions flow: `permissions.go` → store enforcement → API error mapping �
 
 - **Backend is authoritative:** Store methods enforce role checks; API returns 401/404 on failure.
 - **UI hides controls:** Contributors do not see create, delete, move, assign, or title/tag/sprint controls. Body-only edit is shown when assigned.
+- **Creator attribution is historical data:** correcting it grants no project membership, edit permission, ownership, or other authority. Omission preserves it; clearing is unsupported. Actual changes are audited, and creator-only corrections do not generate creator-specific notifications.
+
+### Correcting creator attribution
+
+An authenticated project Maintainer can open an existing, active story and use the pencil beside the created timestamp in the Edit Todo dialog. The selector offers current project members first, followed by other existing users; selecting a non-member does not add that user to the project. The control is unavailable to Viewers, Contributors, assigned Contributors, anonymous-board users, shared-link users without Maintainer membership, new stories, and archived stories.
+
+Selection does not update the server immediately. **Save** submits the correction with the rest of the story edit, while closing and discarding leaves the persisted creator unchanged. **Reset** restores the attribution that was present when the dialog opened, including an unrecorded value, without changing other pending story edits. The UI does not provide a way to clear a recorded creator.
+
+Creator attribution remains historical metadata. It does not confer project membership, story ownership, assignment, or edit permission. A correction that changes only the creator is audited but does not generate creator-specific email, realtime, push, or webhook notifications.
 
 ---
 
