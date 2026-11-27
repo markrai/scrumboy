@@ -88,8 +88,9 @@ func trelloBoardRawJSON() string {
 			{"id":"list-done","name":"Done","pos":20,"closed":false},
 			{"id":"list-closed","name":"Closed Lane","pos":30,"closed":true}
 		],
+		"labels":[{"id":"label-valid","name":"Café","color":"blue"}],
 		"cards":[
-			{"id":"card-open","name":"Open card","idList":"list-doing","pos":10,"closed":false,"idLabels":[],"idMembers":[]},
+			{"id":"card-open","name":"Open card","idList":"list-doing","pos":10,"closed":false,"idLabels":["label-valid"],"idMembers":[]},
 			{"id":"card-closed","name":"Closed list card","idList":"list-closed","pos":20,"closed":true,"idLabels":[],"idMembers":[]}
 		]
 	}`
@@ -138,6 +139,11 @@ func TestAPI_TrelloPreviewAndImport(t *testing.T) {
 	if preview.DetectedDoneColumn != "Done" {
 		t.Fatalf("detectedDoneColumn = %q", preview.DetectedDoneColumn)
 	}
+	for _, warning := range preview.Warnings {
+		if strings.Contains(warning, "label names will be adjusted") {
+			t.Fatalf("valid label produced adjustment warning: %q", warning)
+		}
+	}
 
 	var result struct {
 		Project struct {
@@ -168,6 +174,122 @@ func TestAPI_TrelloPreviewAndImport(t *testing.T) {
 	}
 	if todoCount != 2 {
 		t.Fatalf("expected 2 imported todos, got %d", todoCount)
+	}
+}
+
+func TestAPI_TrelloProblematicLabelPreviewAndImport(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServerWithLimits(t, "full", 1<<20, 4<<20)
+	defer cleanup()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookie jar: %v", err)
+	}
+	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/bootstrap", map[string]any{
+		"name":     "Label Importer",
+		"email":    "labels@example.com",
+		"password": "password123",
+	}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("bootstrap status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	raw := `{
+		"id":"http-problem-labels",
+		"name":"HTTP Problem Labels",
+		"lists":[
+			{"id":"doing","name":"Doing","pos":10,"closed":false},
+			{"id":"done","name":"Done","pos":20,"closed":false}
+		],
+		"labels":[
+			{"id":"punctuation","name":"Bug/Fix","color":"blue"},
+			{"id":"bug-one","name":"Bug","color":"red"},
+			{"id":"bug-two","name":"Bug","color":"yellow"},
+			{"id":"genuine-suffix","name":"Bug 2","color":"green"},
+			{"id":"modern-fallback","name":"","color":"green_light"}
+		],
+		"cards":[
+			{"id":"one","name":"Card One","idList":"doing","pos":10,"closed":false,"idLabels":["punctuation","bug-one","modern-fallback"],"idMembers":[]},
+			{"id":"two","name":"Card Two","idList":"doing","pos":20,"closed":false,"idLabels":["bug-two","genuine-suffix","punctuation"],"idMembers":[]}
+		]
+	}`
+	var preview struct {
+		HardErrors []string `json:"hardErrors"`
+		Warnings   []string `json:"warnings"`
+	}
+	resp, body = doRawJSON(t, client, http.MethodPost, ts.URL+"/api/import/trello/preview", raw, &preview)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("preview status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if len(preview.HardErrors) != 0 {
+		t.Fatalf("preview hard errors: %v", preview.HardErrors)
+	}
+	var adjustmentWarning string
+	for _, warning := range preview.Warnings {
+		if strings.Contains(warning, "label names will be adjusted") {
+			adjustmentWarning = warning
+		}
+	}
+	if !strings.Contains(adjustmentWarning, "(3 adjusted)") {
+		t.Fatalf("adjustment warning = %q", adjustmentWarning)
+	}
+
+	var result struct {
+		Project struct {
+			ID int64 `json:"id"`
+		} `json:"project"`
+	}
+	resp, body = doRawJSON(t, client, http.MethodPost, ts.URL+"/api/import/trello", raw, &result)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("import status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if result.Project.ID == 0 {
+		t.Fatalf("missing imported project: %+v", result)
+	}
+
+	rows, err := sqlDB.Query(`
+SELECT td.title, tg.name
+FROM todos td
+JOIN todo_tags tt ON tt.todo_id = td.id
+JOIN tags tg ON tg.id = tt.tag_id
+WHERE td.project_id = ?
+ORDER BY td.title, tg.name`, result.Project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string][]string)
+	for rows.Next() {
+		var title, name string
+		if err := rows.Scan(&title, &name); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		got[title] = append(got[title], name)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]string{
+		"Card One": {"bug", "bug-fix", "trello-green-light-label"},
+		"Card Two": {"bug-2", "bug-3", "bug-fix"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("stored card tags = %#v", got)
+	}
+	for title, wantTags := range want {
+		gotTags := got[title]
+		if strings.Join(gotTags, "|") != strings.Join(wantTags, "|") {
+			t.Fatalf("%s tags = %#v, want %#v", title, gotTags, wantTags)
+		}
+	}
+
+	var tagCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM project_tags WHERE project_id = ?`, result.Project.ID).Scan(&tagCount); err != nil {
+		t.Fatal(err)
+	}
+	if tagCount != 5 {
+		t.Fatalf("stored %d project tags, want 5 distinct source labels", tagCount)
 	}
 }
 

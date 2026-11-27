@@ -437,6 +437,7 @@ type fieldFlags struct {
 	assignee, sprint, priority, due   string
 	fields                            stringSlice
 	column                            string
+	creator                           string
 	fs                                *flag.FlagSet
 }
 
@@ -446,6 +447,7 @@ func (f *fieldFlags) bind(fs *flag.FlagSet, forUpdate bool) {
 		fs.StringVar(&f.title, "title", "", "new title")
 		fs.StringVar(&f.appendBody, "append", "", "append text to the body")
 		fs.BoolVar(&f.clearTags, "clear-tags", false, "remove all tags")
+		fs.StringVar(&f.creator, "creator", "", "reassign the creator to this user id or 'me' (maintainers only)")
 	} else {
 		fs.StringVar(&f.column, "column", "", "workflow column key (default: first column)")
 	}
@@ -528,6 +530,13 @@ func (f *fieldFlags) collect(c *cmdCtx) (map[string]any, error) {
 		}
 		out["assigneeUserId"] = v
 	}
+	if f.isSet("creator") {
+		v, err := resolveCreator(c, f.creator)
+		if err != nil {
+			return nil, err
+		}
+		out["createdByUserId"] = v
+	}
 	if f.isSet("sprint") {
 		if isNone(f.sprint) {
 			out["sprintId"] = nil
@@ -601,6 +610,29 @@ func resolveAssignee(c *cmdCtx, v string) (any, error) {
 	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil || n <= 0 {
 		return nil, usagef("--assignee must be a user id, 'me', or 'none'")
+	}
+	return n, nil
+}
+
+func resolveCreator(c *cmdCtx, v string) (int64, error) {
+	v = strings.TrimSpace(v)
+	if v == "me" {
+		res, err := c.call("me_get", nil)
+		if err != nil {
+			return 0, err
+		}
+		var me meResp
+		if err := res.Decode(&me); err != nil {
+			return 0, err
+		}
+		if me.UserID <= 0 {
+			return 0, usagef("--creator resolved 'me' to an invalid user id")
+		}
+		return me.UserID, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, usagef("--creator must be a positive user id or 'me'")
 	}
 	return n, nil
 }

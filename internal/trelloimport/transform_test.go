@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -43,6 +44,459 @@ func TestBuildImportBundlePreservesUnicodeLabelNames(t *testing.T) {
 	}
 	if len(project.Todos) != 1 || len(project.Todos[0].Tags) != 3 {
 		t.Fatalf("Unicode card tags = %+v", project.Todos)
+	}
+}
+
+func TestBuildImportBundleMakesLabelNamesValidTags(t *testing.T) {
+	raw := []byte(`{
+		"id":"punct-board","name":"Punctuation Board",
+		"lists":[{"id":"todo","name":"Todo","pos":10,"closed":false}],
+		"labels":[
+			{"id":"a","name":"Won't fix","color":"red"},
+			{"id":"b","name":"Bug/Fix","color":"blue"},
+			{"id":"c","name":"v2.0","color":"green"},
+			{"id":"d","name":"","color":"green"},
+			{"id":"e","name":"","color":"green"}
+		],
+		"cards":[{"id":"card","name":"Labels","idList":"todo","pos":10,"closed":false,"idLabels":["a","b","c","d","e"],"idMembers":[]}]
+	}`)
+	bundle, err := BuildImportBundle(raw, fixedNow())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range bundle.ExportData.Projects[0].Tags {
+		if store.CanonicalizeTag(tag.Name) == "" {
+			t.Fatalf("label imported as invalid tag %q", tag.Name)
+		}
+	}
+	if len(bundle.ExportData.Projects[0].Todos[0].Tags) != 5 {
+		t.Fatalf("card tags = %+v", bundle.ExportData.Projects[0].Todos[0].Tags)
+	}
+}
+
+func TestLabelTagNameSanitization(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "slash", input: "Bug/Fix", want: "Bug Fix"},
+		{name: "ASCII apostrophe", input: "Won't fix", want: "Wont fix"},
+		{name: "typographic apostrophe", input: "Won’t fix", want: "Wont fix"},
+		{name: "period", input: "v2.0", want: "v2 0"},
+		{name: "trailing punctuation", input: "urgent!", want: "urgent"},
+		{name: "mixed punctuation", input: "Q&A (client)", want: "Q A client"},
+		{name: "empty", input: "", want: ""},
+		{name: "whitespace", input: " \t\u2003 ", want: ""},
+		{name: "hyphens", input: "---", want: ""},
+		{name: "punctuation", input: "!@#$", want: ""},
+		{name: "emoji", input: "🚀", want: ""},
+		{name: "standalone mark", input: "\u0301", want: ""},
+		{name: "mark after separator", input: "a-\u0301b", want: "a-b"},
+		{name: "format character", input: "alpha\u200dbeta", want: "alpha beta"},
+		{name: "valid combining mark", input: "Cafe\u0301", want: "Cafe\u0301"},
+		{name: "Chinese", input: "erp系统流程", want: "erp系统流程"},
+		{name: "Japanese", input: "つながるひろが", want: "つながるひろが"},
+		{name: "Arabic", input: "إصلاح خطأ", want: "إصلاح خطأ"},
+		{name: "Devanagari", input: "नमस्ते दुनिया", want: "नमस्ते दुनिया"},
+		{name: "accented Latin", input: "Café", want: "Café"},
+		{name: "exact limit", input: strings.Repeat("界", store.MaxTagRunes), want: strings.Repeat("界", store.MaxTagRunes)},
+		{name: "over limit", input: strings.Repeat("界", store.MaxTagRunes+1), want: strings.Repeat("界", store.MaxTagRunes)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := labelTagName(tc.input); got != tc.want {
+				t.Fatalf("labelTagName(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+			if tc.want != "" && store.CanonicalizeTag(tc.want) == "" {
+				t.Fatalf("expected output is not canonicalizable: %q", tc.want)
+			}
+		})
+	}
+
+	rawLongButCanonicalShort := "Alpha" + strings.Repeat(" ", store.MaxTagRunes+10) + "Beta"
+	if got := labelTagName(rawLongButCanonicalShort); got != rawLongButCanonicalShort {
+		t.Fatalf("valid raw name was rewritten: %q", got)
+	}
+}
+
+func TestPreferredLabelTagNameSanitizesColorFallbacks(t *testing.T) {
+	tests := []struct {
+		name  string
+		label Label
+		want  string
+	}{
+		{name: "green", label: Label{Color: "green"}, want: "Trello green label"},
+		{name: "duplicate capable green", label: Label{Color: "green"}, want: "Trello green label"},
+		{name: "green light", label: Label{Color: "green_light"}, want: "Trello green light label"},
+		{name: "blue dark", label: Label{Color: "blue_dark"}, want: "Trello blue dark label"},
+		{name: "red light", label: Label{Color: "red_light"}, want: "Trello red light label"},
+		{name: "purple dark", label: Label{Color: "purple_dark"}, want: "Trello purple dark label"},
+		{name: "missing", label: Label{}, want: "Untitled Trello label"},
+		{name: "none", label: Label{Color: "none"}, want: "Untitled Trello label"},
+		{name: "unknown", label: Label{Color: "chartreuse"}, want: "Trello chartreuse label"},
+		{name: "malformed", label: Label{Color: "!!!"}, want: "Trello label"},
+		{name: "format characters", label: Label{Color: "red\u200dlight"}, want: "Trello red light label"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, originalValid := preferredLabelTagName(tc.label)
+			if originalValid {
+				t.Fatal("fallback unexpectedly treated as an original valid name")
+			}
+			if got != tc.want {
+				t.Fatalf("preferredLabelTagName(%+v) = %q, want %q", tc.label, got, tc.want)
+			}
+			if store.CanonicalizeTag(got) == "" {
+				t.Fatalf("fallback is not canonicalizable: %q", got)
+			}
+		})
+	}
+
+	longFallback, originalValid := preferredLabelTagName(Label{Color: strings.Repeat("x", 100)})
+	if originalValid || store.CanonicalizeTag(longFallback) == "" || len([]rune(store.CanonicalizeTag(longFallback))) != store.MaxTagRunes {
+		t.Fatalf("long fallback = %q, valid original=%v", longFallback, originalValid)
+	}
+}
+
+func TestBuildTagExportsAllocatesUniqueCanonicalNames(t *testing.T) {
+	labels := map[string]Label{
+		"bug-blue":        {ID: "bug-blue", Name: "Bug", Color: "blue"},
+		"bug-red":         {ID: "bug-red", Name: "Bug", Color: "red"},
+		"bug-two":         {ID: "bug-two", Name: "Bug 2", Color: "green"},
+		"punctuation":     {ID: "punctuation", Name: "Bug/Fix", Color: "orange"},
+		"spaced":          {ID: "spaced", Name: "Bug Fix", Color: "yellow"},
+		"hyphenated":      {ID: "hyphenated", Name: "bug-fix", Color: "purple"},
+		"nfc":             {ID: "nfc", Name: "Café", Color: "lime"},
+		"nfd":             {ID: "nfd", Name: "Cafe\u0301", Color: "pink"},
+		"fallback-named":  {ID: "fallback-named", Name: "Trello green light label", Color: "black"},
+		"fallback-one":    {ID: "fallback-one", Color: "green_light"},
+		"fallback-two":    {ID: "fallback-two", Color: "green_light"},
+		"long-one":        {ID: "long-one", Name: strings.Repeat("a", store.MaxTagRunes) + "x", Color: "sky"},
+		"long-two":        {ID: "long-two", Name: strings.Repeat("a", store.MaxTagRunes) + "y", Color: "blue_dark"},
+		"long-valid-one":  {ID: "long-valid-one", Name: strings.Repeat("界", store.MaxTagRunes), Color: "yellow_dark"},
+		"long-valid-two":  {ID: "long-valid-two", Name: strings.Repeat("界", store.MaxTagRunes), Color: "orange_dark"},
+		"case-upper":      {ID: "case-upper", Name: "RELEASE", Color: "red_light"},
+		"case-lower":      {ID: "case-lower", Name: "release", Color: "blue_light"},
+		"raw-long-valid":  {ID: "raw-long-valid", Name: "Alpha" + strings.Repeat(" ", 40) + "Beta", Color: "red_dark"},
+		"standalone-mark": {ID: "standalone-mark", Name: "\u0301", Color: "purple_dark"},
+	}
+
+	nameByID, tags, adjusted, err := buildTagExports(labels)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nameByID) != len(labels) || len(tags) != len(labels) {
+		t.Fatalf("labels=%d names=%d tags=%d", len(labels), len(nameByID), len(tags))
+	}
+	if adjusted == 0 {
+		t.Fatal("expected transformed labels to be counted")
+	}
+	if nameByID["bug-two"] != "Bug 2" {
+		t.Fatalf("genuine suffix name was not preserved: %q", nameByID["bug-two"])
+	}
+	if store.CanonicalizeTag(nameByID["bug-red"]) == "bug-2" || store.CanonicalizeTag(nameByID["bug-blue"]) == "bug-2" {
+		t.Fatalf("generated duplicate stole genuine Bug 2: %+v", nameByID)
+	}
+	if nameByID["fallback-named"] != "Trello green light label" {
+		t.Fatalf("genuine fallback-shaped name was not preserved: %q", nameByID["fallback-named"])
+	}
+	if nameByID["raw-long-valid"] != labels["raw-long-valid"].Name {
+		t.Fatalf("raw long but canonically valid name was rewritten: %q", nameByID["raw-long-valid"])
+	}
+
+	tagByCanonical := make(map[string]store.TagExport, len(tags))
+	for _, tag := range tags {
+		canonical := store.CanonicalizeTag(tag.Name)
+		if canonical == "" {
+			t.Fatalf("invalid exported tag %q", tag.Name)
+		}
+		if previous, exists := tagByCanonical[canonical]; exists {
+			t.Fatalf("canonical collision %q between %+v and %+v", canonical, previous, tag)
+		}
+		tagByCanonical[canonical] = tag
+	}
+	for id, label := range labels {
+		canonical := store.CanonicalizeTag(nameByID[id])
+		tag, exists := tagByCanonical[canonical]
+		if !exists {
+			t.Fatalf("label %q has no exported tag for %q", id, canonical)
+		}
+		wantColor := trelloLabelColorHex(label.Color)
+		if !reflect.DeepEqual(tag.Color, wantColor) {
+			t.Fatalf("label %q color = %v, want %v", id, tag.Color, wantColor)
+		}
+	}
+
+	reordered := make(map[string]Label, len(labels))
+	ids := make([]string, 0, len(labels))
+	for id := range labels {
+		ids = append(ids, id)
+	}
+	for i := len(ids) - 1; i >= 0; i-- {
+		reordered[ids[i]] = labels[ids[i]]
+	}
+	secondNames, secondTags, secondAdjusted, err := buildTagExports(reordered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(nameByID, secondNames) || !reflect.DeepEqual(tags, secondTags) || adjusted != secondAdjusted {
+		t.Fatalf("map iteration changed output:\nfirst=%+v\nsecond=%+v", nameByID, secondNames)
+	}
+}
+
+func TestBuildTagExportsSuffixesAcrossDigitBoundary(t *testing.T) {
+	labels := make(map[string]Label)
+	for i := 1; i <= 12; i++ {
+		id := "repeat-" + strconv.Itoa(i)
+		labels[id] = Label{ID: id, Name: "Repeat"}
+	}
+	nameByID, tags, adjusted, err := buildTagExports(labels)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nameByID) != 12 || len(tags) != 12 || adjusted != 11 {
+		t.Fatalf("names=%d tags=%d adjusted=%d", len(nameByID), len(tags), adjusted)
+	}
+	seen := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		canonical := store.CanonicalizeTag(tag.Name)
+		if canonical == "" {
+			t.Fatalf("invalid tag %q", tag.Name)
+		}
+		seen[canonical] = struct{}{}
+	}
+	for _, want := range []string{"repeat", "repeat-9", "repeat-10", "repeat-11", "repeat-12"} {
+		if _, ok := seen[want]; !ok {
+			t.Fatalf("missing %q in %v", want, seen)
+		}
+	}
+}
+
+func TestBuildTagExportsSharesSuffixProgressAcrossTruncatedPrefixes(t *testing.T) {
+	const distinctBases = 1100
+	labels := sharedPrefixCollisionLabels(distinctBases)
+	state := newLabelNameAllocationState(len(labels))
+	nameByID, tags, adjusted, err := buildTagExportsWithAllocationState(labels, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nameByID) != distinctBases*2 || len(tags) != distinctBases*2 || adjusted != distinctBases {
+		t.Fatalf("names=%d tags=%d adjusted=%d", len(nameByID), len(tags), adjusted)
+	}
+	if state.candidateAttempts != distinctBases {
+		t.Fatalf("candidate attempts=%d, want %d for %d duplicate allocations", state.candidateAttempts, distinctBases, distinctBases)
+	}
+
+	seen := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		canonical := store.CanonicalizeTag(tag.Name)
+		if canonical == "" {
+			t.Fatalf("invalid tag %q", tag.Name)
+		}
+		if _, exists := seen[canonical]; exists {
+			t.Fatalf("duplicate canonical tag %q", canonical)
+		}
+		seen[canonical] = struct{}{}
+	}
+	for _, suffix := range []int{9, 10, 99, 100, 999, 1000} {
+		baseIndex := suffix - 2
+		id := sharedPrefixCollisionLabelID(baseIndex, "b")
+		want := strings.Repeat("a", store.MaxTagRunes-1-len(strconv.Itoa(suffix))) + "-" + strconv.Itoa(suffix)
+		if got := store.CanonicalizeTag(nameByID[id]); got != want {
+			t.Fatalf("suffix %d canonical name=%q, want %q", suffix, got, want)
+		}
+	}
+
+	reordered := make(map[string]Label, len(labels))
+	ids := make([]string, 0, len(labels))
+	for id := range labels {
+		ids = append(ids, id)
+	}
+	for i := len(ids) - 1; i >= 0; i-- {
+		reordered[ids[i]] = labels[ids[i]]
+	}
+	secondState := newLabelNameAllocationState(len(reordered))
+	secondNames, secondTags, secondAdjusted, err := buildTagExportsWithAllocationState(reordered, secondState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(nameByID, secondNames) || !reflect.DeepEqual(tags, secondTags) || adjusted != secondAdjusted {
+		t.Fatal("shared-prefix allocation changed with map insertion order")
+	}
+	if secondState.candidateAttempts != state.candidateAttempts {
+		t.Fatalf("candidate attempts changed with map insertion order: %d != %d", secondState.candidateAttempts, state.candidateAttempts)
+	}
+}
+
+func TestTruncateTagNameUsesCanonicalRuneBudget(t *testing.T) {
+	decomposed := strings.Repeat("e\u0301", 12)
+	tests := []struct {
+		name   string
+		input  string
+		budget int
+		want   string
+	}{
+		{
+			name:   "long whitespace retains following text",
+			input:  "Alpha" + strings.Repeat(" ", 80) + "Beta Gamma",
+			budget: 15,
+			want:   "Alpha Beta Gamm",
+		},
+		{
+			name:   "leading trailing and repeated hyphens",
+			input:  "---Alpha----Beta----Gamma---",
+			budget: 10,
+			want:   "Alpha-Beta",
+		},
+		{
+			name:   "decomposed sequences use NFC budget",
+			input:  decomposed,
+			budget: 10,
+			want:   strings.Repeat("e\u0301", 10),
+		},
+		{
+			name:   "overlong canonical name retains later segment",
+			input:  strings.Repeat("A", 20) + strings.Repeat(" ", 80) + strings.Repeat("B", 20),
+			budget: store.MaxTagRunes,
+			want:   strings.Repeat("A", 20) + " " + strings.Repeat("B", 11),
+		},
+		{
+			name:   "four digit suffix leaves meaningful prefix",
+			input:  strings.Repeat("A", 25) + strings.Repeat(" ", 80) + "BetaGamma",
+			budget: store.MaxTagRunes - len([]rune(" 1000")),
+			want:   strings.Repeat("A", 25) + " B",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncateTagName(tc.input, tc.budget)
+			if got != tc.want {
+				t.Fatalf("truncateTagName(%q, %d)=%q, want %q", tc.input, tc.budget, got, tc.want)
+			}
+			canonical := store.CanonicalizeTag(got)
+			if canonical == "" || len([]rune(canonical)) > tc.budget {
+				t.Fatalf("truncated name is invalid or over budget: %q -> %q", got, canonical)
+			}
+		})
+	}
+
+	validDisplays := []string{
+		"Alpha" + strings.Repeat(" ", 80) + "Beta",
+		"---Alpha----Beta---",
+		"Cafe\u0301",
+	}
+	for _, display := range validDisplays {
+		canonical := store.CanonicalizeTag(display)
+		if canonical == "" {
+			t.Fatalf("invalid preservation fixture %q", display)
+		}
+		if got := truncateTagName(display, len([]rune(canonical))); got != display {
+			t.Fatalf("valid display was rewritten: got %q, want %q", got, display)
+		}
+	}
+
+	prefix := truncateTagName(strings.Repeat("A", 25)+strings.Repeat(" ", 80)+"BetaGamma", store.MaxTagRunes-len([]rune(" 1000")))
+	if candidate := prefix + " 1000"; store.CanonicalizeTag(candidate) == "" {
+		t.Fatalf("four-digit suffix candidate is invalid: %q", candidate)
+	}
+}
+
+func BenchmarkBuildTagExportsSharedTruncatedPrefixes(b *testing.B) {
+	labels := sharedPrefixCollisionLabels(1100)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		state := newLabelNameAllocationState(len(labels))
+		if _, _, _, err := buildTagExportsWithAllocationState(labels, state); err != nil {
+			b.Fatal(err)
+		}
+		if state.candidateAttempts != 1100 {
+			b.Fatalf("candidate attempts=%d, want 1100", state.candidateAttempts)
+		}
+	}
+}
+
+func sharedPrefixCollisionLabels(count int) map[string]Label {
+	labels := make(map[string]Label, count*2)
+	for i := 0; i < count; i++ {
+		code := strconv.FormatInt(int64(i), 36)
+		code = strings.Repeat("0", 2-len(code)) + code
+		baseName := strings.Repeat("a", store.MaxTagRunes-2) + code
+		for _, instance := range []string{"a", "b"} {
+			id := sharedPrefixCollisionLabelID(i, instance)
+			labels[id] = Label{ID: id, Name: baseName}
+		}
+	}
+	return labels
+}
+
+func sharedPrefixCollisionLabelID(baseIndex int, instance string) string {
+	return "shared-" + strconv.Itoa(baseIndex) + "-" + instance
+}
+
+func TestTransformBoardLabelAssociationsAndWarnings(t *testing.T) {
+	board := &Board{
+		ID:    "labels",
+		Name:  "Labels",
+		Lists: []List{{ID: "todo", Name: "Todo", Pos: 10}},
+		Labels: []Label{
+			{ID: "punctuation", Name: "Bug/Fix", Color: "blue"},
+			{ID: "bug-one", Name: "Bug", Color: "red"},
+			{ID: "bug-two", Name: "Bug", Color: "green"},
+		},
+		Cards: []Card{
+			{ID: "one", Name: "One", IDList: "todo", Pos: 10, IDLabels: []string{"punctuation", "bug-one", "punctuation"}},
+			{ID: "two", Name: "Two", IDList: "todo", Pos: 20, IDLabels: []string{"bug-two"}},
+		},
+	}
+	bundle, err := TransformBoard(board, fixedNow())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.ExportData == nil || len(bundle.Preview.HardErrors) != 0 {
+		t.Fatalf("unexpected preview: %+v", bundle.Preview)
+	}
+	var adjustmentWarning string
+	for _, warning := range bundle.Preview.Warnings {
+		if strings.Contains(warning, "label names will be adjusted") {
+			adjustmentWarning = warning
+		}
+	}
+	if !strings.Contains(adjustmentWarning, "(2 adjusted)") {
+		t.Fatalf("adjustment warning = %q", adjustmentWarning)
+	}
+	if !strings.Contains(bundle.ProjectImportMetadata, adjustmentWarning) {
+		t.Fatalf("project metadata omitted warning: %s", bundle.ProjectImportMetadata)
+	}
+	project := bundle.ExportData.Projects[0]
+	if len(project.Tags) != 3 || len(project.Todos) != 2 {
+		t.Fatalf("project = %+v", project)
+	}
+	if len(project.Todos[0].Tags) != 2 {
+		t.Fatalf("duplicate source reference created duplicate card tags: %+v", project.Todos[0].Tags)
+	}
+	if store.CanonicalizeTag(project.Todos[0].Tags[0]) == store.CanonicalizeTag(project.Todos[0].Tags[1]) {
+		t.Fatalf("distinct card labels collapsed: %+v", project.Todos[0].Tags)
+	}
+
+	validOnly := &Board{
+		ID:     "valid-labels",
+		Name:   "Valid Labels",
+		Lists:  []List{{ID: "todo", Name: "Todo", Pos: 10}},
+		Labels: []Label{{ID: "unicode", Name: "नमस्ते दुनिया"}, {ID: "whitespace", Name: "Alpha   Beta"}},
+	}
+	validBundle, err := TransformBoard(validOnly, fixedNow())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, warning := range validBundle.Preview.Warnings {
+		if strings.Contains(warning, "label names will be adjusted") {
+			t.Fatalf("valid labels produced adjustment warning: %q", warning)
+		}
+	}
+	validTags := validBundle.ExportData.Projects[0].Tags
+	if !containsTagName(validTags, "नमस्ते दुनिया") || !containsTagName(validTags, "Alpha   Beta") {
+		t.Fatalf("valid display names were not preserved: %+v", validBundle.ExportData.Projects[0].Tags)
 	}
 }
 

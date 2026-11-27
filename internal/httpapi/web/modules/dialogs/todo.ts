@@ -51,6 +51,12 @@ import {
   setTodoFormPermissions,
 } from './todo-permissions.js';
 import {
+  configureTodoCreatorSelector,
+  getPendingTodoCreatorId,
+  refreshTodoCreatorSelectorLocale,
+  resetTodoCreatorSelector,
+} from './todo-creator-selector.js';
+import {
   getTagsFromChips,
   renderTagsChips,
   resetTodoTagAutocompleteBindings,
@@ -67,6 +73,7 @@ export {
   getTodoFormPermissions,
   type TodoDialogPermissions,
 } from './todo-permissions.js';
+export { getPendingTodoCreatorId } from './todo-creator-selector.js';
 export {
   getTagsFromChips,
   normalizeTagName,
@@ -85,6 +92,7 @@ type TodoDialogSnapshot = {
   status: string;
   estimation: string;
   assignee: string;
+  creator: string;
   sprint: string;
   priority: string;
   dueAt: string;
@@ -586,6 +594,7 @@ function readTodoDialogSnapshot(): TodoDialogSnapshot {
     status: (todoStatus as HTMLSelectElement | null)?.value ?? "",
     estimation: (todoEstimationPoints as HTMLSelectElement | null)?.value ?? "",
     assignee: assignee?.value ?? "",
+    creator: getPendingTodoCreatorId()?.toString() ?? "",
     sprint: sprint?.value ?? "",
     priority: (todoPriority as HTMLSelectElement | null)?.value ?? "",
     dueAt: (todoDueAt as HTMLInputElement | null)?.value ?? "",
@@ -610,6 +619,7 @@ function isTodoDialogDirty(): boolean {
     current.status !== todoDialogBaseline.status ||
     current.estimation !== todoDialogBaseline.estimation ||
     current.assignee !== todoDialogBaseline.assignee ||
+    current.creator !== todoDialogBaseline.creator ||
     current.sprint !== todoDialogBaseline.sprint ||
     current.priority !== todoDialogBaseline.priority ||
     current.dueAt !== todoDialogBaseline.dueAt ||
@@ -626,6 +636,7 @@ function resetTodoDialogCloseState(): void {
   todoDialogClosePromptOpen = false;
   todoCreatorLocaleAbort?.abort();
   todoCreatorLocaleAbort = null;
+  resetTodoCreatorSelector();
   todoCreatedCallback = null;
 }
 
@@ -945,7 +956,6 @@ export async function openTodoDialog(opts: {
   }
 
   const createdEl = document.getElementById("todoDialogCreated") as HTMLElement | null;
-  const createdByEl = document.getElementById("todoDialogCreatedBy") as HTMLElement | null;
   const updatedEl = document.getElementById("todoDialogUpdated") as HTMLElement | null;
   const archiveBanner = document.getElementById("todoArchiveBanner") as HTMLElement | null;
   const archiveTimestamp = document.getElementById("todoArchiveTimestamp") as HTMLElement | null;
@@ -979,21 +989,6 @@ export async function openTodoDialog(opts: {
       }
     }
   };
-  const setCreatedBy = (createdByUserId: number | null | undefined) => {
-    if (!createdByEl) return;
-    const member = createdByUserId != null ? getBoardMembers().find((m) => m.userId === createdByUserId) : null;
-    const name = member?.name || member?.email || "";
-    createdByEl.textContent = name ? t("todo.dialog.openedBy", { name }) : "";
-  };
-
-  todoCreatorLocaleAbort?.abort();
-  todoCreatorLocaleAbort = new AbortController();
-  document.addEventListener(
-    I18N_LOCALE_CHANGED,
-    () => setCreatedBy(mode === "edit" ? todo?.createdByUserId : undefined),
-    { signal: todoCreatorLocaleAbort.signal },
-  );
-
   if (mode === "create") {
     setTodoDialogTitleKey("todo.dialog.title.new");
     (todoTitle as HTMLInputElement).value = normalizeSeedTitle(opts.initialTitle);
@@ -1010,7 +1005,6 @@ export async function openTodoDialog(opts: {
     if (archiveBanner) archiveBanner.hidden = true;
     if (shareTodoBtn) (shareTodoBtn as HTMLElement).style.display = "none";
     setDates(undefined, undefined);
-    setCreatedBy(undefined);
   } else {
     setTodoDialogTitleKey(isArchived ? "todo.dialog.title.archived" : permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
     (todoTitle as HTMLInputElement).value = todo.title || "";
@@ -1032,8 +1026,43 @@ export async function openTodoDialog(opts: {
     }
     if (shareTodoBtn) (shareTodoBtn as HTMLElement).style.display = "";
     setDates(todo.createdAt, todo.updatedAt);
-    setCreatedBy(todo.createdByUserId);
   }
+  const normalizedIdentity = (value: unknown) => {
+    const id = Number(value);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  };
+  const creatorProjectId = normalizedIdentity(board?.project?.id);
+  const creatorTodoLocalId = mode === "edit" ? normalizedIdentity(todo?.localId) : null;
+  const creatorAuthUserId = normalizedIdentity(getUser()?.id);
+  const creatorMembershipIsCurrent = () => {
+    const activeUserId = normalizedIdentity(getUser()?.id);
+    return activeUserId === creatorAuthUserId && getBoardMembers().some((member) =>
+      Number(member.userId) === creatorAuthUserId && String(member.role).toLowerCase() === "maintainer",
+    );
+  };
+  configureTodoCreatorSelector({
+    generation: openGeneration,
+    projectId: creatorProjectId,
+    todoLocalId: creatorTodoLocalId,
+    authUserId: creatorAuthUserId,
+    canEdit: permissions.canEditCreator && creatorMembershipIsCurrent(),
+    originalCreatorUserId: mode === "edit" ? todo?.createdByUserId : null,
+    members: getBoardMembers(),
+    isContextCurrent: () =>
+      openGeneration === todoDialogOpenGeneration &&
+      normalizedIdentity(getBoard()?.project?.id) === creatorProjectId,
+    isEditAuthorized: creatorMembershipIsCurrent,
+  });
+  todoCreatorLocaleAbort?.abort();
+  todoCreatorLocaleAbort = new AbortController();
+  document.addEventListener(
+    I18N_LOCALE_CHANGED,
+    () => {
+      if (openGeneration !== todoDialogOpenGeneration || !todoDialogBaseline || !(todoDialog as HTMLElement | null)?.isConnected) return;
+      refreshTodoCreatorSelectorLocale();
+    },
+    { signal: todoCreatorLocaleAbort.signal },
+  );
   const overdueIndicator = document.getElementById("todoDialogOverdue") as HTMLElement | null;
   const syncOverdueIndicator = () => {
     const selectedKey = (todoStatus as HTMLSelectElement | null)?.value ?? "";

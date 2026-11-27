@@ -57,24 +57,31 @@ Categories map onto the server's existing event taxonomy (the same `reason` valu
 for realtime board refresh) rather than introducing a parallel event system — see the
 `refreshReasonInfo` table in `internal/httpapi/email_notify.go` for the exact mapping.
 
-A todo's `createdByUserId` is historical data only. A committed update or move by another
-authenticated user can publish the internal `todo.creator_notification_requested` consideration
-request from the prepared application service. Historical attribution only nominates a candidate.
-When the request is consumed, the creator-specific authorization service freshly resolves the
-durable project and requires the creator to have a current viewer-or-higher project membership.
-Success produces the point-in-time internal `todo.creator_notification_recipient_authorized`
-decision; a removed, deleted, or nonexistent creator, temporary or missing project, self request,
-or lookup failure produces no recipient. Membership is evaluated in its current state at that
-instant, so membership added before authorization permits the decision and membership removed
-before authorization denies it.
+A todo's `createdByUserId` is historical data only. An authenticated project Maintainer can correct
+it to any existing user, including a non-member; attribution does not grant membership or access.
+A creator-only correction is a material mutation for audit and lifecycle purposes, but it does not
+publish creator-specific notification requests, creator email, or private creator SSE. Ordinary
+board/card activity remains an independent category. A combined creator correction and ordinary
+update uses the committed new creator when considering creator-specific delivery.
+
+A committed eligible update or move by another authenticated user can publish the internal
+`todo.creator_notification_requested` consideration request from the prepared application service.
+Historical attribution only nominates a candidate. When the request is consumed, the
+creator-specific authorization service performs one fresh store read that binds the durable
+project, current viewer-or-higher membership, todo global/project/local identity, and the todo's
+current creator. Success produces the point-in-time internal
+`todo.creator_notification_recipient_authorized` decision. Missing or mismatched project/todo
+identity, a changed or null creator, removed membership, temporary project, self request, or lookup
+failure produces no creator recipient. Stale creator eligibility is discarded rather than
+redirected to a newer creator.
 
 Neither internal event is a preference or delivery decision, and neither is exposed to browsers or
-webhooks. The SSE bridge treats the authorized-recipient event only as a candidate and freshly
-loads the durable project and the recipient's current role again immediately before disclosure. If
-the creator is no longer a viewer-or-higher member, the project or user is unavailable, the project
-is temporary, the event is malformed or self-directed, the lookup fails, or the fanout context is
-cancelled, delivery fails closed. The earlier authorization is not a durable entitlement. The
-delivery check uses the current project slug rather than the slug carried by the internal event.
+webhooks. The SSE bridge treats the authorized-recipient event only as a candidate and repeats the
+same bound project, membership, todo-identity, and current-creator check immediately before
+disclosure. If any fact no longer matches, the event is malformed or self-directed, the lookup
+fails, or the fanout context is cancelled, delivery fails closed. The earlier authorization is not
+a durable entitlement. The delivery check uses the current project slug rather than the slug
+carried by the internal event.
 
 After that delivery-time check succeeds, the bridge emits `todo.creator_activity` only on the
 creator's private user SSE channel. Its minimum-disclosure payload contains the current project
@@ -84,15 +91,17 @@ the existing todo-title fallback. It does not reload the board, navigate, change
 counters, play a sound, or create a desktop notification. Creator SSE is best-effort; cancellation
 or a missing connection can drop it without changing the successful todo mutation.
 
-Independently of SSE, the authorized-recipient event starts a non-blocking fresh access check before
-it may enqueue a non-sensitive creator email candidate for a material mutation. The queued item
-contains no destination, rendered subject, or rendered body. At every SMTP attempt the notification
-worker reauthorizes current durable
-project access, reads the current master and category preferences, resolves the current user email,
-and only then renders the message using the fresh project name and slug. Removal, deletion,
-temporary/missing projects, lookup failures, preference changes, or a cancelled worker context all
-drop the best-effort email without affecting the committed mutation. Web Push and webhook delivery
-remain disabled for creator activity.
+Independently of SSE, the request event starts non-blocking email-category arbitration. Before
+enqueue and at every SMTP attempt, the worker repeats the bound project, membership, and todo
+identity checks. Current creator attribution is additionally required only for **Cards I opened**;
+transaction-authoritative assignment and card-activity facts retain their independent eligibility.
+The queued item contains no destination, rendered subject, or rendered body. Preference,
+destination, and rendering checks happen only after current access succeeds. A stale creator is
+never notified as a creator and is never redirected to the replacement creator, but may still
+receive one independently eligible assignment or card-activity email under the ordinary rules.
+Removal, deletion, temporary/missing projects, identity mismatches, lookup failures, or a cancelled
+worker context drop all delivery without affecting the committed mutation. Web Push and webhook
+delivery remain disabled for creator activity.
 
 ---
 
@@ -108,17 +117,19 @@ For a historical creator who qualifies for overlapping categories on one mutatio
 selects at most one email using `Assigned to me` > `Cards I opened` > `Card activity`. A disabled
 higher-priority category falls through to the next category that this adapter actually produces.
 REST and legacy update/move paths can fall back to card activity; ordinary MCP/Agora mutations do
-not invent a `board.refresh_needed` candidate. The selected category is fixed for the queued work
-item across SMTP retries: if that category is later disabled, the retry is dropped rather than
-switching categories. Semantic update no-ops do not queue creator email. Other eligible members
-retain the existing card-activity behavior.
+not invent a `board.refresh_needed` candidate. The selected category is fixed across SMTP retries
+while it remains eligible. If its preference is later disabled, the retry is dropped rather than
+switching categories. If creator attribution changes, creator eligibility is lost and arbitration
+may select an independently eligible assignment or card-activity category instead. Semantic update
+no-ops do not queue creator email. Other eligible members retain the existing card-activity
+behavior.
 
 Assignment overlap is decided from private transaction-authoritative creator and durable-project
 facts carried by the existing post-commit assignment publication; those facts are not added to the
-public `todo.assigned` payload. The email notifier does not reread the todo to guess creator
-identity. Temporary projects therefore retain ordinary assignment-email behavior, while a durable
-creator candidate that later loses authorization fails closed instead of falling back to a
-potentially unauthorized assignment or activity disclosure.
+public `todo.assigned` payload. Temporary projects retain ordinary assignment-email behavior. For
+durable projects, independent assignment or activity fallback still requires current project
+membership and an exact project/todo identity match; current creator attribution is not used to
+authorize those categories.
 
 Project deletion is captured from a committed pre-deletion snapshot. Eligible members are checked
 against their server-side preferences after the deletion succeeds, the actor is skipped, and the

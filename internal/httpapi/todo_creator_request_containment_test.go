@@ -31,6 +31,19 @@ func TestCreatorNotificationPipelineContainmentAndPrivateSSE(t *testing.T) {
 	if err := st.AddProjectMember(ownerCtx, owner.ID, project.ID, creator.ID, store.RoleViewer); err != nil {
 		t.Fatalf("add creator member: %v", err)
 	}
+	todo, err := st.CreateTodo(ownerCtx, project.ID, store.CreateTodoInput{Title: "Internal title", ColumnKey: store.DefaultColumnBacklog}, store.ModeFull)
+	if err != nil {
+		t.Fatalf("create todo: %v", err)
+	}
+	creatorID := creator.ID
+	todo, err = st.UpdateTodo(ownerCtx, todo.ID, store.UpdateTodoInput{
+		KeepTitle: true, KeepBody: true, KeepTags: true,
+		KeepEstimationPoints: true, KeepAssigneeUserID: true,
+		CreatedByUserIDPresent: true, CreatedByUserID: &creatorID,
+	}, store.ModeFull)
+	if err != nil {
+		t.Fatalf("set todo creator: %v", err)
+	}
 	for _, events := range [][]string{
 		{eventbus.TodoCreatorNotificationRequestedEventType},
 		{eventbus.TodoCreatorNotificationRecipientAuthorizedEventType},
@@ -69,9 +82,9 @@ func TestCreatorNotificationPipelineContainmentAndPrivateSSE(t *testing.T) {
 	request := todoapp.CreatorNotificationRequest{
 		ProjectID:             project.ID,
 		ProjectSlug:           project.Slug,
-		TodoID:                71,
-		LocalID:               4,
-		Title:                 "Internal title",
+		TodoID:                todo.ID,
+		LocalID:               todo.LocalID,
+		Title:                 todo.Title,
 		ActivityReason:        "todo_updated",
 		CreatedByUserID:       creator.ID,
 		ActorUserID:           owner.ID,
@@ -87,7 +100,8 @@ func TestCreatorNotificationPipelineContainmentAndPrivateSSE(t *testing.T) {
 		if len(collector.events) != 1 || collector.events[0].Type != eventbus.TodoCreatorNotificationRequestedEventType {
 			t.Fatalf("internal collector events=%+v, want request only", collector.events)
 		}
-		assertCreatorPipelineNoDelivery(t, projectEvents, creatorEvents, webhookQueue, mailQueue)
+		assertCreatorPipelineNoNonSSEDelivery(t, projectEvents, webhookQueue, mailQueue, 1)
+		assertNoCreatorActivityHubMessage(t, creatorEvents, "cancelled authorization recipient")
 	})
 
 	t.Run("current member produces one private SSE and no other delivery", func(t *testing.T) {

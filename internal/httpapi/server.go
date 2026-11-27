@@ -441,6 +441,7 @@ type storeAPI interface {
     UnlinkTodoGitHubItem(ctx context.Context,actorID,projectID,localID,resourceID int64,kind string,number int64) error
     RefreshTodoGitHubItem(ctx context.Context,actorID,projectID,localID int64,item integration.GitHubItem) error
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
+	GetTodoCreatorNotificationFacts(ctx context.Context, projectID, todoID, recipientUserID int64) (store.TodoCreatorNotificationFacts, bool, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)
 	ListAvailableUsersForProject(ctx context.Context, requesterID, projectID int64) ([]store.User, error)
@@ -1394,9 +1395,9 @@ func (s *Server) PublishEvent(ctx context.Context, e eventbus.Event) {
 
 // PublishCreatorNotificationRequest records the internal consideration request,
 // then performs the Phase 3 fresh-access check. Neither internal event is
-// exposed verbatim. SSE and creator email independently treat the authorized
-// event as a candidate and repeat current-access checks at their delivery
-// boundaries; push and webhooks remain excluded.
+// exposed verbatim. Email arbitrates independent categories from the request,
+// while SSE requires the authorized event. Both repeat current-access checks at
+// their delivery boundaries; push and webhooks remain excluded.
 func (s *Server) PublishCreatorNotificationRequest(ctx context.Context, request todoapp.CreatorNotificationRequest) {
 	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRequestedPayload{
 		ProjectID:             request.ProjectID,

@@ -42,6 +42,7 @@ const urlsToCache = [
   '/dist/views/notfound.js',
   '/dist/views/projects.js',
   '/dist/dialogs/settings.js',
+  '/dist/dialogs/todo-creator-selector.js',
   '/dist/dialogs/todo-submit.js',
   '/dist/dialogs/todo.js',
   '/dist/dialogs/bulk-edit.js',

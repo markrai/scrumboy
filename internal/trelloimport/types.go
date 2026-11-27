@@ -2,6 +2,7 @@ package trelloimport
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -532,7 +533,16 @@ func TransformBoard(board *Board, now time.Time) (*Bundle, error) {
 		return &Bundle{Preview: dedupePreview(preview)}, nil
 	}
 
-	labelNameByID, tagExports := buildTagExports(labelByID)
+	labelNameByID, tagExports, adjustedLabelCount, err := buildTagExports(labelByID)
+	if err != nil {
+		return nil, err
+	}
+	if adjustedLabelCount > 0 {
+		preview.Warnings = append(preview.Warnings, fmt.Sprintf(
+			"Some Trello label names will be adjusted to comply with Scrumboy's tag naming rules and preserve distinct labels (%d adjusted).",
+			adjustedLabelCount,
+		))
+	}
 	closedListCardCount := 0
 	todoMetadataByLocalID := make(map[int64]string, len(board.Cards))
 	type convertedCard struct {

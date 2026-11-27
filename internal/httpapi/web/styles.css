@@ -2606,10 +2606,232 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   display: none;
 }
 
+.todo-dialog-creator {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--s-2);
+  overflow: hidden;
+}
+
+.todo-creator-edit {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.todo-creator-edit[hidden],
+.todo-creator-reset[hidden] {
+  display: none;
+}
+
+.todo-creator-reset {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: var(--s-3) var(--s-6);
+  border: 0;
+  border-radius: var(--radius-6);
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-10);
+  cursor: pointer;
+}
+
+.todo-creator-reset:hover,
+.todo-creator-reset:focus-visible {
+  color: var(--text);
+  background: var(--panel2);
+}
+
+.todo-creator-edit:hover,
+.todo-creator-edit:focus-visible {
+  color: var(--text);
+  background: var(--panel2);
+}
+
+.todo-creator-selector {
+  position: fixed;
+  inset: auto;
+  z-index: 1500;
+  margin: 0;
+  padding: var(--s-10);
+  max-width: calc(100vw - 16px);
+  max-height: min(520px, 58dvh);
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  box-shadow: var(--shadow);
+}
+
+.todo-creator-selector[hidden] {
+  display: none;
+}
+
+.todo-creator-selector::backdrop {
+  background: transparent;
+}
+
+.todo-creator-selector__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: var(--s-8);
+}
+
+.todo-creator-selector__search {
+  min-width: 0;
+  min-height: 40px;
+}
+
+.todo-creator-selector__close {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-20);
+}
+
+.todo-creator-selector__close:hover,
+.todo-creator-selector__close:focus-visible {
+  color: var(--text);
+  background: var(--panel2);
+}
+
+.todo-creator-selector__status {
+  min-height: 1.4em;
+  padding: var(--s-6) var(--s-4) var(--s-4);
+  font-size: var(--fs-11);
+  line-height: 1.4;
+}
+
+.todo-creator-selector__status--error {
+  color: color-mix(in srgb, var(--danger) 82%, var(--text));
+}
+
+.todo-creator-selector__options {
+  display: grid;
+  gap: var(--s-3);
+  max-height: min(320px, 42dvh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.todo-creator-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-8);
+  min-height: 48px;
+  padding: var(--s-8) var(--s-10);
+  border: 1px solid transparent;
+  border-radius: var(--radius-8);
+  cursor: pointer;
+}
+
+.todo-creator-option:hover,
+.todo-creator-option--active {
+  background: var(--panel2);
+  border-color: var(--border);
+}
+
+.todo-creator-option[aria-selected="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.todo-creator-option__identity {
+  display: grid;
+  min-width: 0;
+}
+
+.todo-creator-option__name,
+.todo-creator-option__email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-creator-option__name {
+  font-size: var(--fs-13);
+  font-weight: 700;
+}
+
+.todo-creator-option__email {
+  font-size: var(--fs-10);
+}
+
+.todo-creator-option__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  max-width: 150px;
+}
+
+.todo-creator-option__badge,
+.todo-creator-option__selected {
+  padding: var(--s-2) var(--s-5);
+  border-radius: 999px;
+  font-size: var(--fs-9);
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.todo-creator-option__badge {
+  color: var(--muted);
+  background: var(--panel2);
+}
+
+.todo-creator-option__selected {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 /* Scoped under .dialog for specificity to beat the .muted utility class (mobile only) */
 @media (max-width: 767px) {
   .dialog .todo-dialog-dates {
     font-size: var(--fs-9);
+  }
+
+  .todo-creator-edit {
+    width: 44px;
+    height: 44px;
+  }
+
+  .todo-creator-reset {
+    min-height: 44px;
+  }
+
+  .todo-creator-selector__header {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+
+  .todo-creator-selector__search,
+  .todo-creator-selector__close {
+    min-height: 44px;
+  }
+
+  .todo-creator-selector__close {
+    width: 44px;
+    height: 44px;
   }
 }
 
@@ -2665,7 +2887,58 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   }
 
   #todoDialog .dialog__footer {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "dates dates dates dates dates"
+      "delete lifecycle . save share";
+    column-gap: var(--s-3);
+    row-gap: var(--s-4);
     flex-shrink: 0;
+    overflow: visible;
+  }
+
+  #todoDialog .dialog__footer #deleteTodoBtn {
+    grid-area: delete;
+  }
+
+  #todoDialog .dialog__footer #archiveTodoBtn,
+  #todoDialog .dialog__footer #restoreTodoBtn {
+    grid-area: lifecycle;
+  }
+
+  #todoDialog .dialog__footer .todo-dialog-dates {
+    grid-area: dates;
+    width: 100%;
+  }
+
+  #todoDialog .dialog__footer #saveTodoBtn {
+    grid-area: save;
+    margin-inline-start: 0;
+  }
+
+  #todoDialog .dialog__footer .todo-share-btn {
+    grid-area: share;
+    margin-left: 0;
+  }
+
+  .todo-creator-selector {
+    max-height: 62dvh;
+  }
+
+  .todo-creator-selector__options {
+    max-height: 38dvh;
+  }
+
+  .todo-creator-option {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+    min-height: 52px;
+  }
+
+  .todo-creator-option__badges {
+    justify-content: flex-start;
+    max-width: 100%;
   }
 
   .dialog__form {

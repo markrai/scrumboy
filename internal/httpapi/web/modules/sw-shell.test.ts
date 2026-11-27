@@ -64,6 +64,13 @@ describe('service worker shell separation', () => {
     expect(sw.store.has('/index.html')).toBe(false);
   });
 
+  it('precaches the generated creator selector runtime without source TypeScript', async () => {
+    const sw = loadServiceWorker(async (path) => response(path));
+    await sw.install();
+    expect(sw.store.get('/dist/dialogs/todo-creator-selector.js')?.body).toBe('/dist/dialogs/todo-creator-selector.js');
+    expect(sw.store.has('/modules/dialogs/todo-creator-selector.ts')).toBe(false);
+  });
+
   it('offline board and workspace navigations fall back to the app shell, never marketing HTML', async () => {
     let online = true;
     const sw = loadServiceWorker(async (path) => {
@@ -96,6 +103,7 @@ describe('service worker shell separation', () => {
       '/api/board/ignite/publication',
       '/api/me/realtime',
       '/api/auth/status',
+      '/api/projects/4/available-users',
     ]) {
       expect(await sw.request(path)).toBe('bypassed');
       expect(sw.store.has(path)).toBe(false);

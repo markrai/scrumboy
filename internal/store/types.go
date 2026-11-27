@@ -322,7 +322,7 @@ type Todo struct {
 	Rank             int64
 	EstimationPoints *int64
 	AssigneeUserID   *int64
-	// CreatedByUserID is immutable historical attribution, not current membership or authorization.
+	// CreatedByUserID is historical attribution, not current membership or authorization. It is set at creation and can only be reassigned by a project maintainer (UpdateTodoInput.CreatedByUserIDPresent).
 	// It is NULL for unauthenticated creation, pre-migration rows, and deleted creators.
 	CreatedByUserID *int64
 	SprintID        *int64 // NULL = backlog; non-NULL = in that sprint
@@ -345,6 +345,10 @@ type Todo struct {
 	// MaterialChanged is transaction-authoritative mutation metadata. It ignores
 	// bookkeeping timestamps and is not persisted or projected to clients.
 	MaterialChanged bool `json:"-"`
+	// CreatorChanged and OtherMaterialChanged distinguish creator-only corrections
+	// from combined and ordinary mutations. They are not persisted or projected.
+	CreatorChanged       bool `json:"-"`
+	OtherMaterialChanged bool `json:"-"`
 	// PublicProjectionChanged is transaction-authoritative mutation metadata for
 	// deciding whether public-board consumers need an invalidation. Private-only
 	// fields such as assignee and due date do not set it.
@@ -354,6 +358,18 @@ type Todo struct {
 	// the authoritative transaction; they are never persisted or projected.
 	MoveFromColumnName string `json:"-"`
 	MoveToColumnName   string `json:"-"`
+}
+
+type TodoCreatorNotificationFacts struct {
+	ProjectID       int64
+	ProjectName     string
+	ProjectSlug     string
+	DurableProject  bool
+	RecipientRole   ProjectRole
+	TodoID          int64
+	TodoProjectID   int64
+	TodoLocalID     int64
+	CreatedByUserID *int64
 }
 
 // Sprint time terminology (see Sprint struct in sprints.go):

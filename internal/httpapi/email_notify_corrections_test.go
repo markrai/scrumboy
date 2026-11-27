@@ -70,6 +70,35 @@ func (s *emailNotifyFakeStore) GetProjectRole(_ context.Context, _ int64, userID
 	return role, nil
 }
 
+func (s *emailNotifyFakeStore) GetTodoCreatorNotificationFacts(_ context.Context, projectID, todoID, recipientUserID int64) (store.TodoCreatorNotificationFacts, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.projectErr != nil {
+		return store.TodoCreatorNotificationFacts{}, false, s.projectErr
+	}
+	role := s.roles[recipientUserID]
+	facts := store.TodoCreatorNotificationFacts{
+		ProjectID:       s.project.ID,
+		ProjectName:     s.project.Name,
+		ProjectSlug:     s.project.Slug,
+		DurableProject:  s.project.ExpiresAt == nil,
+		RecipientRole:   role,
+		TodoID:          s.dueTodo.ID,
+		TodoProjectID:   s.dueTodo.ProjectID,
+		TodoLocalID:     s.dueTodo.LocalID,
+		CreatedByUserID: cloneInt64PointerForEmailTest(s.dueTodo.CreatedByUserID),
+	}
+	return facts, projectID == s.project.ID && todoID == s.dueTodo.ID, nil
+}
+
+func cloneInt64PointerForEmailTest(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
 func (s *emailNotifyFakeStore) GetTodoDueReminderState(_ context.Context, _ int64) (store.Todo, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -100,6 +129,7 @@ func enabledEmailNotifyPref() store.EmailNotifyPref {
 
 func newEmailNotifyFake() *emailNotifyFakeStore {
 	pref := enabledEmailNotifyPref()
+	creatorID := int64(2)
 	return &emailNotifyFakeStore{
 		project: store.Project{ID: 7, Name: "Roadmap", Slug: "roadmap"},
 		members: []store.ProjectMember{
@@ -112,7 +142,7 @@ func newEmailNotifyFake() *emailNotifyFakeStore {
 			2: {ID: 2, PublicID: "assignee-public", Email: "assignee@example.com"},
 			3: {ID: 3, PublicID: "member-public", Email: "member@example.com"},
 		},
-		dueTodo:  store.Todo{ID: 11, ProjectID: 7, LocalID: 4, Title: "Ship it", ColumnKey: store.DefaultColumnDoing, AssigneeUserID: func() *int64 { value := int64(2); return &value }()},
+		dueTodo:  store.Todo{ID: 11, ProjectID: 7, LocalID: 4, Title: "Ship it", ColumnKey: store.DefaultColumnDoing, AssigneeUserID: func() *int64 { value := int64(2); return &value }(), CreatedByUserID: &creatorID},
 		prefs:    map[int64]store.EmailNotifyPref{1: pref, 2: pref, 3: pref},
 		prefErrs: make(map[int64]error),
 		roles:    map[int64]store.ProjectRole{1: store.RoleViewer, 2: store.RoleViewer, 3: store.RoleViewer},

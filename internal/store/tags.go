@@ -14,14 +14,15 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-const maxTagRunes = 32
+// MaxTagRunes is the maximum number of Unicode code points in a canonical tag name.
+const MaxTagRunes = 32
 
 // CanonicalizeTag returns the storage and identity form of a tag name.
 //
 // The contract is: valid UTF-8; surrounding Unicode whitespace removed; NFC;
 // deterministic Unicode lowercase; NFC again; Unicode whitespace runs changed to
 // one ASCII hyphen; repeated ASCII hyphens collapsed; and edge hyphens removed.
-// The result may contain at most maxTagRunes Unicode code points. Letters and
+// The result may contain at most MaxTagRunes Unicode code points. Letters and
 // numbers are accepted, and combining marks are accepted only after a letter or
 // number (possibly after another combining mark in that same segment).
 //
@@ -72,7 +73,7 @@ func CanonicalizeTag(name string) string {
 	}
 
 	s = b.String()
-	if s == "" || utf8.RuneCountInString(s) > maxTagRunes {
+	if s == "" || utf8.RuneCountInString(s) > MaxTagRunes {
 		return ""
 	}
 	return s

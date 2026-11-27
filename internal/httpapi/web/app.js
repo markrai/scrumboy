@@ -13,7 +13,7 @@ import { apiFetch, archiveTodos, restoreTodos } from './dist/api.js';
 import { navigate, router } from './dist/router.js';
 import { getRoute, getProjectId, getBoard, getAuthStatusAvailable, getMobileTab, getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getProjectView, getProjectsTab, getProjects, getSettingsProjectId, getEditingTodo, getAvailableTags, getAutocompleteSuggestion, getAvailableTagsMap, getTagColors, getUser, getSettingsActiveTab, getBackupImportBtn, getBackupData, getBackupPreview, getAuthStatusChecked } from './dist/state/selectors.js';
 import { setProjectId, setBoard, setSlug, setMobileTab, setProjects, setProjectsTab, setProjectView, setEditingTodo, setAvailableTags, setAvailableTagsMap, setAutocompleteSuggestion, setTagColors, setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview } from './dist/state/mutations.js';
-import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose, getTodoDialogOpenGeneration, notifyTodoCreated, isTodoImageUploadPending, getTodoNotesValue, prepareTodoDrawingsForSave, prepareTodoNotesInkForSave } from './dist/dialogs/todo.js';
+import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose, getTodoDialogOpenGeneration, notifyTodoCreated, isTodoImageUploadPending, getTodoNotesValue, getPendingTodoCreatorId, prepareTodoDrawingsForSave, prepareTodoNotesInkForSave } from './dist/dialogs/todo.js';
 import { buildTodoCreatePayload, buildTodoPatchPayload, shouldSubmitSprintAssignment } from './dist/dialogs/todo-submit.js';
 import { hasIncompleteDueInput, resolveDueAtForSubmit } from './dist/dialogs/todo-due.js';
 import { hasInvalidCustomFieldInput, readCustomFieldInputs, readCustomFieldTypes, resolveCustomFieldsForSubmit } from './dist/dialogs/todo-custom-fields.js';
@@ -270,6 +270,9 @@ todoForm.addEventListener("submit", async (e) => {
         estimationRaw,
         assigneeEnabled: !!assigneeEl,
         assigneeUserId,
+        creatorEnabled: getTodoFormPermissions().canEditCreator,
+        creatorUserId: getPendingTodoCreatorId(),
+        originalCreatorUserId: todo.createdByUserId,
         sprintEnabled: shouldSubmitSprintAssignment(!!showSprint, todo.sprintId, sprintId),
         sprintId,
 		priorityKey,

@@ -306,6 +306,7 @@ const BOOTSTRAP_EN_CATALOG = {
     "errors.VALIDATION_ERROR.invalid_calendar_source_name": "A calendar name is required and can be at most 200 characters.",
     "errors.VALIDATION_ERROR.invalid_calendar_source_type": "Choose a valid calendar type.",
     "errors.VALIDATION_ERROR.invalid_calendar_url": "Enter an https:// calendar link without a username or password.",
+    "errors.VALIDATION_ERROR.invalid_created_by_user_id": "Please select a valid story creator.",
     "errors.VALIDATION_ERROR.invalid_custom_field_key": "A custom field key can only contain lowercase letters, numbers and underscores, up to 32 characters.",
     "errors.VALIDATION_ERROR.invalid_custom_field_name": "A custom field name is required and can be at most 100 characters.",
     "errors.VALIDATION_ERROR.invalid_custom_field_type": "A custom field type must be text, URL or number.",

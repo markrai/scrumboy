@@ -172,11 +172,44 @@ func TestUpdatePatchHasFieldsIsSyntactic(t *testing.T) {
 	if !(UpdatePatch{AssigneeUserID: Field[*int64]{Present: true, Value: existing.AssigneeUserID}}).HasFields() {
 		t.Fatal("assignee explicitly set to its existing value was treated as absent")
 	}
+	if !(UpdatePatch{CreatedByUserID: Field[*int64]{Present: true}}).HasFields() {
+		t.Fatal("explicitly invalid nil creator was treated as absent")
+	}
 	if (UpdatePatch{SprintID: Field[*int64]{}}).HasFields() {
 		t.Fatal("omitted sprint reported as supplied")
 	}
 	if !(UpdatePatch{SprintID: Field[*int64]{Present: true, Value: existing.SprintID}}).HasFields() {
 		t.Fatal("sprint explicitly set to its existing value was treated as absent")
+	}
+}
+
+func TestMaterializeUpdateInputCreatorPresenceAndCopy(t *testing.T) {
+	existingCreator := int64(17)
+	existing := fullyPopulatedUpdateTodo()
+	existing.CreatedByUserID = &existingCreator
+
+	omitted := MaterializeUpdateInput(existing, UpdatePatch{})
+	if omitted.CreatedByUserIDPresent || omitted.CreatedByUserID != nil {
+		t.Fatalf("omitted creator materialized as a mutation: %+v", omitted)
+	}
+
+	creator := int64(29)
+	patch := UpdatePatch{CreatedByUserID: Field[*int64]{Present: true, Value: &creator}}
+	set := MaterializeUpdateInput(existing, patch)
+	if !set.CreatedByUserIDPresent || set.CreatedByUserID == nil || *set.CreatedByUserID != 29 {
+		t.Fatalf("explicit creator was not materialized: %+v", set)
+	}
+	if set.CreatedByUserID == patch.CreatedByUserID.Value {
+		t.Fatal("materialized creator pointer aliases the patch")
+	}
+	creator = 41
+	if *set.CreatedByUserID != 29 {
+		t.Fatalf("materialized creator changed with patch source: %d", *set.CreatedByUserID)
+	}
+
+	invalid := MaterializeUpdateInput(existing, UpdatePatch{CreatedByUserID: Field[*int64]{Present: true}})
+	if !invalid.CreatedByUserIDPresent || invalid.CreatedByUserID != nil {
+		t.Fatalf("explicit nil creator was converted to omission: %+v", invalid)
 	}
 }
 

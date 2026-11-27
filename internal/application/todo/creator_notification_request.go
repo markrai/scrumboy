@@ -103,6 +103,9 @@ func publishCreatorNotificationRequest(
 // services use it before their ancillary project lookup so ineligible
 // mutations retain their existing post-write read behavior.
 func shouldRequestCreatorNotification(ctx context.Context, todo store.Todo) bool {
+	if todo.CreatorChanged && !todo.OtherMaterialChanged {
+		return false
+	}
 	if todo.CreatedByUserID == nil {
 		return false
 	}

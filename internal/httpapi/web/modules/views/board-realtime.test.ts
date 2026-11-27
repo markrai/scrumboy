@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as events from "../events.js";
+import * as membersCache from "../members-cache.js";
 
 const {
   invalidateBoardMock,
@@ -249,6 +251,25 @@ describe("board-realtime drag refresh guards", () => {
     });
     vi.advanceTimersByTime(mod.__getMaxRefreshDelayMsForTest() + 100);
 
+    expect(invalidateBoardMock).not.toHaveBeenCalled();
+  });
+
+  it("invalidates the member cache and emits the selector refresh event for realtime membership changes", async () => {
+    const mod = await loadBoardRealtimeModule();
+    selectorState.authStatusAvailable = true;
+    selectorState.user = { id: 11 };
+    selectorState.projectId = 7;
+    vi.mocked(membersCache.invalidateMembersCache).mockClear();
+    vi.mocked(events.emit).mockClear();
+    mod.connectBoardEvents("alpha");
+
+    mod.__handleBoardRealtimeEventForTest({
+      type: "members_updated",
+      projectId: 7,
+    });
+
+    expect(membersCache.invalidateMembersCache).toHaveBeenCalledWith(7);
+    expect(events.emit).toHaveBeenCalledWith("members-updated", { projectId: 7 });
     expect(invalidateBoardMock).not.toHaveBeenCalled();
   });
 });

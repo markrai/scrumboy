@@ -252,7 +252,24 @@
           <button class="btn btn--danger" type="button" id="deleteTodoBtn" data-i18n-text="common.delete">Delete</button>
           <button class="btn btn--ghost" type="button" id="archiveTodoBtn" data-i18n-text="common.archive">Archive</button>
           <button class="btn" type="button" id="restoreTodoBtn" data-i18n-text="common.restore">Restore</button>
-          <div class="todo-dialog-dates muted" id="todoDialogCreated" aria-hidden="true"><span class="todo-dialog-datetime-value"></span><span class="todo-dialog-createdby" id="todoDialogCreatedBy"></span></div>
+          <div class="todo-dialog-dates muted" id="todoDialogCreated" aria-hidden="true">
+            <span class="todo-dialog-datetime-value"></span>
+            <span class="todo-dialog-creator">
+              <span class="todo-dialog-createdby" id="todoDialogCreatedBy"></span>
+              <button class="todo-creator-edit" type="button" id="todoCreatorEditBtn" aria-haspopup="dialog" aria-controls="todoCreatorSelector" aria-expanded="false" hidden>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil" aria-hidden="true" focusable="false"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+              </button>
+              <button class="todo-creator-reset" type="button" id="todoCreatorResetBtn" hidden></button>
+            </span>
+          </div>
+          <div class="todo-creator-selector" id="todoCreatorSelector" popover="manual" role="dialog" hidden>
+            <div class="todo-creator-selector__header">
+              <input class="input todo-creator-selector__search" id="todoCreatorSearch" type="search" role="combobox" aria-autocomplete="list" aria-controls="todoCreatorOptions" aria-expanded="false" autocomplete="off" />
+              <button class="todo-creator-selector__close" type="button" id="todoCreatorSelectorClose" data-i18n-aria-label="common.close" aria-label="Close">&times;</button>
+            </div>
+            <div class="todo-creator-selector__status muted" id="todoCreatorStatus" role="status" aria-live="polite"></div>
+            <div class="todo-creator-selector__options" id="todoCreatorOptions" role="listbox"></div>
+          </div>
           <button class="btn" type="submit" value="save" id="saveTodoBtn" data-i18n-text="common.save">Save</button>
           <button class="btn btn--ghost todo-share-btn" type="button" id="shareTodoBtn" aria-label="Share story link" data-i18n-aria-label="todo.links.shareAriaLabel">↗</button>
         </div>

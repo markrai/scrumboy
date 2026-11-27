@@ -1,14 +1,17 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { apiFetchMock, archiveTodosMock, restoreTodosMock, loadBoardBySlugMock, showToastMock, state } = vi.hoisted(() => ({
+const { apiFetchMock, archiveTodosMock, restoreTodosMock, loadBoardBySlugMock, showToastMock, requestTodoDialogCloseMock, buildTodoPatchPayloadMock, state } = vi.hoisted(() => ({
   apiFetchMock: vi.fn().mockResolvedValue({}),
   archiveTodosMock: vi.fn().mockResolvedValue({ transitionedCount: 1 }),
   restoreTodosMock: vi.fn().mockResolvedValue({ transitionedCount: 1 }),
   loadBoardBySlugMock: vi.fn().mockResolvedValue(undefined),
   showToastMock: vi.fn(),
+  requestTodoDialogCloseMock: vi.fn().mockResolvedValue(true),
+  buildTodoPatchPayloadMock: vi.fn(() => ({})),
   state: {
     editingTodo: null as any,
+    pendingCreatorId: 27 as number | null,
   },
 }));
 
@@ -121,8 +124,9 @@ vi.mock("../dist/dialogs/todo.js", () => ({
   renderTagAutocomplete: vi.fn(),
   getTagsFromChips: vi.fn(() => []),
   resetAssigneeSelect: vi.fn(),
-  getTodoFormPermissions: vi.fn(() => ({ canSubmitTodo: true })),
-  requestTodoDialogClose: vi.fn().mockResolvedValue(true),
+  getTodoFormPermissions: vi.fn(() => ({ canSubmitTodo: true, canEditCreator: true })),
+  requestTodoDialogClose: requestTodoDialogCloseMock,
+  getPendingTodoCreatorId: vi.fn(() => state.pendingCreatorId),
   isTodoImageUploadPending: vi.fn(() => false),
   prepareTodoDrawingsForSave: vi.fn(async () => null),
   prepareTodoNotesInkForSave: vi.fn(async () => undefined),
@@ -131,7 +135,7 @@ vi.mock("../dist/dialogs/todo.js", () => ({
 
 vi.mock("../dist/dialogs/todo-submit.js", () => ({
   buildTodoCreatePayload: vi.fn(() => ({})),
-  buildTodoPatchPayload: vi.fn(() => ({})),
+  buildTodoPatchPayload: buildTodoPatchPayloadMock,
   shouldSubmitSprintAssignment: vi.fn(() => false),
 }));
 
@@ -215,6 +219,9 @@ describe("app post-mutation board refresh context", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    apiFetchMock.mockReset().mockResolvedValue({});
+    requestTodoDialogCloseMock.mockReset().mockResolvedValue(true);
+    buildTodoPatchPayloadMock.mockReset().mockReturnValue({});
     archiveTodosMock.mockResolvedValue({ transitionedCount: 1 });
     restoreTodosMock.mockResolvedValue({ transitionedCount: 1 });
     installDom();
@@ -224,11 +231,32 @@ describe("app post-mutation board refresh context", () => {
       columnKey: "backlog",
       status: "Backlog",
       sprintId: null,
+      createdByUserId: 10,
     };
+    state.pendingCreatorId = 27;
   });
 
   it("preserves active board filters after saving and deleting a todo", async () => {
     await loadApp();
+
+    apiFetchMock.mockImplementation((path: string, options?: RequestInit) => {
+      if (options?.method === "PATCH" && path.endsWith("/todos/4")) {
+        return Promise.reject(new Error("network"));
+      }
+      return Promise.resolve({});
+    });
+    document.getElementById("todoForm")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(showToastMock).toHaveBeenCalled());
+    expect(requestTodoDialogCloseMock).not.toHaveBeenCalled();
+    expect(state.pendingCreatorId).toBe(27);
+    expect(buildTodoPatchPayloadMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      creatorEnabled: true,
+      creatorUserId: 27,
+      originalCreatorUserId: 10,
+    }));
+
+    apiFetchMock.mockReset().mockResolvedValue({});
+    showToastMock.mockClear();
 
     document.getElementById("todoForm")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 
@@ -236,6 +264,9 @@ describe("app post-mutation board refresh context", () => {
     const todoSubmit = await import("../dist/dialogs/todo-submit.js");
     expect(todoSubmit.buildTodoPatchPayload).toHaveBeenCalledWith(expect.objectContaining({
       assigneeUserId: 99,
+      creatorEnabled: true,
+      creatorUserId: 27,
+      originalCreatorUserId: 10,
       priorityKey: "low",
     }));
 

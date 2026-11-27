@@ -9,6 +9,7 @@ export type TodoDialogPermissions = {
   canEditAssignment: boolean;
   canDeleteTodo: boolean;
   canEditTitle: boolean;
+  canEditCreator: boolean;
   canEditStatus: boolean;
   canSubmitTodo: boolean;
   canEditLinks: boolean;
@@ -24,6 +25,7 @@ const defaultPermissions: TodoDialogPermissions = {
   canEditAssignment: false,
   canDeleteTodo: false,
   canEditTitle: false,
+  canEditCreator: false,
   canEditStatus: false,
   canSubmitTodo: false,
   canEditLinks: false,
@@ -55,6 +57,20 @@ export function computeTodoDialogPermissions(opts: {
   );
   const canEditTitle = baseMaintainer || tempLinkForm;
   const canEditStatus = baseMaintainer || tempLinkForm;
+  const projectId = Number(board?.project?.id);
+  const todoLocalId = Number(todo?.localId);
+  const currentUserId = Number(currentUser?.id);
+  const canEditCreator =
+    mode === "edit" &&
+    !todo?.archivedAt &&
+    !anonymousBoard &&
+    roleNorm === "maintainer" &&
+    Number.isSafeInteger(currentUserId) &&
+    currentUserId > 0 &&
+    Number.isSafeInteger(projectId) &&
+    projectId > 0 &&
+    Number.isSafeInteger(todoLocalId) &&
+    todoLocalId > 0;
   const canSubmitTodo =
     mode === "create"
       ? baseMaintainer || tempLinkForm
@@ -82,6 +98,7 @@ export function computeTodoDialogPermissions(opts: {
     canEditAssignment: baseMaintainer && !anonymousBoard,
     canDeleteTodo: baseMaintainer || (temporaryBoard && mode === "edit"),
     canEditTitle,
+    canEditCreator,
     canEditStatus,
     canSubmitTodo,
     canEditLinks,

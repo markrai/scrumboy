@@ -20,6 +20,12 @@ export type TodoCreatePayloadInput = TodoBasePayloadInput & {
   columnKey: string;
 };
 
+export type TodoPatchPayloadInput = TodoBasePayloadInput & {
+  creatorEnabled?: boolean;
+  creatorUserId?: number | null;
+  originalCreatorUserId?: number | null;
+};
+
 export function shouldSubmitSprintAssignment(
   sprintControlsEnabled: boolean,
   currentSprintId: number | null | undefined,
@@ -72,9 +78,9 @@ export function buildTodoCreatePayload(
 }
 
 export function buildTodoPatchPayload(
-  input: TodoBasePayloadInput,
+  input: TodoPatchPayloadInput,
 ): Record<string, unknown> {
-  return appendOptionalFields(
+  const payload = appendOptionalFields(
     {
       title: input.title,
       body: input.body,
@@ -82,4 +88,13 @@ export function buildTodoPatchPayload(
     },
     input,
   );
+  if (
+    input.creatorEnabled &&
+    Number.isSafeInteger(input.creatorUserId) &&
+    Number(input.creatorUserId) > 0 &&
+    Number(input.creatorUserId) !== Number(input.originalCreatorUserId)
+  ) {
+    payload.createdByUserId = input.creatorUserId;
+  }
+  return payload;
 }
