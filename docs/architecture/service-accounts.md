@@ -171,6 +171,8 @@ A database holding only service accounts stays closed to bootstrap rather than r
 
 "Mint" is the one row where the original proposal was changed, by decision A. See the reasoning below.
 
+The Status column names the MCP tools. The Settings → Users **Service accounts** UI uses REST routes (`/api/admin/service-accounts`, `/api/admin/service-tokens`) that wrap the same store methods with this same matrix; the store remains authoritative.
+
 | Operation | Owner | Admin | Human user | Service account | Status |
 |---|---|---|---|---|---|
 | Create service account | Yes | Yes | No | No | Implemented: `admin_createServiceAccount` |

@@ -75,6 +75,16 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 		return
 	}
 
+	if rest[0] == "service-accounts" {
+		s.handleAdminServiceAccounts(w, r, userID, rest[1:])
+		return
+	}
+
+	if rest[0] == "service-tokens" {
+		s.handleAdminServiceTokenRevoke(w, r, userID, rest[1:])
+		return
+	}
+
 	if rest[0] == "service-token-archive" && len(rest) == 1 {
 		// GET/DELETE /api/admin/service-token-archive (owner-only; enforced by store)
 		s.handleAdminServiceTokenArchive(w, r, userID)

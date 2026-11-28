@@ -78,6 +78,15 @@ describe('service worker shell separation', () => {
     expect(sw.store.has('/modules/unicode-limits.ts')).toBe(false);
   });
 
+  it('precaches the generated settings service-accounts runtime without source TypeScript', async () => {
+    const sw = loadServiceWorker(async (path) => response(path));
+    await sw.install();
+    expect(sw.store.get('/dist/dialogs/settings-service-accounts.js')?.body).toBe(
+      '/dist/dialogs/settings-service-accounts.js',
+    );
+    expect(sw.store.has('/modules/dialogs/settings-service-accounts.ts')).toBe(false);
+  });
+
   it('offline board and workspace navigations fall back to the app shell, never marketing HTML', async () => {
     let online = true;
     const sw = loadServiceWorker(async (path) => {

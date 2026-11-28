@@ -368,6 +368,29 @@ curl -X POST http://localhost:8080/mcp \
   -d '{"tool":"projects_list","input":{}}'
 ```
 
+### Service-account administration (REST)
+
+Thin session-cookie REST surface for the Settings → Users **Service accounts** UI. Same store methods and authorization matrix as the MCP `admin_*ServiceAccount` / `admin_*ServiceToken` tools. Mutating endpoints require `X-Scrumboy: 1` like other `/api` writes.
+
+| Method | Path | Body | Roles | Success |
+|--------|------|------|-------|---------|
+| `GET` | `/api/admin/service-accounts?limit=&cursor=` | — | Owner or Admin | `200` `{ "items": [ serviceAccountJSON ], "nextCursor": string \| null }` |
+| `POST` | `/api/admin/service-accounts` | `{ "name" }` | Owner or Admin | `201` `serviceAccountJSON` |
+| `DELETE` | `/api/admin/service-accounts/{id}` | — | Owner only | `200` `{ "status": "deleted", "userId" }` |
+| `GET` | `/api/admin/service-accounts/{id}/tokens?limit=&cursor=` | — | Owner or Admin | `200` `{ "items": [ serviceTokenJSON ], "nextCursor": string \| null }` |
+| `POST` | `/api/admin/service-accounts/{id}/tokens` | `{ "name"? }` | Owner only | `201` `serviceTokenJSON` fields plus `"token"` (plaintext once); `Cache-Control: no-store` |
+| `DELETE` | `/api/admin/service-tokens/{tokenId}` | — | Owner or Admin | `200` `{ "status": "revoked", "tokenId" }` |
+
+**Schemas (Go JSON):**
+
+- `serviceAccountJSON`: `{ "userId", "stableUserId", "name", "createdAt" }`
+- `serviceTokenJSON`: `{ "tokenId", "userId", "name?", "createdAt", "lastUsedAt?", "revokedAt?" }`
+- Mint (`POST …/tokens`) returns the metadata fields above plus `"token"` — the opaque secret is shown **only on create**; listings never include plaintext or hashes.
+
+**Pagination:** `limit` defaults to **20**, maximum **100**. Pass `cursor` from the previous page’s `nextCursor`; `nextCursor` is `null` when there is no further page.
+
+**Roles:** list accounts, create accounts, list tokens, and revoke tokens require system **Owner or Admin**. Delete account and mint token are **Owner only**. Service accounts hold no system role; project access is membership-only (see [`docs/roles-and-permissions.md`](docs/roles-and-permissions.md) and [`docs/architecture/service-accounts.md`](docs/architecture/service-accounts.md)).
+
 ### Service token archive
 
 Retained metadata about service tokens of deleted users, for offboarding and governance review. No

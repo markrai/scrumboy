@@ -21,6 +21,19 @@ System-role updates through the admin API accept `admin`, `user`, and `guest`. A
 
 Guest permissions apply to the signed-in account. Direct creation, Trello and backup import, and temporary board claims require permission to create boards. Public board links follow the [public-board setting](public-boards.md), and signed-out visitors can still use `/anon`.
 
+### Service-account administration
+
+Service accounts are managed under Settings → Users in a dedicated **Service accounts** section (REST `/api/admin/service-accounts` and `/api/admin/service-tokens`). The same authorization matrix applies over MCP and REST:
+
+| Operation | Owner | Admin |
+|-----------|-------|-------|
+| List / create service accounts | Yes | Yes |
+| List / revoke service tokens | Yes | Yes |
+| Mint a service token | Yes | No |
+| Delete a service account | Yes | No |
+
+Service accounts hold **no** system role. Project access is membership-only (`project_members`), never implied by Owner/Admin status on the actor or the account. In the UI they are excluded from the human User Management table; `GET /api/admin/users` still returns them with `isService: true`.
+
 ---
 
 ## Project Role Hierarchy

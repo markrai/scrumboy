@@ -365,6 +365,12 @@ type storeAPI interface {
 	ListUserAPITokens(ctx context.Context, userID int64) ([]store.APITokenMeta, error)
 	RevokeUserAPIToken(ctx context.Context, userID, tokenID int64) error
 	ListArchivedServiceAPITokens(ctx context.Context, requesterID int64, limit int, beforeID int64) ([]store.ArchivedServiceAPIToken, *int64, error)
+	CreateServiceAccount(ctx context.Context, requesterID int64, name string) (store.User, error)
+	ListServiceAccounts(ctx context.Context, requesterID int64, limit int, cursor *string) ([]store.User, *string, error)
+	DeleteServiceAccount(ctx context.Context, requesterID, targetUserID int64) error
+	CreateServiceAccountToken(ctx context.Context, requesterID, serviceUserID int64, name *string) (int64, string, time.Time, error)
+	ListServiceAccountTokens(ctx context.Context, requesterID, serviceUserID int64, limit int, beforeID int64) ([]store.APITokenMeta, *int64, error)
+	RevokeServiceAccountToken(ctx context.Context, requesterID, tokenID int64) error
 	PurgeArchivedServiceAPITokens(ctx context.Context, requesterID int64, archivedBefore time.Time) (int64, error)
 
 	// OAuth 2.1 authorization server (RFC 7591/6749/7636/7009) for MCP clients.
